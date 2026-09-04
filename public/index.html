@@ -1,0 +1,1127 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Phim 4K - Cinema Ultra HD & VIP Master</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  
+  <!-- HLS.js for streaming m3u8 -->
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js"></script>
+
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/modal.css">
+  <link rel="stylesheet" href="/css/player.css">
+</head>
+<body class="locked">
+
+  <!-- ================================================= -->
+  <!-- 1. ACTIVATION GATE (BẮT BUỘC TELEGRAM ID + KEY)  -->
+  <!-- ================================================= -->
+  <div id="activationGate" class="gate-overlay">
+    <div class="gate-card">
+      <div class="gate-logo">
+        <div class="logo-badge">PHIM 4K</div>
+        <span class="pro-tag">CINEMA 4K PRO</span>
+      </div>
+      <h2>Kích Hoạt Bản Quyền</h2>
+      <p class="gate-desc">
+        Hệ thống streaming <strong>4K Ultra HD Chuẩn Rạp</strong>, âm thanh vòm sống động và tốc độ cao.
+        Mỗi License Key chỉ được cấp phép cho <strong>1 Telegram ID / 1 Thiết Bị</strong>.
+      </p>
+
+      <form id="activationForm" onsubmit="handleActivation(event)">
+        <!-- Telegram ID Input -->
+        <div class="input-group">
+          <svg class="key-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21.198 2.433a2.242 2.242 0 0 0-1.022.215l-16.7 6.452a2.235 2.235 0 0 0-.154 4.148l4.47 1.674 1.77 5.568a1.5 1.5 0 0 0 2.484.544l2.842-2.617 4.67 3.44a2.25 2.25 0 0 0 3.528-1.428l3.1-15.5a2.25 2.25 0 0 0-2.988-2.496z"></path>
+          </svg>
+          <input 
+            type="text" 
+            id="telegramInput" 
+            placeholder="Nhập Telegram ID của bạn (VD: 6189234123)" 
+            autocomplete="off"
+            spellcheck="false"
+            required
+          />
+        </div>
+
+        <!-- License Key Input -->
+        <div class="input-group">
+          <svg class="key-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
+          </svg>
+          <input 
+            type="password" 
+            id="keyInput" 
+            placeholder="Nhập License Key được cấp" 
+            autocomplete="off"
+            spellcheck="false"
+            required
+          />
+        </div>
+
+        <button type="submit" id="btnActivate" class="btn-primary">
+          <span class="btn-text">XÁC THỰC VÀ VÀO XEM PHIM</span>
+          <div class="spinner hidden" id="activateSpinner"></div>
+        </button>
+      </form>
+
+      <div id="gateMessage" class="gate-message hidden"></div>
+
+      <!-- Support / Contact Admin Box -->
+      <div class="support-contact-box">
+        <div class="support-title">💬 Chưa có License Key hoặc cần gia hạn?</div>
+        <p class="support-desc">
+          Vui lòng liên hệ trực tiếp Admin qua Telegram: 
+          <a href="https://t.me/mnhutdznecon" target="_blank" class="tele-link">@mnhutdznecon</a>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================= -->
+  <!-- 2. MAIN APPLICATION (HIỂN THỊ SAU KHI XÁC THỰC)   -->
+  <!-- ================================================= -->
+  <div id="appContainer" class="app-container hidden">
+    <!-- Navigation Bar -->
+    <header class="navbar" id="navbar">
+      <div class="nav-left">
+        <a href="#" class="brand-logo" onclick="switchCategory('home')">
+          <span class="logo-gradient">PHIM 4K</span>
+          <span class="badge-noads">CINEMA 4K</span>
+        </a>
+        <nav class="nav-links">
+          <!-- PHIM MỚI CẬP NHẬT ĐƯA LÊN ĐẦU TIÊN -->
+          <button class="nav-btn" data-cat="phim-moi-cap-nhat" onclick="switchCategory('phim-moi-cap-nhat')">🔥 Mới Cập Nhật</button>
+          <button class="nav-btn active" data-cat="home" onclick="switchCategory('home')">Trang Chủ</button>
+          <button class="nav-btn" data-cat="phim-le" onclick="switchCategory('phim-le')">Phim Lẻ 4K</button>
+          <button class="nav-btn" data-cat="phim-bo" onclick="switchCategory('phim-bo')">Phim Bộ</button>
+          <button class="nav-btn" data-cat="hoat-hinh" onclick="switchCategory('hoat-hinh')">Hoạt Hình</button>
+          <button class="nav-btn" data-cat="tv-shows" onclick="switchCategory('tv-shows')">TV Shows</button>
+        </nav>
+      </div>
+
+      <div class="nav-right">
+        <!-- Search Form -->
+        <div class="search-box">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input 
+            type="text" 
+            id="searchInput" 
+            placeholder="Tìm kiếm phim, diễn viên..." 
+            autocomplete="off"
+          />
+          <button id="searchClear" class="search-clear hidden" onclick="clearSearch()">✕</button>
+          <div id="searchDropdown" class="search-dropdown hidden"></div>
+        </div>
+
+        <!-- The button is displayed only after a server-confirmed admin activation. -->
+        <button id="adminNavBtn" class="admin-panel-btn hidden" onclick="openAdminPanel()">
+          <span class="admin-cog">⚙️</span>
+          <span>ADMIN PANEL</span>
+        </button>
+
+        <!-- Download Latest App Button -->
+        <button class="nav-download-btn" onclick="openDownloadModal()" title="Tải phiên bản mới nhất cho iPhone/iPad và Windows">
+          📥 Tải App Mới
+        </button>
+
+        <!-- User Switch / Logout Button -->
+        <button class="nav-key-btn" onclick="promptChangeAccount()" title="Đổi tài khoản hoặc đăng nhập với Telegram ID khác">
+          👤 Đổi Tài Khoản
+        </button>
+
+        <!-- VIP Status & User Menu -->
+        <div class="user-menu">
+          <button id="vipBadgeBtn" class="vip-status-btn" onclick="openLicenseModal()">
+            <span class="vip-icon">👑</span>
+            <span class="vip-status-copy">
+              <span id="vipPlanText">VIP PRO</span>
+              <small id="vipExpiryText">Đang kiểm tra hạn</small>
+            </span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- ================= TAB 1: TRANG CHỦ (HOME) ================= -->
+    <div id="homeTabContent" class="tab-content">
+      <!-- 1. Top 3D Coverflow Carousel (Exact UI as in photo) -->
+      <section id="coverflowSection" class="coverflow-section">
+        <div class="coverflow-container" id="coverflowContainer">
+          <button class="coverflow-nav-btn prev" onclick="Coverflow.prev()" aria-label="Previous">‹</button>
+          <div class="coverflow-track" id="coverflowTrack">
+            <!-- 3 visible cards in 3D: Left, Center, Right -->
+          </div>
+          <button class="coverflow-nav-btn next" onclick="Coverflow.next()" aria-label="Next">›</button>
+        </div>
+
+        <!-- Focused Movie Details Under Center Card -->
+        <div class="coverflow-details" id="coverflowDetails">
+          <h1 class="cf-title" id="cfTitle">Người Nhện: Khởi Đầu Mới</h1>
+          <h3 class="cf-subtitle" id="cfSubtitle">Spider-Man: Brand New Day</h3>
+
+          <!-- 2 Action Buttons Side-by-Side (Yellow Play, White Info) -->
+          <div class="cf-action-buttons">
+            <button class="btn-cf-play" id="btnCfPlay" onclick="Coverflow.playCurrent()">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+              <span>Xem Phim</span>
+            </button>
+            <button class="btn-cf-info" id="btnCfInfo" onclick="Coverflow.infoCurrent()">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+              <span>Thông tin</span>
+            </button>
+          </div>
+
+          <!-- Badges Row: CAM, 2026, Full -->
+          <div class="cf-badges-row">
+            <span class="badge-cf-cam" id="cfBadgeQuality">CAM</span>
+            <span class="badge-cf-dark" id="cfBadgeYear">2026</span>
+            <span class="badge-cf-dark" id="cfBadgeStatus">Full</span>
+          </div>
+
+          <!-- Category Line in Golden Yellow -->
+          <div class="cf-categories" id="cfCategories">
+            Phim Hành Động, Phim Khoa Học Viễn Tưởng
+          </div>
+
+          <!-- Synopsis Line -->
+          <p class="cf-synopsis" id="cfSynopsis">
+            Không còn Tony Stark, MJ hay Ned kề cận, Peter buộc phải đứng dậy bảo vệ thành phố một lần nữa...
+          </p>
+
+          <!-- Carousel Dots / Dash Pagination (— • • • • •) -->
+          <div class="cf-dots-container" id="cfDots">
+            <span class="cf-dash active"></span>
+            <span class="cf-dot"></span>
+            <span class="cf-dot"></span>
+            <span class="cf-dot"></span>
+            <span class="cf-dot"></span>
+            <span class="cf-dot"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. Section: Xem tiếp của bạn (Continue Watching with Yellow Progress Bar) -->
+      <section class="continue-watching-section" id="continueWatchingSection">
+        <div class="cw-header">
+          <h2 class="cw-title">Xem tiếp của bạn</h2>
+          <button class="cw-clear-btn" onclick="clearContinueWatching()">Xóa tất cả</button>
+        </div>
+        <div class="cw-row" id="continueWatchingRow"></div>
+      </section>
+
+      <!-- 3. Section: Bạn muốn xem gì? (Categories) -->
+      <section class="explore-section" id="exploreSection">
+        <div class="explore-header" onclick="switchCategory('phim-le')">
+          <h2>Bạn muốn xem gì?</h2>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </div>
+        <div class="explore-chips-row" id="exploreChipsRow">
+          <button class="explore-chip" onclick="filterByGenre('Hành Động')">Phim Hành Động</button>
+          <button class="explore-chip" onclick="filterByGenre('Khoa Học Viễn Tưởng')">Khoa Học Viễn Tưởng</button>
+          <button class="explore-chip" onclick="filterByGenre('Marvel')">Marvel</button>
+          <button class="explore-chip" onclick="filterByGenre('DC Comics')">DC Comics</button>
+          <button class="explore-chip" onclick="filterByGenre('Hàn Quốc')">Phim Hàn Quốc</button>
+          <button class="explore-chip" onclick="filterByGenre('Anime')">Anime & Hoạt Hình</button>
+          <button class="explore-chip" onclick="filterByGenre('Cổ Trang')">Phim Cổ Trang</button>
+          <button class="explore-chip" onclick="filterByGenre('Kinh Dị')">Kinh Dị</button>
+          <button class="explore-chip" onclick="filterByGenre('Tình Cảm')">Tình Cảm</button>
+        </div>
+      </section>
+
+      <!-- 4. Main Movie Rows Feed -->
+      <main class="main-content" id="mainContent">
+        <div id="dynamicSections">
+          <div class="loading-spinner-wrapper">
+            <div class="spinner"></div>
+            <p>Đang tải kho phim 4K cập nhật mới nhất...</p>
+          </div>
+        </div>
+
+        <!-- Category / Search Results View -->
+        <section id="categoryView" class="category-view hidden">
+          <div class="category-header">
+            <h2 id="categoryTitle" class="section-title">Danh Mục Phim</h2>
+            <span id="categoryCount" class="category-count"></span>
+          </div>
+          <div id="categoryGrid" class="movie-grid"></div>
+          <div id="paginationBox" class="pagination-box"></div>
+        </section>
+      </main>
+
+      <!-- Footer -->
+      <footer class="footer">
+        <div class="footer-content">
+          <div class="footer-brand">
+            <span class="logo-gradient">PHIM 4K</span>
+            <p>Nền tảng streaming điện ảnh chất lượng 4K chuẩn rạp, bảo vệ phụ đề trọn vẹn và tự động cập nhật liên tục.</p>
+          </div>
+          <div class="footer-meta">
+            <p>Telegram ID: <span id="footerTeleBadge">-</span></p>
+            <p>Key kích hoạt: <span id="footerKeyBadge">Đang hoạt động</span></p>
+            <p>Hạn sử dụng: <span id="footerExpiryBadge">Đang kiểm tra</span></p>
+            <p>© 2026 Phim4K VIP Engine (by mnhut).</p>
+          </div>
+        </div>
+      </footer>
+    </div>
+
+    <!-- ================= TAB 2: DUYỆT TÌM (SEARCH) ================= -->
+    <div id="searchTabContent" class="tab-content hidden search-tab-view">
+      <div class="search-tab-header">
+        <h2>🔍 Duyệt Tìm Phim 4K</h2>
+        <div class="search-tab-input-box">
+          <input type="text" id="tabSearchInput" placeholder="Tìm kiếm phim, diễn viên, đạo diễn..." oninput="App.onTabSearchInput(event)" />
+        </div>
+        <div class="search-quick-chips">
+          <button onclick="App.quickSearch('Người Nhện')">Người Nhện</button>
+          <button onclick="App.quickSearch('Superman')">Superman</button>
+          <button onclick="App.quickSearch('The Boys')">The Boys</button>
+          <button onclick="App.quickSearch('Marvel')">Marvel</button>
+          <button onclick="App.quickSearch('Anime')">Anime</button>
+        </div>
+      </div>
+      <div id="tabSearchResults" class="movie-grid" style="padding: 20px;"></div>
+    </div>
+
+    <!-- ================= TAB 3: LỊCH CHIẾU (SCHEDULE) ================= -->
+    <div id="scheduleTabContent" class="tab-content hidden schedule-tab-view">
+      <div class="schedule-header">
+        <h2>📅 Lịch Chiếu & Bom Tấn Sắp Ra Mắt 2026</h2>
+        <p>Lịch công chiếu các siêu phẩm điện ảnh chiếu rạp cập nhật liên tục</p>
+      </div>
+      <div class="schedule-grid">
+        <div class="schedule-card">
+          <div class="schedule-date">31.07.2026</div>
+          <div class="schedule-info">
+            <h3>Người Nhện: Khởi Đầu Mới (Spider-Man: Brand New Day)</h3>
+            <p>Peter Parker trở lại với khởi đầu hoàn toàn mới sau Spider-Man: No Way Home.</p>
+            <span class="badge-status status-active">Đã lên lịch phát 4K</span>
+          </div>
+        </div>
+        <div class="schedule-card">
+          <div class="schedule-date">11.07.2026</div>
+          <div class="schedule-info">
+            <h3>Superman: Legacy (2026)</h3>
+            <p>Kỷ nguyên mới của Vũ trụ Điện ảnh DC dưới sự chỉ đạo của James Gunn.</p>
+            <span class="badge-status status-active">Đang chờ bản Rạp 4K</span>
+          </div>
+        </div>
+        <div class="schedule-card">
+          <div class="schedule-date">01.05.2026</div>
+          <div class="schedule-info">
+            <h3>Avengers: Doomsday</h3>
+            <p>Sự trở lại chấn động của Robert Downey Jr. trong vai Doctor Doom.</p>
+            <span class="badge-status status-active">Bom tấn mùa hè 2026</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= TAB 4: TÀI KHOẢN (ACCOUNT) ================= -->
+    <div id="accountTabContent" class="tab-content hidden account-tab-view">
+      <div class="account-card">
+        <div class="account-avatar">👑</div>
+        <h2 id="accPlan">Chưa kích hoạt</h2>
+        <div class="account-details-list">
+          <div class="acc-detail-item">
+            <span>Telegram ID:</span>
+            <strong id="accTelegramId">Chưa đăng nhập</strong>
+          </div>
+          <div class="acc-detail-item">
+            <span>Mã Key:</span>
+            <strong id="accKey">Chưa có key</strong>
+          </div>
+          <div class="acc-detail-item">
+            <span>Chất lượng luồng:</span>
+            <span style="color: #34d399; font-weight: bold;">4K Ultra HD Cinema (Không quảng cáo)</span>
+          </div>
+          <div class="acc-detail-item">
+            <span>Phiên bản ứng dụng:</span>
+            <span>v3.1.0 VIP Master (Bản Standalone)</span>
+          </div>
+        </div>
+
+        <div class="account-actions">
+          <button id="accAdminBtn" class="btn-primary" onclick="openAdminPanel()">
+            ⚙️ MỞ PANEL QUẢN TRỊ ADMIN
+          </button>
+          <button class="btn-secondary" onclick="checkAppUpdate(true)">
+            🔄 Kiểm Tra Cập Nhật Bản Mới
+          </button>
+          <button class="btn-secondary" style="color: #f87171;" onclick="promptChangeAccount()">
+            🚪 Đăng Xuất / Đổi Tài Khoản
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- FIXED BOTTOM TAB BAR (DOCK) -->
+    <nav class="bottom-tab-bar" id="bottomTabBar">
+      <button class="tab-item active" id="tabHome" onclick="switchTab('home')">
+        <div class="tab-indicator"></div>
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+        <span>Trang chủ</span>
+      </button>
+      <button class="tab-item" id="tabSearch" onclick="switchTab('search')">
+        <div class="tab-indicator"></div>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <span>Duyệt tìm</span>
+      </button>
+      <button class="tab-item" id="tabSchedule" onclick="switchTab('schedule')">
+        <div class="tab-indicator"></div>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+        <span>Lịch chiếu</span>
+      </button>
+      <button class="tab-item" id="tabAccount" onclick="switchTab('account')">
+        <div class="tab-indicator"></div>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+        <span>Tài khoản</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- ================================================= -->
+  <!-- 3. MOVIE DETAILS MODAL                            -->
+  <!-- ================================================= -->
+  <div id="movieModal" class="modal-overlay hidden" onclick="closeMovieModal(event)">
+    <div class="modal-dialog movie-detail-dialog" onclick="event.stopPropagation()">
+      <button class="modal-close-btn" onclick="hideMovieModal()">✕</button>
+      <div class="detail-header" id="detailHeader">
+        <div class="detail-backdrop" id="detailBackdrop"></div>
+        <div class="detail-header-overlay"></div>
+        <div class="detail-quick-play">
+          <button class="btn-play-large" onclick="playCurrentFirstEpisode()">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="detail-body">
+        <div class="detail-main">
+          <div class="detail-poster-col">
+            <img id="detailPoster" src="" alt="Poster" class="detail-poster" />
+          </div>
+          <div class="detail-info-col">
+            <h2 id="detailName" class="detail-title">Tên Phim</h2>
+            <h4 id="detailOriginName" class="detail-origin">Origin Name</h4>
+            <div class="detail-badges" id="detailBadges"></div>
+            <p id="detailContent" class="detail-synopsis"></p>
+            <div class="detail-meta-grid" id="detailMetaGrid"></div>
+          </div>
+        </div>
+
+        <!-- Servers & Episodes Section -->
+        <div class="episodes-section">
+          <div class="servers-header">
+            <h3>⚡ Chọn Nguồn Server & Danh Sách Tập</h3>
+            <span class="server-note">💡 Nếu server này bị chậm hoặc lỗi sub, hãy chọn server khác ở dưới</span>
+            <div id="serverTabs" class="server-tabs"></div>
+          </div>
+          <div id="episodesList" class="episodes-grid"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================= -->
+  <!-- 4. CINEMA VIDEO PLAYER MODAL                      -->
+  <!-- ================================================= -->
+  <div id="playerModal" class="player-modal-overlay hidden">
+    <div class="cinema-player-wrapper aspect-contain" id="playerWrapper">
+      <!-- Player Top Bar -->
+      <div class="player-top-bar" id="playerTopBar">
+        <button class="btn-back" onclick="closePlayer()" title="Thoát trình phát (Esc)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+          Quay lại
+        </button>
+        <div class="player-title-info">
+          <h3 id="playerMovieTitle">Tên Phim</h3>
+          <span id="playerEpisodeTitle">Tập 1</span>
+        </div>
+        <div class="player-top-actions">
+          <!-- Real Resolution Detected Badge -->
+          <span id="realResolutionBadge" class="badge-real-res">4K REAL 2160p</span>
+          
+          <!-- In-player Server Switcher -->
+          <div class="dropdown-control">
+            <button id="btnPlayerServer" class="btn-player-server" onclick="togglePlayerServerMenu()">
+              🔄 Đổi Server
+            </button>
+            <div id="playerServerMenu" class="ctrl-dropdown hidden"></div>
+          </div>
+
+          <span class="player-noads-pill">💎 4K CINEMA MASTER</span>
+          <button class="btn-close-player" onclick="closePlayer()">✕</button>
+        </div>
+      </div>
+
+      <!-- Video Element -->
+      <video id="videoPlayer" class="video-element" playsinline></video>
+
+      <!-- Player Loading & Buffering Overlay -->
+      <div id="playerBuffering" class="player-buffering hidden">
+        <div class="spinner-large"></div>
+        <span id="bufferingText">Đang tải luồng stream 4K tốc độ cao...</span>
+      </div>
+
+      <!-- Quick Alert Notification inside Player -->
+      <div id="playerAlert" class="player-alert hidden"></div>
+
+      <!-- Custom Player Controls Bar -->
+      <div class="player-controls" id="playerControls">
+        <!-- Progress Bar Slider -->
+        <div class="progress-bar-container" id="progressContainer">
+          <div class="progress-buffer" id="progressBuffer"></div>
+          <div class="progress-current" id="progressCurrent"></div>
+          <div class="progress-thumb" id="progressThumb"></div>
+          <div class="progress-hover-time" id="progressHoverTime">00:00</div>
+        </div>
+
+        <div class="controls-row">
+          <!-- Left Controls: Play, Rewind, Forward, Next, Volume, Time -->
+          <div class="controls-left">
+            <button id="btnPlayPause" class="ctrl-btn" onclick="togglePlayPause()" title="Phát/Dừng (Space)">
+              <svg id="iconPlay" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+              <svg id="iconPause" class="hidden" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            </button>
+            <button class="ctrl-btn" onclick="seekRelative(-10)" title="Tua lại 10s (Phím Trái)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 17l-5-5 5-5m7 10l-5-5 5-5"/></svg>
+            </button>
+            <button class="ctrl-btn" onclick="seekRelative(10)" title="Tua tới 10s (Phím Phải)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 17l5-5-5-5M6 17l5-5-5-5"/></svg>
+            </button>
+            <button id="btnNextEp" class="ctrl-btn" onclick="playNextEpisode()" title="Tập Kế Tiếp">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+            </button>
+
+            <!-- Volume Control -->
+            <div class="volume-container">
+              <button id="btnMute" class="ctrl-btn" onclick="toggleMute()" title="Tắt/Bật tiếng (M)">
+                <svg id="iconVolHigh" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+                <svg id="iconVolMute" class="hidden" viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>
+              </button>
+              <input type="range" id="volumeSlider" class="volume-slider" min="0" max="1" step="0.05" value="1" />
+            </div>
+
+            <!-- Time Display -->
+            <div class="time-display">
+              <span id="currentTime">00:00</span> / <span id="durationTime">00:00</span>
+            </div>
+          </div>
+
+          <!-- Right Controls: Aspect Ratio/Sub Safe, Speed, Quality, Fullscreen -->
+          <div class="controls-right">
+            <!-- Subtitle-Safe Aspect Ratio Toggle Button -->
+            <button id="btnAspectFit" class="ctrl-btn-text" onclick="toggleAspectRatio()" title="Tỷ lệ màn hình (Không bị che Sub)">
+              📺 Giữ Sub Gốc
+            </button>
+
+            <!-- Speed Menu -->
+            <div class="dropdown-control">
+              <button id="btnSpeed" class="ctrl-btn-text" onclick="toggleSpeedMenu()">1x</button>
+              <div id="speedMenu" class="ctrl-dropdown hidden">
+                <button onclick="setPlaybackSpeed(0.5)">0.5x</button>
+                <button onclick="setPlaybackSpeed(0.75)">0.75x</button>
+                <button class="active" onclick="setPlaybackSpeed(1)">1.0x (Chuẩn)</button>
+                <button onclick="setPlaybackSpeed(1.25)">1.25x</button>
+                <button onclick="setPlaybackSpeed(1.5)">1.5x</button>
+                <button onclick="setPlaybackSpeed(2)">2.0x</button>
+              </div>
+            </div>
+
+            <!-- Quality Menu -->
+            <div class="dropdown-control">
+              <button id="btnQuality" class="ctrl-btn-text" onclick="toggleQualityMenu()">Auto</button>
+              <div id="qualityMenu" class="ctrl-dropdown hidden">
+                <button class="active" onclick="setQuality(-1)">Auto</button>
+              </div>
+            </div>
+
+            <!-- Fullscreen (Safe Subtitle Container) -->
+            <button class="ctrl-btn" onclick="toggleFullscreen()" title="Toàn màn hình không che Sub (F)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+            </button>
+
+            <!-- Landscape Fullscreen Button (Phóng To Toàn Màn Hình Ngang) -->
+            <button id="btnLandscapeFullscreen" class="btn-landscape" onclick="toggleLandscapeFullscreen()" title="Phóng to toàn màn hình ngang (Xoay ngang màn hình)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px;"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M7 2v3m10-3v3M7 19v3m10-3v3"/></svg>
+              <span>🔄 Màn Hình Ngang</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================= -->
+  <!-- 5. LICENSE KEY INFO & MANAGEMENT MODAL            -->
+  <!-- ================================================= -->
+  <div id="licenseModal" class="modal-overlay hidden" onclick="closeLicenseModal(event)">
+    <div class="modal-dialog license-dialog" onclick="event.stopPropagation()">
+      <button class="modal-close-btn" onclick="hideLicenseModal()">✕</button>
+      <div class="license-dialog-header">
+        <div class="vip-crown">👑</div>
+        <h2>Thông Tin Bản Quyền</h2>
+      </div>
+      <div class="license-dialog-body">
+        <div class="license-item">
+          <span class="label">Telegram ID:</span>
+          <span class="value" id="licTelegram" style="color: var(--accent-gold); font-weight: 800;">-</span>
+        </div>
+        <div class="license-item">
+          <span class="label">Gói Đăng Ký:</span>
+          <span class="value" id="licPlan">-</span>
+        </div>
+        <div class="license-item">
+          <span class="label">Mã License Key:</span>
+          <span class="value code" id="licKey">-</span>
+        </div>
+        <div class="license-item">
+          <span class="label">Hạn Sử Dụng:</span>
+          <span class="value" id="licExpires">-</span>
+        </div>
+        <div class="license-item">
+          <span class="label">Thiết Bị Khóa:</span>
+          <span class="value" id="licDevice" style="font-size: 11px; font-family: monospace;">-</span>
+        </div>
+        <div class="license-item">
+          <span class="label">Trạng Thái:</span>
+          <span class="value badge-active">✔ Đang Hoạt Động (1 Thiết Bị)</span>
+        </div>
+        <div class="license-features-box">
+          <h4>Quyền Lợi Kích Hoạt:</h4>
+          <ul id="licFeatures"></ul>
+        </div>
+        <div class="license-actions">
+          <button class="btn-secondary" onclick="logoutKey()">Đăng Xuất / Đổi Key</button>
+          <button class="btn-primary" onclick="hideLicenseModal()">Đóng</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================= -->
+  <!-- 6. ADMIN PANEL MODAL (server-confirmed administrator only) -->
+  <!-- ================================================= -->
+  <div id="adminModal" class="modal-overlay hidden" onclick="closeAdminModal(event)">
+    <div class="modal-dialog admin-dialog" onclick="event.stopPropagation()">
+      <button class="modal-close-btn" onclick="hideAdminModal()">✕</button>
+      
+      <div class="admin-header">
+        <div class="admin-title-row">
+          <div class="admin-badge">⚡ SUPER ADMIN PANEL</div>
+          <span class="admin-user-pill">Admin Telegram: <strong>@mnhutdznecon</strong></span>
+        </div>
+        <p class="admin-desc">Quản lý toàn diện: Cấp phát key, Quản lý & Ban người dùng, Tường lửa chống DDoS và Nhật ký hoạt động.</p>
+      </div>
+
+      <!-- Admin Tab Switcher -->
+      <div class="admin-tabs-nav">
+        <button class="admin-tab-btn" id="tabBtnKeys" onclick="Admin.switchTab('keys')">
+          🔑 Quản Lý License Key
+        </button>
+        <button class="admin-tab-btn" id="tabBtnUsers" onclick="Admin.switchTab('users')">
+          👥 Quản Lý Người Dùng & Ban
+        </button>
+        <button class="admin-tab-btn" id="tabBtnDownloads" onclick="Admin.switchTab('downloads')">
+          🚀 Link Tải 3 Bản (ADR, IPA, EXE)
+        </button>
+        <button class="admin-tab-btn" id="tabBtnContent" onclick="Admin.switchTab('content')">
+          🎬 Phim & Poster trực tiếp
+        </button>
+        <button class="admin-tab-btn" id="tabBtnLogs" onclick="Admin.switchTab('logs')">
+          📜 Nhật Ký Hoạt Động (Logs)
+        </button>
+      </div>
+
+      <!-- Dashboard Quick Stats -->
+      <div class="admin-stats-grid">
+        <div class="stat-card">
+          <div class="stat-num" id="statTotalKeys">0</div>
+          <div class="stat-lbl">Tổng Số Key</div>
+        </div>
+        <div class="stat-card stat-green">
+          <div class="stat-num" id="statActiveKeys">0</div>
+          <div class="stat-lbl">Đang Hoạt Động</div>
+        </div>
+        <div class="stat-card stat-orange">
+          <div class="stat-num" id="statBoundDevices">0</div>
+          <div class="stat-lbl">Thiết Bị Khóa</div>
+        </div>
+        <div class="stat-card stat-red">
+          <div class="stat-num" id="statBannedUsers">0</div>
+          <div class="stat-lbl">Người Dùng Bị Ban</div>
+        </div>
+        <div class="stat-card stat-purple">
+          <div class="stat-num" id="statDdosBlocked">0</div>
+          <div class="stat-lbl">DDoS Bị Chặn</div>
+        </div>
+      </div>
+
+      <!-- TAB 1: KEYS MANAGEMENT -->
+      <div id="adminTabKeys" class="admin-tab-content">
+        <!-- Create New Key Form -->
+        <div class="admin-section-box">
+          <h3>➕ Tạo License Key Mới Gắn Telegram ID</h3>
+          <form id="createKeyForm" onsubmit="Admin.handleCreateKey(event)" class="create-key-form">
+            <div class="form-row">
+              <div class="form-group flex-2">
+                <label>Mã License Key:</label>
+                <div class="input-with-action">
+                  <input type="text" id="newKeyInput" placeholder="VD: P4K-VIP-2026" required />
+                  <button type="button" class="btn-sub-action" onclick="Admin.generateRandomKey()">Tạo Ngẫu Nhiên</button>
+                </div>
+              </div>
+              <div class="form-group flex-1">
+                <label>Gán Cho Telegram ID (Tùy chọn):</label>
+                <input type="text" id="newKeyTelegram" placeholder="Để trống nếu để khách tự nhập" />
+              </div>
+              <div class="form-group flex-1">
+                <label>Thời Hạn Sử Dụng:</label>
+                <select id="newKeyDuration">
+                  <option value="1">1 Ngày (24 giờ)</option>
+                  <option value="7">7 Ngày (1 tuần)</option>
+                  <option value="30" selected>30 Ngày (1 tháng)</option>
+                  <option value="90">90 Ngày (3 tháng)</option>
+                  <option value="365">365 Ngày (1 năm)</option>
+                  <option value="0">Vĩnh Viễn (Lifetime)</option>
+                </select>
+              </div>
+              <div class="form-group flex-1">
+                <label>Tên Gói:</label>
+                <input type="text" id="newKeyPlan" placeholder="VD: VIP 1 Tháng" />
+              </div>
+            </div>
+            <button type="submit" id="btnSubmitNewKey" class="btn-primary" style="margin-top: 10px;">
+              TẠO LICENSE KEY NGAY
+            </button>
+          </form>
+          <div id="adminFormAlert" class="gate-message hidden"></div>
+        </div>
+
+        <!-- Keys Management Table -->
+        <div class="admin-section-box">
+          <div class="table-header-row">
+            <h3>📋 Danh Sách License Key Trong Hệ Thống</h3>
+            <button class="btn-refresh-keys" onclick="Admin.loadKeys()">🔄 Làm mới</button>
+          </div>
+          <div class="admin-table-wrapper">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>Mã Key</th>
+                  <th>Telegram ID Khách</th>
+                  <th>Gói VIP</th>
+                  <th>Hạn Dùng</th>
+                  <th>Thiết Bị (Device)</th>
+                  <th>Trạng Thái</th>
+                  <th>Thao Tác</th>
+                </tr>
+              </thead>
+              <tbody id="keysTableBody">
+                <tr><td colspan="7" style="text-align: center;">Đang tải danh sách key...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: USER MANAGEMENT & BAN/UNBAN -->
+      <div id="adminTabUsers" class="admin-tab-content hidden">
+        <div class="admin-section-box">
+          <div class="table-header-row">
+            <h3>👥 Danh Sách Người Dùng & Quyền Ban / Mở Khóa</h3>
+            <button class="btn-refresh-keys" onclick="Admin.loadUsers()">🔄 Làm mới</button>
+          </div>
+          <p class="admin-desc" style="margin-bottom: 14px;">
+            Admin có thể cấm (Ban) bất kỳ người dùng hoặc tài khoản Telegram nào. Khi bị ban, tài khoản sẽ lập tức bị đá ra ngoài và không thể kích hoạt lại.
+          </p>
+          <div class="admin-table-wrapper">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>Telegram ID</th>
+                  <th>Key Đang Gắn</th>
+                  <th>Gói</th>
+                  <th>Thiết Bị Đã Khóa</th>
+                  <th>IP Gần Nhất</th>
+                  <th>Trạng Thái</th>
+                  <th>Thao Tác Ban</th>
+                </tr>
+              </thead>
+              <tbody id="usersTableBody">
+                <tr><td colspan="7" style="text-align: center;">Đang tải danh sách người dùng...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: LIVE MOVIE FEED & POSTERS -->
+      <div id="adminTabContent" class="admin-tab-content hidden">
+        <div class="admin-section-box content-refresh-box">
+          <div class="table-header-row">
+            <div>
+              <h3>🎬 Nguồn phim và poster</h3>
+              <p class="admin-desc">Trang chủ tự đồng bộ khi đang mở. Poster hỏng sẽ chuyển sang ảnh dự phòng trong app thay vì hiện ô ảnh vỡ.</p>
+            </div>
+            <button id="adminRefreshMoviesBtn" class="btn-refresh-keys content-refresh-btn" onclick="Admin.refreshMovies()">🔄 Làm mới ngay</button>
+          </div>
+
+          <div class="content-status-grid">
+            <div class="content-status-card">
+              <span class="content-status-label">Nguồn dữ liệu</span>
+              <strong id="contentSourceStatus">Đang kiểm tra…</strong>
+            </div>
+            <div class="content-status-card">
+              <span class="content-status-label">Lần đồng bộ gần nhất</span>
+              <strong id="contentLastRefresh">Đang kiểm tra…</strong>
+            </div>
+            <div class="content-status-card">
+              <span class="content-status-label">Cache phim/ảnh</span>
+              <strong id="contentCacheStatus">Đang kiểm tra…</strong>
+            </div>
+            <div class="content-status-card">
+              <span class="content-status-label">Tự làm mới trang chủ</span>
+              <strong id="contentAutoRefresh">2 phút khi đang mở</strong>
+            </div>
+          </div>
+          <div id="adminContentAlert" class="gate-message hidden" style="margin-top: 14px;"></div>
+        </div>
+      </div>
+
+      <!-- TAB 3: AUDIT & SECURITY LOGS -->
+      <div id="adminTabLogs" class="admin-tab-content hidden">
+        <div class="admin-section-box">
+          <div class="table-header-row">
+            <h3>📜 Nhật Ký Hoạt Động & Bảo Mật Hệ Thống (Live Audit Logs)</h3>
+            <div class="log-actions-bar">
+              <input id="logAccountFilter" type="text" inputmode="numeric" placeholder="Lọc Telegram ID" aria-label="Lọc nhật ký theo Telegram ID" />
+              <button class="btn-action-mini btn-time" onclick="Admin.applyLogFilter()">Lọc</button>
+              <button class="btn-action-mini" onclick="Admin.clearLogFilter()">Bỏ lọc</button>
+              <button class="btn-refresh-keys" onclick="Admin.loadLogs()">🔄 Làm mới</button>
+              <button class="btn-action-mini btn-delete" onclick="Admin.clearLogs()">🗑 Xóa Sạch Log</button>
+            </div>
+          </div>
+          <p class="admin-desc" style="margin-bottom: 12px;">
+            Ghi nhận toàn bộ thao tác đăng nhập Admin, kích hoạt key, thay đổi thiết bị, chặn DDoS và các lệnh Ban tài khoản.
+          </p>
+          
+          <!-- Terminal / Cyber Log Console -->
+          <div class="cyber-terminal" id="terminalLogsContainer">
+            <div class="terminal-header">
+              <span class="terminal-dot red"></span>
+              <span class="terminal-dot yellow"></span>
+              <span class="terminal-dot green"></span>
+              <span class="terminal-title">system_audit.log — Phim4K Security Engine</span>
+            </div>
+            <div class="terminal-body" id="terminalLogsBody">
+              <div class="log-line">Đang tải dữ liệu nhật ký hoạt động...</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 4: APP DOWNLOADS & UPDATE LINKS -->
+        <div id="adminTabDownloads" class="admin-tab-pane hidden">
+          <div class="admin-keys-header">
+            <h3>🚀 Cập Nhật Link Tải 3 Phiên Bản (ADR, IPA, EXE)</h3>
+            <button class="btn-refresh-keys" onclick="Admin.loadDownloadsConfig()">🔄 Tải Lại Cấu Hình</button>
+          </div>
+          <p class="admin-desc" style="margin-bottom: 16px;">
+            Cập nhật link tải trực tiếp cho người dùng ngay trong app. Bạn có thể để link máy chủ nội bộ (VD: <code>/download/apk</code>, <code>/download/ipa</code>, <code>/download/exe</code>) hoặc dán link ngoài (Google Drive, Telegram, Mediafire...).
+          </p>
+
+          <form id="updateDownloadsForm" onsubmit="Admin.handleUpdateDownloads(event)" class="update-downloads-box">
+            <!-- Row 1: Android (ADR / APK) -->
+            <div class="download-link-row">
+              <div class="os-badge-col">
+                <span class="os-icon">🤖</span>
+                <div>
+                  <strong>Android (ADR / APK)</strong>
+                  <div style="font-size: 11px; color: var(--text-dim);">Điện thoại Android & Android TV Box</div>
+                </div>
+              </div>
+              <div class="input-col">
+                <label>Đường dẫn tải (URL):</label>
+                <input type="text" id="adminDownloadApkInput" placeholder="/download/apk hoặc https://..." required />
+              </div>
+              <div class="ver-col">
+                <label>Phiên bản:</label>
+                <input type="text" id="adminVersionApkInput" placeholder="3.0.0" />
+              </div>
+            </div>
+
+            <!-- Row 2: iOS (IPA) -->
+            <div class="download-link-row">
+              <div class="os-badge-col">
+                <span class="os-icon">🍏</span>
+                <div>
+                  <strong>iOS (iPhone / iPad IPA)</strong>
+                  <div style="font-size: 11px; color: var(--text-dim);">Sideloadly, AltStore, Scarlet, TrollStore</div>
+                </div>
+              </div>
+              <div class="input-col">
+                <label>Đường dẫn tải (URL):</label>
+                <input type="text" id="adminDownloadIpaInput" placeholder="/download/ipa hoặc https://..." required />
+              </div>
+              <div class="ver-col">
+                <label>Phiên bản:</label>
+                <input type="text" id="adminVersionIpaInput" placeholder="3.0.0" />
+              </div>
+            </div>
+
+            <!-- Row 3: Windows (EXE) -->
+            <div class="download-link-row">
+              <div class="os-badge-col">
+                <span class="os-icon">💻</span>
+                <div>
+                  <strong>Máy Tính Windows (EXE)</strong>
+                  <div style="font-size: 11px; color: var(--text-dim);">PC & Laptop Windows 10/11 64-bit</div>
+                </div>
+              </div>
+              <div class="input-col">
+                <label>Đường dẫn tải (URL):</label>
+                <input type="text" id="adminDownloadExeInput" placeholder="/download/exe hoặc https://..." required />
+              </div>
+              <div class="ver-col">
+                <label>Phiên bản:</label>
+                <input type="text" id="adminVersionExeInput" placeholder="3.0.0" />
+              </div>
+            </div>
+
+            <div id="adminDownloadsAlert" class="gate-message hidden" style="margin-top: 12px;"></div>
+
+            <div style="margin-top: 16px; text-align: right;">
+              <button type="submit" class="btn-primary" style="padding: 12px 28px; font-size: 14px;">
+                💾 LƯU CẤU HÌNH LINK TẢI MỚI
+              </button>
+            </div>
+          </form>
+
+          <!-- FORCE UPDATE ADMIN CONTROL (CHẶN BẢN CŨ) -->
+          <div class="admin-section-box force-update-admin-box">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
+              <div>
+                <h3 style="color: #f87171; display: flex; align-items: center; gap: 6px;">🚨 Chặn Người Dùng Ở Phiên Bản Cũ (Force Update)</h3>
+                <p class="admin-desc" style="margin-bottom: 0;">
+                  Khi kích hoạt, bất kỳ người dùng nào đang ở phiên bản thấp hơn phiên bản tối thiểu sẽ bị khóa ứng dụng ngay lập tức và bắt buộc phải tải bản mới mới được vào xem phim.
+                </p>
+              </div>
+              <label class="switch-toggle-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer; background: rgba(239, 68, 68, 0.15); padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(239, 68, 68, 0.4);">
+                <input type="checkbox" id="adminForceUpdateToggle" onchange="Admin.toggleForceUpdateStatusText()" style="width: 18px; height: 18px; cursor: pointer;" />
+                <strong id="adminForceUpdateStatusText" style="color: #f87171; font-size: 13px;">ĐANG TẮT</strong>
+              </label>
+            </div>
+
+            <form id="adminForceUpdateForm" onsubmit="Admin.handleSetForceUpdate(event)">
+              <div class="form-row">
+                <div class="form-group flex-1">
+                  <label>Phiên Bản Tối Thiểu Được Phép Dùng (Min Version):</label>
+                  <input type="text" id="adminMinVersionInput" placeholder="3.0.0" required />
+                </div>
+                <div class="form-group flex-1">
+                  <label>Phiên Bản Mới Nhất Hiện Tại (Latest Version):</label>
+                  <input type="text" id="adminLatestVersionInput" placeholder="3.0.0" required />
+                </div>
+              </div>
+              <div class="form-group" style="margin-top: 10px;">
+                <label>Thông Điệp Bắt Buộc Cập Nhật Cho Người Dùng:</label>
+                <input type="text" id="adminForceUpdateMessage" placeholder="Phiên bản của bạn đã cũ, vui lòng cập nhật lên bản mới nhất!" required />
+              </div>
+              <div id="adminForceUpdateAlert" class="gate-message hidden" style="margin-top: 10px;"></div>
+              <div style="margin-top: 12px; text-align: right;">
+                <button type="submit" class="btn-primary" style="background: #ef4444; border-color: #f87171; padding: 10px 24px;">
+                  🚨 LƯU CÀI ĐẶT BẮT BUỘC UPDATE
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================================================= -->
+  <!-- 7. DOWNLOAD LATEST VERSION MODAL (ADR, IPA, EXE)  -->
+  <!-- ================================================= -->
+  <div id="downloadAppModal" class="modal-overlay hidden" onclick="closeDownloadModal(event)">
+    <div class="modal-dialog download-dialog" onclick="event.stopPropagation()">
+      <button class="modal-close-btn" onclick="hideDownloadModal()">✕</button>
+      <div class="download-modal-header">
+        <div class="download-icon">📥</div>
+        <h2>Tải Ứng Dụng Phim 4K Mới Nhất</h2>
+        <p class="download-sub">Chọn đúng phiên bản thiết bị của bạn để tải về và cập nhật ngay trong app:</p>
+
+        <!-- Check Update Button for User -->
+        <div style="margin-top: 14px;">
+          <button type="button" class="btn-check-update" onclick="checkAppUpdate()">
+            <span id="checkUpdateIcon">🔄</span> <span id="checkUpdateText">Kiểm Tra Phiên Bản Mới Nhất</span>
+          </button>
+        </div>
+        <div id="updateCheckResultBox" class="gate-message hidden" style="margin-top: 10px;"></div>
+      </div>
+
+      <div class="download-cards-grid">
+        <!-- Card 1: Android (ADR / APK) -->
+        <div class="download-card">
+          <div class="card-os-icon">🤖</div>
+          <h3>Android (ADR / APK)</h3>
+          <p>Dành cho điện thoại Android, máy tính bảng và Android TV Box.</p>
+          <span class="card-meta" id="metaApkVer">v3.1.0 • APK • Mọi Android</span>
+          <a id="btnDownloadApk" href="/download/apk" class="btn-download-action btn-apk" download>
+            Tải File .APK
+          </a>
+        </div>
+
+        <!-- Card 2: iOS (IPA) -->
+        <div class="download-card">
+          <div class="card-os-icon">🍏</div>
+          <h3>iPhone / iPad (File IPA)</h3>
+          <p>Dành cho cài đặt qua Sideloadly, AltStore, Scarlet, TrollStore, Esign.</p>
+          <span class="card-meta" id="metaIpaVer">v3.1.0 • 41.8 MB • iOS 14+</span>
+          <a id="btnDownloadIpa" href="/download/ipa" class="btn-download-action btn-ipa" download>
+            Tải File .IPA
+          </a>
+        </div>
+
+        <!-- Card 3: Windows (EXE) -->
+        <div class="download-card">
+          <div class="card-os-icon">💻</div>
+          <h3>Máy Tính Windows (EXE)</h3>
+          <p>Ứng dụng 1-click cho máy tính PC & Laptop Windows 10/11, nhấp đúp là xem ngay.</p>
+          <span class="card-meta" id="metaExeVer">v3.1.0 • Windows 64-bit</span>
+          <a id="btnDownloadExe" href="/download/exe" class="btn-download-action btn-exe" download>
+            Tải File .EXE
+          </a>
+        </div>
+      </div>
+
+      <div class="download-guide-box">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <div>
+            <strong>💡 Bạn dùng iPhone muốn cài nhanh không cần máy tính?</strong><br>
+            <span style="color: var(--text-dim);">Cài trực tiếp qua cấu hình WebClip Apple bằng Safari, không lo thu hồi chứng chỉ (No Revoke).</span>
+          </div>
+          <a href="/download/ios" class="btn-action-mini" style="background: rgba(245, 158, 11, 0.2); color: var(--accent-gold); border: 1px solid var(--accent-gold); padding: 6px 14px; text-decoration: none; border-radius: 4px; font-weight: 700;" target="_blank">
+            📲 Cài Ngay (Safari)
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================= -->
+  <!-- 8. FORCE UPDATE BLOCKING MODAL (UNCLOSEABLE)      -->
+  <!-- ================================================= -->
+  <div id="forceUpdateModal" class="modal-overlay hidden">
+    <div class="modal-dialog force-update-dialog">
+      <div class="force-update-header">
+        <div class="force-icon">🚨</div>
+        <h2>BẮT BUỘC CẬP NHẬT PHIÊN BẢN MỚI</h2>
+        <p id="forceUpdateMessageText" class="force-msg">
+          Phiên bản bạn đang dùng đã quá cũ và không còn được hỗ trợ. Vui lòng cập nhật lên phiên bản mới nhất để tiếp tục xem phim!
+        </p>
+        <div class="force-meta">
+          Phiên bản đang dùng: <span id="forceClientVer" style="color: #f87171; font-weight: bold;">v3.0.0</span> • Yêu cầu tối thiểu: <span id="forceMinVer" style="color: #10b981; font-weight: bold;">v3.1.0</span>
+        </div>
+      </div>
+
+      <div class="download-cards-grid" style="margin-top: 18px;">
+        <div class="download-card">
+          <div class="card-os-icon">🤖</div>
+          <h3>Android (ADR / APK)</h3>
+          <a id="forceBtnApk" href="/download/apk" class="btn-download-action btn-apk" download>
+            Tải Bản Mới (.APK)
+          </a>
+        </div>
+        <div class="download-card">
+          <div class="card-os-icon">🍏</div>
+          <h3>iOS (IPA)</h3>
+          <a id="forceBtnIpa" href="/download/ipa" class="btn-download-action btn-ipa" download>
+            Tải Bản Mới (.IPA)
+          </a>
+        </div>
+        <div class="download-card">
+          <div class="card-os-icon">💻</div>
+          <h3>Windows (EXE)</h3>
+          <a id="forceBtnExe" href="/download/exe" class="btn-download-action btn-exe" download>
+            Tải Bản Mới (.EXE)
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================= -->
+  <!-- 8. EDIT KEY EXPIRATION MODAL (ADMIN)              -->
+  <!-- ================================================= -->
+  <div id="editKeyExpiryModal" class="modal-overlay hidden" onclick="closeEditExpiryModal(event)">
+    <div class="modal-dialog edit-expiry-dialog" onclick="event.stopPropagation()">
+      <button class="modal-close-btn" onclick="hideEditExpiryModal()">✕</button>
+      <div class="edit-expiry-header">
+        <div class="edit-expiry-icon">🕒</div>
+        <h2>Chỉnh Sửa Thời Gian Hạn Dùng Key</h2>
+        <p>Mã Key: <strong id="editExpiryKeyTitle" style="color: var(--accent-gold);">P4K-XXXX</strong></p>
+        <div class="current-expiry-info">
+          Hạn hiện tại: <span id="editExpiryCurrentText" style="font-weight: 700; color: #fff;">Đang tải...</span>
+        </div>
+      </div>
+
+      <div class="edit-expiry-body">
+        <!-- Method 1: Specific Date Picker -->
+        <div class="expiry-input-section">
+          <label>📅 Chọn ngày & giờ hết hạn chính xác:</label>
+          <input type="datetime-local" id="editExpiryDatetimeInput" class="datetime-picker" />
+        </div>
+
+        <!-- Method 2: Quick Day Addition -->
+        <div class="expiry-quick-section">
+          <label>⚡ Hoặc cộng thêm ngày nhanh:</label>
+          <div class="quick-days-row">
+            <button type="button" class="btn-quick-day" onclick="Admin.setExpiryQuickDays(1)">+1 Ngày</button>
+            <button type="button" class="btn-quick-day" onclick="Admin.setExpiryQuickDays(7)">+7 Ngày</button>
+            <button type="button" class="btn-quick-day" onclick="Admin.setExpiryQuickDays(30)">+30 Ngày</button>
+            <button type="button" class="btn-quick-day" onclick="Admin.setExpiryQuickDays(90)">+90 Ngày</button>
+            <button type="button" class="btn-quick-day" onclick="Admin.setExpiryQuickDays(365)">+1 Năm</button>
+          </div>
+        </div>
+
+        <!-- Method 3: Lifetime VIP -->
+        <div class="expiry-lifetime-section">
+          <button type="button" class="btn-lifetime-toggle" onclick="Admin.setExpiryLifetime()">
+            👑 Chuyển Thành VIP Vĩnh Viễn (Không Giới Hạn)
+          </button>
+        </div>
+
+        <div id="editExpiryAlert" class="gate-message hidden"></div>
+
+        <div class="edit-expiry-actions">
+          <button type="button" class="btn-secondary" onclick="hideEditExpiryModal()">Hủy</button>
+          <button type="button" class="btn-primary" onclick="Admin.submitEditExpiry()">LƯU THỜI GIAN MỚI</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="/js/mobile-config.js"></script>
+  <script src="/js/runtime-config.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/admin.js"></script>
+  <script src="/js/player.js"></script>
+  <script src="/js/coverflow.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

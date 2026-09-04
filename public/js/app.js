@@ -1,0 +1,634 @@
+// Main Application Logic (Home, Categories, Search, Detail Modal)
+
+const App = {
+  currentCategory: 'home',
+  currentPage: 1,
+  currentHeroMovie: null,
+  heroList: [],
+  heroRotateTimer: null,
+  feedRefreshTimer: null,
+  homeFeedLoading: false,
+  homeFeedUpdatedAt: null,
+  activeMovieDetail: null,
+  activeServerIndex: 0,
+  searchDebounceTimer: null,
+
+  init() {
+    this.bindEvents();
+    this.startHomeFeedRefresh();
+  },
+
+  bindEvents() {
+    // Navbar scroll effect
+    window.addEventListener('scroll', () => {
+      const navbar = document.getElementById('navbar');
+      if (window.scrollY > 30) {
+        navbar.classList.add('scrolled');
+      } else {
+        navbar.classList.remove('scrolled');
+      }
+    });
+
+    // Search Input
+    const searchInput = document.getElementById('searchInput');
+    const searchClear = document.getElementById('searchClear');
+
+    searchInput.addEventListener('input', (e) => {
+      const val = e.target.value.trim();
+      searchClear.classList.toggle('hidden', !val);
+      clearTimeout(this.searchDebounceTimer);
+      if (!val) {
+        this.hideSearchDropdown();
+        return;
+      }
+      this.searchDebounceTimer = setTimeout(() => {
+        this.performInstantSearch(val);
+      }, 300);
+    });
+
+    searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const val = e.target.value.trim();
+        if (val) {
+          this.hideSearchDropdown();
+          this.loadFullSearch(val, 1);
+        }
+      }
+    });
+
+    // Close dropdown on outside click
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.search-box')) {
+        this.hideSearchDropdown();
+      }
+    });
+
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && this.currentCategory === 'home') {
+        this.loadHomeFeed({ silent: true });
+      }
+    });
+  },
+
+  // =================================================
+  // 1. HOME FEED & HERO BILLBOARD
+  // =================================================
+  async loadHomeFeed({ silent = false } = {}) {
+    if (this.homeFeedLoading) return;
+    this.homeFeedLoading = true;
+    this.currentCategory = 'home';
+    this.updateActiveNav('home');
+    document.getElementById('heroBillboard').classList.remove('hidden');
+    document.getElementById('dynamicSections').classList.remove('hidden');
+    document.getElementById('categoryView').classList.add('hidden');
+
+    const container = document.getElementById('dynamicSections');
+    if (!silent) container.innerHTML = `
+      <div class="loading-spinner-wrapper">
+        <div class="spinner"></div>
+        <p>Đang tải kho phim 4K cập nhật mới nhất...</p>
+      </div>
+    `;
+
+    try {
+      const data = await API.getHomeFeed();
+      this.homeFeedUpdatedAt = data.updatedAt || new Date().toISOString();
+      this.heroList = data.hero || [];
+      if (this.heroList.length > 0) {
+        if (window.Coverflow) {
+          Coverflow.init(this.heroList);
+        }
+        this.renderHeroBillboard(this.heroList[0]);
+        this.startHeroRotation();
+      }
+
+      if (window.ContinueWatching) {
+        ContinueWatching.render();
+      }
+
+      container.innerHTML = '';
+      (data.sections || []).forEach(sec => {
+        const secEl = this.createSectionElement(sec);
+        container.appendChild(secEl);
+      });
+    } catch (err) {
+      if (silent) return;
+      container.innerHTML = `
+        <div class="loading-spinner-wrapper">
+          <p style="color: #f87171;">❌ Lỗi kết nối máy chủ dữ liệu phim. Vui lòng thử lại sau!</p>
+          <button class="btn-primary" style="width: auto; margin-top: 10px;" onclick="App.loadHomeFeed()">Thử Lại</button>
+        </div>
+      `;
+    } finally {
+      this.homeFeedLoading = false;
+    }
+  },
+
+  startHomeFeedRefresh() {
+    clearInterval(this.feedRefreshTimer);
+    this.feedRefreshTimer = setInterval(() => {
+      if (!document.hidden && this.currentCategory === 'home') {
+        this.loadHomeFeed({ silent: true });
+      }
+    }, 120000);
+  },
+
+  renderHeroBillboard(movie) {
+    this.currentHeroMovie = movie;
+    const backdropEl = document.getElementById('heroBackdrop');
+    const titleEl = document.getElementById('heroTitle');
+    const subEl = document.getElementById('heroSub');
+    const descEl = document.getElementById('heroDesc');
+    const yearEl = document.getElementById('heroYear');
+    const qualityEl = document.getElementById('heroQuality');
+
+    // KKPhim poster / thumb URL resolver
+    this.setBackgroundImage(backdropEl, movie.thumb_url || movie.poster_url);
+
+    titleEl.textContent = movie.name;
+    subEl.textContent = movie.origin_name || '';
+    yearEl.textContent = movie.year || '2026';
+    qualityEl.textContent = movie.quality || '4K Ultra HD';
+    descEl.textContent = movie.content ? movie.content.replace(/<[^>]*>?/gm, '') : 'Trải nghiệm điện ảnh đỉnh cao với chất lượng hình ảnh 4K sắc nét và âm thanh sống động.';
+  },
+
+  startHeroRotation() {
+    if (this.heroRotateTimer) clearInterval(this.heroRotateTimer);
+    let index = 0;
+    this.heroRotateTimer = setInterval(() => {
+      if (this.heroList.length > 1 && this.currentCategory === 'home') {
+        index = (index + 1) % this.heroList.length;
+        this.renderHeroBillboard(this.heroList[index]);
+      }
+    }, 9000);
+  },
+
+  createSectionElement(section) {
+    const sec = document.createElement('section');
+    sec.className = 'movie-section';
+
+    sec.innerHTML = `
+      <div class="section-header">
+        <h2 class="section-title">${this.escapeHtml(section.title)}</h2>
+        ${section.id === 'latest' && this.homeFeedUpdatedAt ? `<span class="section-update-status">Cập nhật ${new Date(this.homeFeedUpdatedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</span>` : ''}
+      </div>
+      <div class="movie-row"></div>
+    `;
+
+    const row = sec.querySelector('.movie-row');
+    (section.items || []).forEach(movie => {
+      const card = this.createMovieCard(movie);
+      row.appendChild(card);
+    });
+
+    return sec;
+  },
+
+  createMovieCard(movie) {
+    const card = document.createElement('div');
+    card.className = 'movie-card';
+    card.onclick = () => this.openMovieDetail(movie.slug);
+
+    const posterUrl = this.resolveImageUrl(movie.poster_url || movie.thumb_url);
+    const epCurrent = movie.episode_current || movie.episode_total || '';
+
+    card.innerHTML = `
+      <div class="card-poster-wrapper">
+        <img class="card-poster" src="${posterUrl}" alt="${this.escapeHtml(movie.name || 'Poster phim')}" loading="lazy" />
+        <span class="card-badge-quality">${this.escapeHtml(movie.quality || 'FHD')}</span>
+        ${epCurrent ? `<span class="card-badge-ep">${this.escapeHtml(epCurrent)}</span>` : ''}
+      </div>
+      <div class="card-info">
+        <h4 class="card-title" title="${this.escapeHtml(movie.name || '')}">${this.escapeHtml(movie.name || 'Đang cập nhật')}</h4>
+        <div class="card-meta">
+          <span>${this.escapeHtml(movie.year || '2026')}</span>
+          <span>${this.escapeHtml(movie.lang || 'Vietsub')}</span>
+        </div>
+      </div>
+    `;
+
+    this.attachPosterFallback(card.querySelector('.card-poster'));
+
+    return card;
+  },
+
+  resolveImageUrl(path) {
+    const value = String(path || '').trim();
+    if (!value) return this.posterFallbackUrl();
+    if (value.startsWith('//')) return `https:${value}`;
+    if (value.startsWith('https://') || value.startsWith('http://')) return value;
+    if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return this.posterFallbackUrl();
+    return `https://phimimg.com/${value.replace(/^\/+/, '')}`;
+  },
+
+  posterFallbackUrl() {
+    return '/media/poster-fallback.svg';
+  },
+
+  attachPosterFallback(image) {
+    if (!image) return;
+    image.addEventListener('error', () => {
+      if (image.dataset.posterFallback === '1') return;
+      image.dataset.posterFallback = '1';
+      image.src = this.posterFallbackUrl();
+    }, { once: true });
+  },
+
+  setBackgroundImage(element, source) {
+    if (!element) return;
+    const primary = this.resolveImageUrl(source);
+    const preload = new Image();
+    preload.onload = () => { element.style.backgroundImage = `url("${primary}")`; };
+    preload.onerror = () => { element.style.backgroundImage = `url("${this.posterFallbackUrl()}")`; };
+    preload.src = primary;
+  },
+
+  escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>'"]/g, character => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+    })[character]);
+  },
+
+  // =================================================
+  // 2. CATEGORY VIEWS & PAGINATION
+  // =================================================
+  async switchCategory(category, page = 1) {
+    if (category === 'home') {
+      this.loadHomeFeed();
+      return;
+    }
+
+    this.currentCategory = category;
+    this.currentPage = page;
+    this.updateActiveNav(category);
+
+    document.getElementById('heroBillboard').classList.add('hidden');
+    document.getElementById('dynamicSections').classList.add('hidden');
+    const catView = document.getElementById('categoryView');
+    catView.classList.remove('hidden');
+
+    const grid = document.getElementById('categoryGrid');
+    const paginationBox = document.getElementById('paginationBox');
+    const titleEl = document.getElementById('categoryTitle');
+    const countEl = document.getElementById('categoryCount');
+
+    titleEl.textContent = this.getCategoryDisplayName(category);
+    grid.innerHTML = `
+      <div class="loading-spinner-wrapper" style="grid-column: 1 / -1;">
+        <div class="spinner"></div>
+        <p>Đang tải danh sách phim...</p>
+      </div>
+    `;
+    paginationBox.innerHTML = '';
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    try {
+      const data = await API.getCategory(category, page);
+      grid.innerHTML = '';
+      const items = data.items || [];
+      countEl.textContent = `(Trang ${page} - ${items.length} phim)`;
+
+      if (items.length === 0) {
+        grid.innerHTML = '<p style="grid-column: 1 / -1; text-align: center; color: var(--text-dim);">Không có phim nào.</p>';
+        return;
+      }
+
+      items.forEach(movie => {
+        grid.appendChild(this.createMovieCard(movie));
+      });
+
+      this.renderPagination(paginationBox, category, page, data.pagination?.totalPages || 50);
+    } catch (err) {
+      grid.innerHTML = '<p style="grid-column: 1 / -1; text-align: center; color: #f87171;">Lỗi tải dữ liệu phim thể loại này.</p>';
+    }
+  },
+
+  getCategoryDisplayName(cat) {
+    switch (cat) {
+      case 'phim-moi-cap-nhat': return '🔥 Phim Mới Cập Nhật';
+      case 'phim-le': return '🎬 Phim Lẻ Đỉnh Cao';
+      case 'phim-bo': return '📺 Phim Bộ Chọn Lọc';
+      case 'hoat-hinh': return '✨ Hoạt Hình & Anime';
+      case 'tv-shows': return '🎤 TV Shows Hấp Dẫn';
+      default: return 'Danh Mục Phim';
+    }
+  },
+
+  updateActiveNav(cat) {
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.cat === cat);
+    });
+  },
+
+  renderPagination(container, category, currentPage, totalPages) {
+    container.innerHTML = '';
+    const maxPages = Math.min(totalPages || 50, 50);
+
+    // Prev button
+    if (currentPage > 1) {
+      const prev = document.createElement('button');
+      prev.className = 'page-btn';
+      prev.textContent = '« Trang Trước';
+      prev.onclick = () => this.switchCategory(category, currentPage - 1);
+      container.appendChild(prev);
+    }
+
+    // Page indicator
+    const info = document.createElement('span');
+    info.style.color = '#fff';
+    info.style.fontWeight = 'bold';
+    info.style.margin = '0 10px';
+    info.textContent = `Trang ${currentPage} / ${maxPages}`;
+    container.appendChild(info);
+
+    // Next button
+    if (currentPage < maxPages) {
+      const next = document.createElement('button');
+      next.className = 'page-btn';
+      next.textContent = 'Trang Kế »';
+      next.onclick = () => this.switchCategory(category, currentPage + 1);
+      container.appendChild(next);
+    }
+  },
+
+  // =================================================
+  // 3. INSTANT & FULL SEARCH
+  // =================================================
+  async performInstantSearch(query) {
+    const dropdown = document.getElementById('searchDropdown');
+    try {
+      const data = await API.search(query, 1);
+      const items = (data.items || []).slice(0, 6);
+      if (items.length === 0) {
+        dropdown.innerHTML = '<div style="padding: 14px; text-align: center; color: var(--text-dim); font-size: 13px;">Không tìm thấy phim phù hợp</div>';
+        dropdown.classList.remove('hidden');
+        return;
+      }
+
+      dropdown.innerHTML = '';
+      items.forEach(movie => {
+        const item = document.createElement('div');
+        item.className = 'search-item';
+        item.onclick = () => {
+          this.hideSearchDropdown();
+          this.openMovieDetail(movie.slug);
+        };
+
+        const posterUrl = this.resolveImageUrl(movie.poster_url || movie.thumb_url);
+        item.innerHTML = `
+          <img class="search-thumb" src="${posterUrl}" alt="${this.escapeHtml(movie.name || 'Poster phim')}" />
+          <div class="search-info">
+            <div class="search-title">${this.escapeHtml(movie.name || 'Đang cập nhật')}</div>
+            <div class="search-sub">${this.escapeHtml(movie.origin_name || '')} (${this.escapeHtml(movie.year || '2026')})</div>
+          </div>
+        `;
+        this.attachPosterFallback(item.querySelector('.search-thumb'));
+        dropdown.appendChild(item);
+      });
+
+      dropdown.classList.remove('hidden');
+    } catch (err) {
+      dropdown.classList.add('hidden');
+    }
+  },
+
+  hideSearchDropdown() {
+    document.getElementById('searchDropdown').classList.add('hidden');
+  },
+
+  async loadFullSearch(query, page = 1) {
+    document.getElementById('heroBillboard').classList.add('hidden');
+    document.getElementById('dynamicSections').classList.add('hidden');
+    const catView = document.getElementById('categoryView');
+    catView.classList.remove('hidden');
+
+    const grid = document.getElementById('categoryGrid');
+    const titleEl = document.getElementById('categoryTitle');
+    const countEl = document.getElementById('categoryCount');
+    const paginationBox = document.getElementById('paginationBox');
+
+    titleEl.textContent = `🔍 Kết quả tìm kiếm: "${query}"`;
+    grid.innerHTML = '<div class="loading-spinner-wrapper" style="grid-column: 1 / -1;"><div class="spinner"></div><p>Đang tìm kiếm...</p></div>';
+    paginationBox.innerHTML = '';
+
+    try {
+      const data = await API.search(query, page);
+      const items = data.items || [];
+      countEl.textContent = `(${items.length} phim)`;
+      grid.innerHTML = '';
+
+      if (items.length === 0) {
+        grid.innerHTML = '<p style="grid-column: 1 / -1; text-align: center; color: var(--text-dim); padding: 40px 0;">Không tìm thấy phim nào khớp với từ khóa.</p>';
+        return;
+      }
+
+      items.forEach(m => grid.appendChild(this.createMovieCard(m)));
+    } catch (err) {
+      grid.innerHTML = '<p style="grid-column: 1 / -1; text-align: center; color: #f87171;">Lỗi tìm kiếm.</p>';
+    }
+  },
+
+  // =================================================
+  // 4. MOVIE DETAIL MODAL & EPISODES
+  // =================================================
+  async openMovieDetail(slug) {
+    const modal = document.getElementById('movieModal');
+    modal.classList.remove('hidden');
+    document.body.classList.add('locked');
+
+    // Reset fields while loading
+    document.getElementById('detailName').textContent = 'Đang tải thông tin phim...';
+    document.getElementById('detailOriginName').textContent = '';
+    document.getElementById('detailContent').textContent = 'Vui lòng chờ trong giây lát...';
+    document.getElementById('detailBadges').innerHTML = '';
+    document.getElementById('detailMetaGrid').innerHTML = '';
+    document.getElementById('serverTabs').innerHTML = '';
+    document.getElementById('episodesList').innerHTML = '<div class="spinner"></div>';
+
+    try {
+      const data = await API.getDetail(slug);
+      this.activeMovieDetail = data;
+      this.activeServerIndex = 0;
+      this.renderDetailModalContent(data);
+    } catch (err) {
+      document.getElementById('detailName').textContent = 'Không thể tải chi tiết phim';
+      document.getElementById('detailContent').textContent = 'Đã có lỗi xảy ra hoặc phim này không tồn tại trên hệ thống.';
+    }
+  },
+
+  renderDetailModalContent(data) {
+    const movie = data.movie;
+    const episodes = data.episodes || [];
+
+    document.getElementById('detailName').textContent = movie.name;
+    document.getElementById('detailOriginName').textContent = movie.origin_name || '';
+    
+    // Poster and Backdrop
+    const posterUrl = this.resolveImageUrl(movie.poster_url || movie.thumb_url);
+    const thumbUrl = this.resolveImageUrl(movie.thumb_url || movie.poster_url);
+    const detailPoster = document.getElementById('detailPoster');
+    detailPoster.src = posterUrl;
+    this.attachPosterFallback(detailPoster);
+    this.setBackgroundImage(document.getElementById('detailBackdrop'), thumbUrl);
+
+    // Badges
+    const badgesBox = document.getElementById('detailBadges');
+    badgesBox.innerHTML = `
+      <span class="detail-badge badge-red">${movie.quality || 'FHD'}</span>
+      <span class="detail-badge">${movie.year || '2026'}</span>
+      <span class="detail-badge">${movie.time || 'Đang cập nhật'}</span>
+      <span class="detail-badge">${movie.episode_current || movie.episode_total || 'Trọn bộ'}</span>
+      <span class="detail-badge">${movie.lang || 'Vietsub'}</span>
+    `;
+
+    // Synopsis
+    const cleanContent = movie.content ? movie.content.replace(/<[^>]*>?/gm, '') : 'Không có mô tả chi tiết.';
+    document.getElementById('detailContent').textContent = cleanContent;
+
+    // Meta grid
+    const metaGrid = document.getElementById('detailMetaGrid');
+    const categories = (movie.category || []).map(c => c.name).join(', ') || 'Đang cập nhật';
+    const countries = (movie.country || []).map(c => c.name).join(', ') || 'Đang cập nhật';
+    const actors = (movie.actor || []).slice(0, 5).join(', ') || 'Đang cập nhật';
+    const directors = (movie.director || []).join(', ') || 'Đang cập nhật';
+
+    metaGrid.innerHTML = `
+      <div><strong>Thể loại:</strong> ${categories}</div>
+      <div><strong>Quốc gia:</strong> ${countries}</div>
+      <div><strong>Đạo diễn:</strong> ${directors}</div>
+      <div><strong>Diễn viên:</strong> ${actors}</div>
+    `;
+
+    // Render Server Tabs
+    this.renderServerTabs(episodes);
+  },
+
+  renderServerTabs(episodes = []) {
+    const tabsContainer = document.getElementById('serverTabs');
+    tabsContainer.innerHTML = '';
+
+    if (episodes.length === 0) {
+      document.getElementById('episodesList').innerHTML = '<p style="color: var(--text-dim);">Chưa có tập phim nào.</p>';
+      return;
+    }
+
+    episodes.forEach((server, idx) => {
+      const btn = document.createElement('button');
+      btn.className = `server-tab ${idx === this.activeServerIndex ? 'active' : ''}`;
+      btn.textContent = server.server_name || `Server #${idx + 1}`;
+      btn.onclick = () => {
+        this.activeServerIndex = idx;
+        this.renderServerTabs(episodes);
+      };
+      tabsContainer.appendChild(btn);
+    });
+
+    // Render Episodes for active server
+    const currentServer = episodes[this.activeServerIndex] || episodes[0];
+    const epList = currentServer.server_data || [];
+    const listContainer = document.getElementById('episodesList');
+    listContainer.innerHTML = '';
+
+    epList.forEach((ep, epIdx) => {
+      const epBtn = document.createElement('button');
+      epBtn.className = 'ep-btn';
+      epBtn.textContent = ep.name || `Tập ${epIdx + 1}`;
+      epBtn.title = ep.filename || ep.name;
+      epBtn.onclick = () => {
+        Player.open(this.activeMovieDetail.movie, ep, epList, epIdx, this.activeMovieDetail.episodes, this.activeServerIndex);
+      };
+      listContainer.appendChild(epBtn);
+    });
+  },
+
+  playCurrentFirstEpisode() {
+    if (!this.activeMovieDetail) return;
+    const episodes = this.activeMovieDetail.episodes || [];
+    if (episodes.length > 0 && episodes[0].server_data?.length > 0) {
+      const currentServer = episodes[this.activeServerIndex] || episodes[0];
+      const epList = currentServer.server_data;
+      Player.open(this.activeMovieDetail.movie, epList[0], epList, 0, this.activeMovieDetail.episodes, this.activeServerIndex);
+    }
+  },
+
+  onTabSearchInput(e) {
+    const val = e.target.value.trim();
+    clearTimeout(this.tabSearchTimer);
+    const container = document.getElementById('tabSearchResults');
+    if (!val) {
+      if (container) container.innerHTML = '';
+      return;
+    }
+    this.tabSearchTimer = setTimeout(async () => {
+      try {
+        if (container) {
+          container.innerHTML = '<div class="loading-spinner-wrapper"><div class="spinner"></div><p>Đang tìm kiếm...</p></div>';
+        }
+        const data = await API.search(val, 1);
+        if (container) {
+          container.innerHTML = '';
+          const items = data.items || [];
+          if (items.length === 0) {
+            container.innerHTML = '<p style="color: #9ca3af; text-align: center; grid-column: 1/-1; padding: 40px;">Không tìm thấy phim phù hợp.</p>';
+            return;
+          }
+          items.forEach(m => {
+            container.appendChild(this.createMovieCard(m));
+          });
+        }
+      } catch (err) {}
+    }, 350);
+  },
+
+  quickSearch(keyword) {
+    const input = document.getElementById('tabSearchInput');
+    if (input) {
+      input.value = keyword;
+      this.onTabSearchInput({ target: input });
+    }
+  }
+};
+
+// Global Helpers for HTML inline calls
+function switchCategory(cat) { App.switchCategory(cat); }
+function clearSearch() {
+  const input = document.getElementById('searchInput');
+  input.value = '';
+  document.getElementById('searchClear').classList.add('hidden');
+  App.hideSearchDropdown();
+}
+
+function playHeroMovie() {
+  if (App.currentHeroMovie) {
+    App.openMovieDetail(App.currentHeroMovie.slug);
+  }
+}
+
+function infoHeroMovie() {
+  if (App.currentHeroMovie) {
+    App.openMovieDetail(App.currentHeroMovie.slug);
+  }
+}
+
+function hideMovieModal() {
+  document.getElementById('movieModal').classList.add('hidden');
+  document.body.classList.remove('locked');
+}
+
+function closeMovieModal(e) {
+  if (e.target.id === 'movieModal') {
+    hideMovieModal();
+  }
+}
+
+function playCurrentFirstEpisode() {
+  App.playCurrentFirstEpisode();
+}
+
+// Attach App to window
+window.App = App;
+
+document.addEventListener('DOMContentLoaded', () => {
+  App.init();
+});

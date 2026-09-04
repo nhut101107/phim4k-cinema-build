@@ -1,0 +1,81 @@
+name: Build Phim4K unsigned IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: Public HTTPS origin of the Phim4K API (for example https://api.example.com)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build-ios:
+    name: Build unsigned iPhone IPA
+    runs-on: macos-14
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Verify iOS shell inputs
+        run: npm run ios:verify
+
+      - name: Prepare native web bundle
+        run: npm run ios:prepare
+
+      - name: Set public API origin for this build
+        env:
+          PHIM4K_API_BASE_URL: ${{ inputs.api_base_url }}
+        run: node scripts/set-mobile-api-url.js
+
+      - name: Sync Capacitor iOS project
+        run: npx cap sync ios
+
+      - name: Build unsigned iPhone application
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -target App \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package and validate IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_path="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/App.app"
+          test -d "$app_path"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Info.plist")" = "com.phim4k.cinema"
+          package_dir="$RUNNER_TEMP/phim4k-ipa"
+          mkdir -p "$package_dir/Payload"
+          cp -R "$app_path" "$package_dir/Payload/App.app"
+          (cd "$package_dir" && /usr/bin/zip -qry "$GITHUB_WORKSPACE/Phim4K-Cinema-unsigned.ipa" Payload)
+          /usr/bin/unzip -t "$GITHUB_WORKSPACE/Phim4K-Cinema-unsigned.ipa"
+
+      - name: Upload unsigned IPA for ESign
+        uses: actions/upload-artifact@v4
+        with:
+          name: Phim4K-Cinema-unsigned-ipa
+          path: Phim4K-Cinema-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7

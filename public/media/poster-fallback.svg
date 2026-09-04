@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 1080" role="img" aria-label="Phim 4K">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#202b48"/>
+      <stop offset=".5" stop-color="#111827"/>
+      <stop offset="1" stop-color="#090d17"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="30%" r="55%">
+      <stop stop-color="#ef4444" stop-opacity=".55"/>
+      <stop offset="1" stop-color="#ef4444" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="720" height="1080" fill="url(#bg)"/>
+  <rect width="720" height="1080" fill="url(#glow)"/>
+  <path d="M267 389c0-25 28-40 49-26l183 107c21 12 21 42 0 54L316 631c-21 13-49-2-49-26V389Z" fill="#fff" fill-opacity=".92"/>
+  <text x="360" y="748" text-anchor="middle" fill="#fff" font-family="Arial, sans-serif" font-size="58" font-weight="700">PHIM 4K</text>
+  <text x="360" y="808" text-anchor="middle" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="26" letter-spacing="6">CINEMA</text>
+</svg>
