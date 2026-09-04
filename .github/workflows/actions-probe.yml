@@ -2,6 +2,11 @@ name: Actions availability probe
 
 on:
   workflow_dispatch:
+    inputs:
+      health_url:
+        description: Optional public health endpoint to verify from a hosted runner
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -13,3 +18,7 @@ jobs:
     steps:
       - name: Confirm hosted runner availability
         run: echo "GitHub Actions runner is available"
+
+      - name: Verify public backend health
+        if: ${{ inputs.health_url != '' }}
+        run: curl --fail --show-error --max-time 20 "${{ inputs.health_url }}"
