@@ -14,10 +14,10 @@ permissions:
 jobs:
   build-ios:
     name: Build unsigned iPhone IPA
-    # macos-13 is the broadly available standard Intel runner for private
-    # repositories. The Capacitor project builds for the iPhone SDK, not the
-    # runner architecture.
-    runs-on: macos-13
+    # macos-13 was retired from GitHub-hosted runners. Use the supported
+    # Intel image so the iPhone SDK build remains compatible with this
+    # Capacitor project.
+    runs-on: macos-15-intel
     timeout-minutes: 30
 
     steps:
