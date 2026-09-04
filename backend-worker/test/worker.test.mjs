@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker, { json } from "../src/worker.mjs";
+import worker, { createRateLimiter, json } from "../src/worker.mjs";
 
 test("health reports an unconfigured database without exposing settings", async () => {
   const response = await worker.fetch(new Request("https://example.workers.dev/api/health"), {});
@@ -20,5 +20,37 @@ test("JSON responses include CORS and no-store headers", async () => {
   const response = json({ ok: true });
   assert.equal(response.headers.get("access-control-allow-origin"), "*");
   assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(response.headers.get("x-content-type-options"), "nosniff");
 });
 
+test("admin master key is normalized but restricted to its configured Telegram ID", async () => {
+  const db = {
+    prepare() {
+      return { bind() { return { first: async () => null }; } };
+    },
+  };
+  const env = { DB: db, ADMIN_LICENSE_KEY: "mnhut", ADMIN_TELEGRAM_ID: "5992662564" };
+  const makeRequest = (telegramId) => new Request("https://example.workers.dev/api/auth/activate", {
+    method: "POST",
+    headers: { "content-type": "application/json", "cf-connecting-ip": telegramId },
+    body: JSON.stringify({ key: "MNHUT", telegramId, deviceId: "device-1" }),
+  });
+
+  const allowed = await worker.fetch(makeRequest("5992662564"), env);
+  assert.equal(allowed.status, 200);
+  assert.equal((await allowed.json()).isAdmin, true);
+
+  const denied = await worker.fetch(makeRequest("5992662565"), env);
+  assert.equal(denied.status, 403);
+  assert.equal((await denied.json()).code, "ADMIN_TELEGRAM_REQUIRED");
+});
+
+test("auth activation is rate limited with a retry window", () => {
+  const limiter = createRateLimiter();
+  const request = new Request("https://example.workers.dev/api/auth/activate", {
+    headers: { "cf-connecting-ip": "203.0.113.9" },
+  });
+  for (let index = 0; index < 10; index += 1) assert.equal(limiter(request, "/api/auth/activate", 1000), null);
+  assert.equal(limiter(request, "/api/auth/activate", 1000), 60);
+  assert.equal(limiter(request, "/api/auth/activate", 61000), null);
+});

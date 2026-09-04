@@ -347,7 +347,7 @@
           </div>
           <div class="acc-detail-item">
             <span>Phiên bản ứng dụng:</span>
-            <span>v3.1.0 VIP Master (Bản Standalone)</span>
+            <span>v3.1.1 VIP Master</span>
           </div>
         </div>
 
@@ -709,6 +709,21 @@
           <div id="adminFormAlert" class="gate-message hidden"></div>
         </div>
 
+        <div class="admin-section-box">
+          <h3>🔐 Đổi key Admin</h3>
+          <p class="admin-desc">Chỉ Telegram ID quản trị mới đổi được. Key mới không được đưa vào IPA hoặc log; backend chỉ lưu bản băm.</p>
+          <form id="rotateMasterKeyForm" onsubmit="Admin.rotateMasterKey(event)" class="create-key-form">
+            <div class="form-row">
+              <div class="form-group flex-2">
+                <label>Key Admin mới (12–64 ký tự: A–Z, số, dấu gạch ngang):</label>
+                <input type="password" id="adminNewMasterKey" autocomplete="new-password" minlength="12" maxlength="64" pattern="[A-Za-z0-9-]{12,64}" required />
+              </div>
+            </div>
+            <button type="submit" class="btn-primary" style="margin-top: 10px;">ĐỔI KEY ADMIN</button>
+          </form>
+          <div id="adminMasterKeyAlert" class="gate-message hidden"></div>
+        </div>
+
         <!-- Keys Management Table -->
         <div class="admin-section-box">
           <div class="table-header-row">
@@ -989,7 +1004,7 @@
           <div class="card-os-icon">🍏</div>
           <h3>iPhone / iPad (File IPA)</h3>
           <p>Dành cho cài đặt qua Sideloadly, AltStore, Scarlet, TrollStore, Esign.</p>
-          <span class="card-meta" id="metaIpaVer">v3.1.0 • 41.8 MB • iOS 14+</span>
+          <span class="card-meta" id="metaIpaVer">v3.1.1 • ~2.1 MB • iOS 14+</span>
           <a id="btnDownloadIpa" href="/download/ipa" class="btn-download-action btn-ipa" download>
             Tải File .IPA
           </a>

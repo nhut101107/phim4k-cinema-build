@@ -4,7 +4,8 @@ const Admin = {
   currentTab: 'keys',
 
   async open() {
-    if (!window.Auth?.activeKeyData?.isAdmin) {
+    const configuredAdminTelegram = '5992662564';
+    if (!window.Auth?.activeKeyData?.isAdmin || String(window.Auth?.activeKeyData?.telegramId || '') !== configuredAdminTelegram) {
       alert('Truy cập bị từ chối: chỉ tài khoản quản trị đã được máy chủ xác thực mới được mở Panel Quản trị.');
       return;
     }
@@ -52,6 +53,42 @@ const Admin = {
       'x-license-key': localStorage.getItem('phim4k_key') || '',
       'x-telegram-id': localStorage.getItem('phim4k_telegram_id') || ''
     };
+  },
+
+  async rotateMasterKey(event) {
+    event.preventDefault();
+    const input = document.getElementById('adminNewMasterKey');
+    const alertEl = document.getElementById('adminMasterKeyAlert');
+    const newKey = String(input?.value || '').trim().toUpperCase();
+
+    if (!/^[A-Z0-9][A-Z0-9-]{11,63}$/.test(newKey)) {
+      alertEl.textContent = 'Key Admin mới phải dài 12–64 ký tự, chỉ gồm A–Z, số hoặc dấu gạch ngang.';
+      alertEl.className = 'gate-message error';
+      alertEl.classList.remove('hidden');
+      return;
+    }
+    if (!confirm('Đổi key Admin? Key cũ sẽ bị vô hiệu ngay sau khi đổi.')) return;
+
+    try {
+      const res = await fetch('/api/admin/rotate-master-key', {
+        method: 'POST',
+        headers: this.getAdminHeaders(),
+        body: JSON.stringify({ newKey })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || data.message || `HTTP ${res.status}`);
+
+      localStorage.setItem('phim4k_key', newKey);
+      if (window.Auth?.activeKeyData) window.Auth.activeKeyData.key = newKey;
+      input.value = '';
+      alertEl.textContent = 'Đã đổi key Admin. Chỉ Telegram ID quản trị này dùng được key mới.';
+      alertEl.className = 'gate-message success';
+      alertEl.classList.remove('hidden');
+    } catch (error) {
+      alertEl.textContent = `Không thể đổi key: ${error.message}`;
+      alertEl.className = 'gate-message error';
+      alertEl.classList.remove('hidden');
+    }
   },
 
   // ====================================================

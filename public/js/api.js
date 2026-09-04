@@ -14,7 +14,7 @@ const API = {
   },
 
   getVersion() {
-    return '3.1.0';
+    return '3.1.1';
   },
 
   async request(endpoint, options = {}) {
