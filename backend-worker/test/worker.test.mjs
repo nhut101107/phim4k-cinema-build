@@ -52,7 +52,29 @@ test("auth activation is rate limited with a retry window", () => {
   const request = new Request("https://example.workers.dev/api/auth/activate", {
     headers: { "cf-connecting-ip": "203.0.113.9" },
   });
-  for (let index = 0; index < 10; index += 1) assert.equal(limiter(request, "/api/auth/activate", 1000), null);
+  for (let index = 0; index < 20; index += 1) assert.equal(limiter(request, "/api/auth/activate", 1000), null);
   assert.equal(limiter(request, "/api/auth/activate", 1000), 60);
   assert.equal(limiter(request, "/api/auth/activate", 61000), null);
+});
+
+test("edge rate-limit denial returns 429 before the backend is used", async () => {
+  let limiterCalls = 0;
+  const response = await worker.fetch(
+    new Request("https://example.workers.dev/api/health", {
+      headers: { "cf-connecting-ip": "203.0.113.14" },
+    }),
+    {
+      PUBLIC_RATE_LIMITER: {
+        async limit({ key }) {
+          limiterCalls += 1;
+          assert.equal(key, "/api/health:203.0.113.14");
+          return { success: false };
+        },
+      },
+    },
+  );
+  assert.equal(limiterCalls, 1);
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get("retry-after"), "60");
+  assert.equal((await response.json()).code, "RATE_LIMITED");
 });

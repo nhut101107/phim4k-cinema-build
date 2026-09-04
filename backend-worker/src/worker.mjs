@@ -20,10 +20,10 @@ const MASTER_KEY_MIN_LENGTH = 12;
 const MAX_JSON_BODY_BYTES = 16 * 1024;
 const ADMIN_KEY_HASH_SETTING = "admin_key_hmac_v1";
 const RATE_LIMITS = Object.freeze({
-  authActivate: { limit: 10, windowSeconds: 60 },
-  authStatus: { limit: 60, windowSeconds: 60 },
+  authActivate: { limit: 20, windowSeconds: 60 },
+  authStatus: { limit: 120, windowSeconds: 60 },
   admin: { limit: 30, windowSeconds: 60 },
-  default: { limit: 120, windowSeconds: 60 },
+  default: { limit: 240, windowSeconds: 60 },
 });
 
 const now = () => new Date().toISOString();
@@ -118,6 +118,35 @@ function ratePolicy(pathname) {
   if (pathname === "/api/auth/status") return RATE_LIMITS.authStatus;
   if (pathname.startsWith("/api/admin/")) return RATE_LIMITS.admin;
   return RATE_LIMITS.default;
+}
+
+function distributedRateBinding(pathname, env) {
+  if (pathname === "/api/auth/activate") return env.ACTIVATION_RATE_LIMITER;
+  if (pathname === "/api/auth/status") return env.STATUS_RATE_LIMITER;
+  if (pathname.startsWith("/api/admin/")) return env.ADMIN_RATE_LIMITER;
+  return env.PUBLIC_RATE_LIMITER;
+}
+
+function distributedRateKey(request, pathname) {
+  const ip = getClientIp(request);
+  // Activation and administrative attempts are limited by edge IP. Status
+  // checks use a stable identity so carrier NATs do not throttle viewers.
+  if (pathname === "/api/auth/status") {
+    return `status:${requestKey(request) || requestTelegram(request) || ip}`;
+  }
+  return `${pathname}:${ip}`;
+}
+
+async function distributedRetryAfter(request, pathname, env) {
+  const binding = distributedRateBinding(pathname, env);
+  if (!binding || typeof binding.limit !== "function") return null;
+  try {
+    const result = await binding.limit({ key: distributedRateKey(request, pathname) });
+    return result?.success === false ? ratePolicy(pathname).windowSeconds : null;
+  } catch (_error) {
+    // Keep the short-lived limiter active if the edge binding has a transient error.
+    return null;
+  }
 }
 
 export function createRateLimiter() {
@@ -548,10 +577,15 @@ export default {
     const url = new URL(request.url);
     const { pathname } = url;
     try {
-      const retryAfter = rateLimit(request, pathname);
-      if (retryAfter) {
+      const localRetryAfter = rateLimit(request, pathname);
+      if (localRetryAfter) {
         rateLimitBlocked += 1;
-        return json({ success: false, active: false, code: "RATE_LIMITED", error: "Too many requests. Please retry later.", retryAfter }, 429, { "retry-after": String(retryAfter) });
+        return json({ success: false, active: false, code: "RATE_LIMITED", error: "Too many requests. Please retry later.", retryAfter: localRetryAfter }, 429, { "retry-after": String(localRetryAfter) });
+      }
+      const edgeRetryAfter = await distributedRetryAfter(request, pathname, env);
+      if (edgeRetryAfter) {
+        rateLimitBlocked += 1;
+        return json({ success: false, active: false, code: "RATE_LIMITED", error: "Too many requests. Please retry later.", retryAfter: edgeRetryAfter }, 429, { "retry-after": String(edgeRetryAfter) });
       }
       if (request.method === "POST" && contentLengthTooLarge(request)) {
         return textError("Request body is too large.", 413, "REQUEST_TOO_LARGE");
