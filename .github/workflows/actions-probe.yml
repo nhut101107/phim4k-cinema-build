@@ -7,6 +7,10 @@ on:
         description: Optional public health endpoint to verify from a hosted runner
         required: false
         type: string
+      auth_status_url:
+        description: Optional harmless license-status URL expected to return KEY_NOT_FOUND
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -22,3 +26,14 @@ jobs:
       - name: Verify public backend health
         if: ${{ inputs.health_url != '' }}
         run: curl --fail --show-error --max-time 20 "${{ inputs.health_url }}"
+
+      - name: Verify license backend fails closed for an unknown key
+        if: ${{ inputs.auth_status_url != '' }}
+        env:
+          AUTH_STATUS_URL: ${{ inputs.auth_status_url }}
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          status="$(curl --silent --show-error --max-time 20 --output "$response_file" --write-out '%{http_code}' "$AUTH_STATUS_URL")"
+          test "$status" = "404"
+          grep -q '"code":"KEY_NOT_FOUND"' "$response_file"
