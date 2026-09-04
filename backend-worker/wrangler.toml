@@ -1,0 +1,11 @@
+name = "phim4k-license-api"
+main = "src/worker.mjs"
+compatibility_date = "2026-09-04"
+
+# Create the D1 database after logging in, then replace this placeholder with
+# the ID printed by `wrangler d1 create phim4k-license`.
+[[d1_databases]]
+binding = "DB"
+database_name = "phim4k-license"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
