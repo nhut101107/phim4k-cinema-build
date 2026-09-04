@@ -1,0 +1,15 @@
+name: Actions availability probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Confirm hosted runner availability
+        run: echo "GitHub Actions runner is available"
