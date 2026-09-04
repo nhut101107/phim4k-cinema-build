@@ -57,7 +57,7 @@ const Auth = {
 
     try {
       const res = await API.checkStatus(savedKey, savedTeleId, deviceId);
-      if (res.code === 'FORCE_UPDATE_REQUIRED') {
+      if (res.forceUpdate || res.code === 'FORCE_UPDATE_REQUIRED') {
         showForceUpdateModal(res);
         return;
       }
@@ -198,7 +198,7 @@ const Auth = {
         if (!res.active) {
           console.warn('Heartbeat detected expired, blocked, or device/tele mismatch:', res);
           
-          if (res.code === 'FORCE_UPDATE_REQUIRED') {
+        if (res.forceUpdate || res.code === 'FORCE_UPDATE_REQUIRED') {
             showForceUpdateModal(res);
             return;
           }
@@ -266,6 +266,10 @@ async function handleActivation(e) {
       msgEl.className = 'gate-message success';
       msgEl.classList.remove('hidden');
       
+      if (res.forceUpdate) {
+        showForceUpdateModal(res);
+        return;
+      }
       setTimeout(() => {
         Auth.unlockApp(res);
         if (res.isAdmin) {

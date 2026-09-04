@@ -8,13 +8,16 @@
     "ios:prepare": "node scripts/prepare-ios-web.js",
     "ios:sync": "npm run ios:prepare && npx cap sync ios",
     "ios:verify": "node scripts/verify-ios-shell.js",
-    "ios:open": "npx cap open ios"
+    "ios:open": "npx cap open ios",
+    "test:player": "node --test test/player-core.test.js test/player-contract.test.js"
   },
   "dependencies": {
     "@capacitor/core": "8.5.1",
     "@capacitor/ios": "8.5.1",
-    "express": "^4.19.2",
-    "cors": "^2.8.5"
+    "@capacitor/screen-orientation": "8.0.1",
+    "@capacitor/status-bar": "8.0.3",
+    "cors": "^2.8.5",
+    "express": "^4.19.2"
   },
   "devDependencies": {
     "@capacitor/cli": "8.5.1"

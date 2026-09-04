@@ -78,6 +78,22 @@ function appVersion(request) {
   return request.headers.get("x-app-version") || "unknown";
 }
 
+export function compareAppVersions(left, right) {
+  const parse = (value) => String(value || "")
+    .split(".")
+    .slice(0, 4)
+    .map((part) => Number.parseInt(part, 10))
+    .map((part) => (Number.isFinite(part) && part >= 0 ? part : 0));
+  const a = parse(left);
+  const b = parse(right);
+  const length = Math.max(a.length, b.length, 1);
+  for (let index = 0; index < length; index += 1) {
+    const difference = (a[index] || 0) - (b[index] || 0);
+    if (difference) return difference > 0 ? 1 : -1;
+  }
+  return 0;
+}
+
 function requestKey(request) {
   return normalizeKey(request.headers.get("x-license-key"));
 }
@@ -276,7 +292,7 @@ async function getForceUpdate(db, version) {
     const setting = JSON.parse(row.setting_value);
     const enabled = Boolean(setting.enabled);
     const minVersion = String(setting.minVersion || "").trim();
-    const forceUpdate = enabled && minVersion && String(version) < minVersion;
+    const forceUpdate = enabled && minVersion && compareAppVersions(version, minVersion) < 0;
     return {
       forceUpdate,
       isLatest: !forceUpdate,

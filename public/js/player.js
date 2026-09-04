@@ -1,4 +1,5 @@
-// Ad-Free Cinema Video Player with True 4K Detection, Subtitle Protection & Multi-Server Fallback
+// Shared Phim4K player. It stays inside the Capacitor WebView so custom controls,
+// subtitles and the selected server keep their context on every platform.
 
 const Player = {
   video: null,
@@ -13,684 +14,644 @@ const Player = {
   currentServerIndex: 0,
   inactivityTimer: null,
   saveInterval: null,
-  aspectMode: 'contain', // 'contain' (Fit / Safe Sub) or 'cover' (Stretch)
-  isLandscapeForced: false,
+  alertTimer: null,
+  aspectMode: 'contain',
+  isCinemaFullscreen: false,
+  streamSession: 0,
+  activeStreamUrl: '',
+  qualityOptions: [],
+  usingNativeHls: false,
+  failedServerIndexes: new Set(),
+  mediaRecoveryCount: 0,
 
   init() {
+    if (this.video) return;
     this.video = document.getElementById('videoPlayer');
     this.modal = document.getElementById('playerModal');
     this.wrapper = document.getElementById('playerWrapper');
+    if (!this.video || !this.modal || !this.wrapper) return;
 
-    if (!this.video) return;
-
-    this.video.addEventListener('play', () => this.updatePlayBtn(true));
+    this.video.addEventListener('play', () => { this.updatePlayBtn(true); this.resetInactivityTimer(); });
     this.video.addEventListener('pause', () => this.updatePlayBtn(false));
     this.video.addEventListener('timeupdate', () => this.onTimeUpdate());
     this.video.addEventListener('progress', () => this.onProgress());
-    this.video.addEventListener('waiting', () => this.showBuffering(true));
+    this.video.addEventListener('waiting', () => this.showBuffering(true, 'Đang đệm dữ liệu…'));
     this.video.addEventListener('playing', () => this.showBuffering(false));
     this.video.addEventListener('ended', () => this.onEnded());
+    this.video.addEventListener('error', () => this.onNativeVideoError());
+    this.video.addEventListener('resize', () => this.updateCurrentResolution());
     this.video.addEventListener('click', () => this.togglePlayPause());
 
-    this.wrapper.addEventListener('mousemove', () => this.resetInactivityTimer());
-    this.wrapper.addEventListener('mouseleave', () => this.hideControls());
-
+    ['mousemove', 'pointermove', 'pointerdown', 'touchstart'].forEach((eventName) => {
+      this.wrapper.addEventListener(eventName, () => this.resetInactivityTimer(), { passive: true });
+    });
     const progressContainer = document.getElementById('progressContainer');
     if (progressContainer) {
-      progressContainer.addEventListener('click', (e) => this.onProgressBarClick(e));
-      progressContainer.addEventListener('mousemove', (e) => this.onProgressBarHover(e));
+      progressContainer.addEventListener('click', (event) => this.onProgressBarClick(event));
+      progressContainer.addEventListener('mousemove', (event) => this.onProgressBarHover(event));
     }
-
     const volumeSlider = document.getElementById('volumeSlider');
     if (volumeSlider) {
-      volumeSlider.addEventListener('input', (e) => {
-        this.video.volume = parseFloat(e.target.value);
+      volumeSlider.addEventListener('input', (event) => {
+        this.video.volume = Number(event.target.value);
         this.video.muted = false;
         this.updateVolumeIcons();
       });
     }
-
-    window.addEventListener('keydown', (e) => this.onKeyDown(e));
+    window.addEventListener('keydown', (event) => this.onKeyDown(event));
+    window.addEventListener('pagehide', () => this.saveProgressNow());
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') this.saveProgressNow();
+    });
+    document.addEventListener('fullscreenchange', () => this.onBrowserFullscreenChange());
   },
 
   open(movie, episode, episodesList = [], epIndex = 0, allServers = [], serverIndex = 0) {
+    if (!this.video) this.init();
+    if (!this.video || !movie || !episode) return;
     this.currentMovie = movie;
     this.currentEpisode = episode;
-    this.episodesList = episodesList;
-    this.currentEpIndex = epIndex;
-    this.allServers = allServers;
-    this.currentServerIndex = serverIndex;
+    this.episodesList = Array.isArray(episodesList) ? episodesList : [];
+    this.currentEpIndex = Number.isInteger(epIndex) ? epIndex : 0;
+    this.allServers = Array.isArray(allServers) ? allServers : [];
+    this.currentServerIndex = Number.isInteger(serverIndex) ? serverIndex : 0;
+    this.failedServerIndexes.clear();
 
-    document.getElementById('playerMovieTitle').textContent = movie.name;
-    document.getElementById('playerEpisodeTitle').textContent = episode.name || `Tập ${epIndex + 1}`;
-
-    // Update In-Player Server Selector
+    document.getElementById('playerMovieTitle').textContent = movie.name || 'Phim';
+    document.getElementById('playerEpisodeTitle').textContent = episode.name || `Tập ${this.currentEpIndex + 1}`;
     this.renderInPlayerServerMenu();
-
-    // Next Episode button
-    const nextBtn = document.getElementById('btnNextEp');
-    if (nextBtn) {
-      if (this.episodesList.length > 1 && this.currentEpIndex < this.episodesList.length - 1) {
-        nextBtn.classList.remove('hidden');
-      } else {
-        nextBtn.classList.add('hidden');
-      }
-    }
-
+    this.updateNextEpisodeButton();
+    this.closeDropdowns();
     this.modal.classList.remove('hidden');
-    document.body.classList.add('locked');
-
-    // Default to Subtitle-Safe mode
-    this.setAspectRatio('contain');
-
-    // Start stream
-    const playUrl = episode.link_m3u8 || episode.link_embed;
-    this.loadStream(playUrl);
-
+    document.body.classList.add('locked', 'player-open');
+    this.setAspectRatio('contain', { silent: true });
+    this.loadEpisode(episode, { resumeTime: this.getSavedWatchTime(), autoplay: true });
     this.startProgressSaveTimer();
+    this.resetInactivityTimer();
   },
 
   close() {
-    this.exitLandscapeFullscreen();
-    if (this.hls) {
-      this.hls.destroy();
-      this.hls = null;
-    }
+    this.saveProgressNow();
+    void this.exitCinemaFullscreen();
+    this.streamSession += 1;
+    this.activeStreamUrl = '';
+    this.closeDropdowns();
+    this.destroyHls();
     if (this.video) {
       this.video.pause();
       this.video.removeAttribute('src');
       this.video.load();
     }
-    if (this.saveInterval) {
-      clearInterval(this.saveInterval);
-      this.saveInterval = null;
-    }
-
-    this.modal.classList.add('hidden');
-    document.body.classList.remove('locked');
+    if (this.saveInterval) clearInterval(this.saveInterval);
+    this.saveInterval = null;
+    clearTimeout(this.inactivityTimer);
+    this.wrapper?.classList.remove('inactive');
+    this.modal?.classList.add('hidden');
+    document.body.classList.remove('locked', 'player-open');
   },
 
-  loadStream(streamUrl) {
+  loadEpisode(episode, options = {}) {
+    const source = episode?.link_m3u8 || episode?.link_embed || '';
+    this.loadStream(source, { ...options, isHls: Boolean(episode?.link_m3u8) });
+  },
+
+  loadStream(streamUrl, options = {}) {
+    const session = ++this.streamSession;
+    const resumeTime = Number(options.resumeTime) || 0;
+    const autoplay = options.autoplay !== false;
+    const isHls = options.isHls ?? /\.m3u8(?:[?#]|$)/i.test(String(streamUrl));
     if (!streamUrl) {
-      this.showAlert('❌ Không tìm thấy luồng stream hợp lệ. Đang thử server khác...');
+      this.showBuffering(false);
+      this.showAlert('Không có luồng phát tương thích ở server này. Đang thử server khác…');
       this.fallbackToNextServer();
       return;
     }
 
-    this.showBuffering(true, 'Đang phân giải luồng 4K & kiểm tra phụ đề...');
+    this.activeStreamUrl = streamUrl;
+    this.mediaRecoveryCount = 0;
+    this.qualityOptions = [];
+    this.usingNativeHls = false;
+    this.destroyHls();
+    this.closeDropdowns();
+    this.showBuffering(true, 'Đang kết nối luồng phim…');
+    this.setResolutionBadge(0, 0, 'Đang xác minh');
+    this.populateQualityMenu([]);
+    this.video.pause();
+    this.video.removeAttribute('src');
+    this.video.load();
 
-    if (this.hls) {
-      this.hls.destroy();
-      this.hls = null;
-    }
+    this.video.addEventListener('loadedmetadata', () => {
+      if (session === this.streamSession) this.onStreamReady(resumeTime, autoplay);
+    }, { once: true });
 
-    const savedTime = this.getSavedWatchTime();
-
-    if (Hls.isSupported()) {
-      const hls = new Hls({
+    const HlsEngine = window.Hls;
+    if (isHls && HlsEngine?.isSupported?.()) {
+      const hls = new HlsEngine({
         maxBufferLength: 30,
         maxMaxBufferLength: 60,
         enableWorker: true,
-        xhrSetup: (xhr) => {
-          xhr.withCredentials = false;
-        }
+        xhrSetup: (xhr) => { xhr.withCredentials = false; }
       });
-
       this.hls = hls;
       hls.loadSource(streamUrl);
       hls.attachMedia(this.video);
-
-      hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
-        this.showBuffering(false);
-        this.detectTrueResolution(hls.levels);
-        this.populateQualityMenu(hls.levels);
-
-        if (savedTime > 15) {
-          this.video.currentTime = savedTime;
-          this.showAlert(`⏱ Đã tự động khôi phục vị trí xem: ${this.formatTime(savedTime)}`);
-        }
-
-        this.video.play().catch(err => {
-          console.warn('Autoplay prevented, user interaction required:', err);
-        });
+      hls.on(HlsEngine.Events.MANIFEST_PARSED, () => {
+        if (session !== this.streamSession || hls !== this.hls) return;
+        this.qualityOptions = PlayerCore.uniqueQualityOptions(hls.levels);
+        this.populateQualityMenu(this.qualityOptions);
+        this.setAvailableResolution(this.qualityOptions);
       });
-
-      hls.on(Hls.Events.LEVEL_SWITCHED, (event, data) => {
+      hls.on(HlsEngine.Events.LEVEL_SWITCHED, (_event, data) => {
+        if (session !== this.streamSession || hls !== this.hls) return;
         const level = hls.levels[data.level];
-        if (level) {
-          const h = level.height || 'Auto';
-          document.getElementById('btnQuality').textContent = h + (h !== 'Auto' ? 'p' : '');
-        }
+        if (!level) return;
+        const option = PlayerCore.qualityOption(level, data.level);
+        this.setQualityButtonLabel(option.label);
+        this.setResolutionBadge(option.width, option.height);
+        this.updateQualityMenuSelection(data.level);
       });
-
-      hls.on(Hls.Events.ERROR, (event, data) => {
-        console.error('HLS Error:', data);
-        if (data.fatal) {
-          switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              // Try local proxy if not tried yet
-              if (!streamUrl.startsWith('/api/stream/proxy')) {
-                const proxyUrl = `/api/stream/proxy?url=${encodeURIComponent(streamUrl)}`;
-                console.log('Retrying via Local Stream Proxy:', proxyUrl);
-                this.loadStream(proxyUrl);
-                return;
-              }
-              // If proxy also failed, automatically fallback to next server!
-              this.fallbackToNextServer();
-              break;
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              hls.recoverMediaError();
-              break;
-            default:
-              this.hls.destroy();
-              this.fallbackToNextServer();
-              break;
-          }
+      hls.on(HlsEngine.Events.ERROR, (_event, data) => {
+        if (session !== this.streamSession || hls !== this.hls || !data.fatal) return;
+        if (data.type === HlsEngine.ErrorTypes.MEDIA_ERROR && this.mediaRecoveryCount < 1) {
+          this.mediaRecoveryCount += 1;
+          hls.recoverMediaError();
+          return;
         }
-      });
-
-    } else if (this.video.canPlayType('application/vnd.apple.mpegurl')) {
-      this.video.src = streamUrl;
-      this.video.addEventListener('loadedmetadata', () => {
         this.showBuffering(false);
-        if (savedTime > 15) {
-          this.video.currentTime = savedTime;
-        }
-        this.video.play().catch(() => {});
+        this.fallbackToNextServer();
       });
-    } else {
-      this.showAlert('❌ Trình duyệt không hỗ trợ HLS');
-    }
-  },
-
-  // TRUE RESOLUTION DETECTOR (Calculates actual stream pixels)
-  detectTrueResolution(levels = []) {
-    const badgeEl = document.getElementById('realResolutionBadge');
-    if (!badgeEl) return;
-
-    if (!levels || levels.length === 0) {
-      badgeEl.textContent = 'FHD 1080p';
-      badgeEl.className = 'badge-real-res res-fhd';
       return;
     }
 
-    let maxHeight = 0;
-    let maxWidth = 0;
-    levels.forEach(lvl => {
-      if (lvl.height > maxHeight) maxHeight = lvl.height;
-      if (lvl.width > maxWidth) maxWidth = lvl.width;
-    });
-
-    if (maxHeight >= 2160 || maxWidth >= 3840) {
-      badgeEl.textContent = '💎 4K REAL (2160p)';
-      badgeEl.className = 'badge-real-res res-4k';
-    } else if (maxHeight >= 1440 || maxWidth >= 2560) {
-      badgeEl.textContent = '✨ 2K QHD (1440p)';
-      badgeEl.className = 'badge-real-res res-2k';
-    } else if (maxHeight >= 1080 || maxWidth >= 1920) {
-      badgeEl.textContent = '🎯 FHD (1080p)';
-      badgeEl.className = 'badge-real-res res-fhd';
-    } else if (maxHeight >= 720) {
-      badgeEl.textContent = 'HD 720p';
-      badgeEl.className = 'badge-real-res res-hd';
-    } else {
-      badgeEl.textContent = 'SD 480p';
-      badgeEl.className = 'badge-real-res';
-    }
+    this.usingNativeHls = isHls;
+    if (isHls) this.populateNativeHlsMenu();
+    this.video.src = streamUrl;
+    this.video.load();
   },
 
-  // SUBTITLE-SAFE ASPECT RATIO TOGGLE (FIT VS FILL)
-  toggleAspectRatio() {
-    if (this.aspectMode === 'contain') {
-      this.setAspectRatio('cover');
-    } else {
-      this.setAspectRatio('contain');
+  onStreamReady(resumeTime, autoplay) {
+    const safeTime = PlayerCore.clampResumeTime(resumeTime, this.video.duration);
+    if (safeTime > 3) {
+      try { this.video.currentTime = safeTime; } catch (_error) {}
     }
+    this.updateCurrentResolution();
+    this.showBuffering(false);
+    if (autoplay) this.video.play().catch(() => this.showAlert('Chạm nút Phát để bắt đầu xem.'));
   },
 
-  setAspectRatio(mode) {
-    this.aspectMode = mode;
-    const btn = document.getElementById('btnAspectFit');
-    if (mode === 'contain') {
-      this.wrapper.classList.remove('aspect-cover');
-      this.wrapper.classList.add('aspect-contain');
-      if (btn) btn.textContent = '📺 Giữ Sub Gốc';
-      this.showAlert('🛡️ Chế độ Giữ Sub Gốc: Toàn bộ phụ đề được hiển thị 100% không bị che');
-    } else {
-      this.wrapper.classList.remove('aspect-contain');
-      this.wrapper.classList.add('aspect-cover');
-      if (btn) btn.textContent = '🔍 Tràn Màn Hình';
-      this.showAlert('🔍 Chế độ Tràn Màn Hình');
-    }
+  destroyHls() {
+    if (!this.hls) return;
+    this.hls.destroy();
+    this.hls = null;
   },
 
-  // MULTI-SERVER FALLBACK & IN-PLAYER SWITCHER
+  updateNextEpisodeButton() {
+    const button = document.getElementById('btnNextEp');
+    if (button) button.classList.toggle('hidden', !(this.episodesList.length > 1 && this.currentEpIndex < this.episodesList.length - 1));
+  },
+
+  setAspectRatio(mode, { silent = false } = {}) {
+    this.aspectMode = mode === 'cover' ? 'cover' : 'contain';
+    const fitMode = this.aspectMode === 'contain';
+    this.wrapper.classList.toggle('aspect-contain', fitMode);
+    this.wrapper.classList.toggle('aspect-cover', !fitMode);
+    const button = document.getElementById('btnAspectFit');
+    if (button) button.textContent = fitMode ? 'Giữ Sub' : 'Lấp đầy';
+    if (!silent) this.showAlert(fitMode ? 'Chế độ Giữ Sub đang bật.' : 'Chế độ Lấp đầy có thể cắt mép phụ đề.');
+  },
+
+  toggleAspectRatio() { this.setAspectRatio(this.aspectMode === 'contain' ? 'cover' : 'contain'); },
+
   renderInPlayerServerMenu() {
     const menu = document.getElementById('playerServerMenu');
+    const trigger = document.getElementById('btnPlayerServer');
     if (!menu) return;
-    menu.innerHTML = '';
-
-    if (!this.allServers || this.allServers.length === 0) {
-      menu.innerHTML = '<div style="padding: 6px; font-size: 11px; color: var(--text-dim);">Chỉ có 1 server</div>';
+    menu.replaceChildren();
+    if (!this.allServers.length) {
+      menu.textContent = 'Chỉ có một server';
       return;
     }
-
-    this.allServers.forEach((server, sIdx) => {
-      const btn = document.createElement('button');
-      btn.className = (sIdx === this.currentServerIndex) ? 'active' : '';
-      btn.textContent = server.server_name || `Server #${sIdx + 1}`;
-      btn.onclick = () => {
-        this.switchServer(sIdx);
-      };
-      menu.appendChild(btn);
+    this.allServers.forEach((server, index) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.classList.toggle('active', index === this.currentServerIndex);
+      button.textContent = server.server_name || `Server ${index + 1}`;
+      button.onclick = () => this.switchServer(index);
+      menu.appendChild(button);
     });
+    if (trigger) trigger.textContent = this.allServers[this.currentServerIndex]?.server_name || 'Đổi server';
   },
 
-  switchServer(newServerIndex) {
-    if (newServerIndex < 0 || newServerIndex >= this.allServers.length) return;
-    this.currentServerIndex = newServerIndex;
+  switchServer(newServerIndex, { automatic = false } = {}) {
+    if (newServerIndex < 0 || newServerIndex >= this.allServers.length || newServerIndex === this.currentServerIndex) return;
     const targetServer = this.allServers[newServerIndex];
-    const serverEpisodes = targetServer.server_data || [];
-
-    // Find corresponding episode in new server
-    let targetEp = serverEpisodes[this.currentEpIndex];
-    if (!targetEp && serverEpisodes.length > 0) {
-      targetEp = serverEpisodes[0];
+    const targetEpisodes = Array.isArray(targetServer?.server_data) ? targetServer.server_data : [];
+    const match = PlayerCore.findEquivalentEpisode(targetEpisodes, this.currentEpisode, this.currentEpIndex);
+    if (!match.episode) {
+      this.showBuffering(false);
+      this.showAlert('Server này chưa có tập tương ứng.');
+      return;
     }
-
-    if (targetEp) {
-      document.getElementById('playerServerMenu').classList.add('hidden');
-      this.currentEpisode = targetEp;
-      this.episodesList = serverEpisodes;
-      this.renderInPlayerServerMenu();
-      this.showAlert(`🔄 Đang chuyển sang: ${targetServer.server_name}`);
-      this.loadStream(targetEp.link_m3u8 || targetEp.link_embed);
-    }
+    const resumeTime = Number(this.video?.currentTime) || 0;
+    const autoplay = Boolean(this.video && !this.video.paused);
+    this.saveProgressNow();
+    this.currentServerIndex = newServerIndex;
+    this.currentEpisode = match.episode;
+    this.currentEpIndex = match.index;
+    this.episodesList = targetEpisodes;
+    if (!automatic) this.failedServerIndexes.clear();
+    this.renderInPlayerServerMenu();
+    this.updateNextEpisodeButton();
+    this.closeDropdowns();
+    this.showAlert(`${automatic ? 'Tự chuyển' : 'Đã đổi'}: ${targetServer.server_name || `Server ${newServerIndex + 1}`}`);
+    this.loadEpisode(match.episode, { resumeTime, autoplay });
   },
 
   fallbackToNextServer() {
-    if (this.allServers && this.allServers.length > 1 && this.currentServerIndex < this.allServers.length - 1) {
-      const nextServerIdx = this.currentServerIndex + 1;
-      this.showAlert(`⚠️ Server hiện tại gặp sự cố. Đang tự động chuyển sang Server dự phòng #${nextServerIdx + 1}...`);
-      setTimeout(() => {
-        this.switchServer(nextServerIdx);
-      }, 1500);
-    } else {
-      this.showAlert('❌ Tất cả các server hiện tại đều không phản hồi. Vui lòng thử lại sau!');
+    this.failedServerIndexes.add(this.currentServerIndex);
+    const nextIndex = this.allServers.findIndex((_server, index) => !this.failedServerIndexes.has(index));
+    if (nextIndex >= 0) {
+      this.showAlert(`Server hiện tại không phát được. Đang thử ${this.allServers[nextIndex].server_name || `server ${nextIndex + 1}`}…`);
+      this.switchServer(nextIndex, { automatic: true });
+      return;
     }
+    this.showBuffering(false);
+    this.showAlert('Tất cả server hiện có đều không phản hồi. Vui lòng thử lại sau.');
   },
 
   togglePlayPause() {
     if (!this.video) return;
-    if (this.video.paused) {
-      this.video.play();
-    } else {
-      this.video.pause();
-    }
+    if (this.video.paused) this.video.play().catch(() => this.showAlert('Không thể phát luồng này.'));
+    else this.video.pause();
   },
 
   updatePlayBtn(isPlaying) {
-    const playIcon = document.getElementById('iconPlay');
-    const pauseIcon = document.getElementById('iconPause');
-    if (isPlaying) {
-      playIcon.classList.add('hidden');
-      pauseIcon.classList.remove('hidden');
-    } else {
-      playIcon.classList.remove('hidden');
-      pauseIcon.classList.add('hidden');
-    }
+    document.getElementById('iconPlay')?.classList.toggle('hidden', isPlaying);
+    document.getElementById('iconPause')?.classList.toggle('hidden', !isPlaying);
   },
 
   seekRelative(seconds) {
-    if (!this.video) return;
-    this.video.currentTime = Math.max(0, Math.min(this.video.duration || 0, this.video.currentTime + seconds));
+    if (!this.video || !Number.isFinite(this.video.duration)) return;
+    this.video.currentTime = PlayerCore.clampResumeTime(this.video.currentTime + seconds, this.video.duration);
     this.showAlert(seconds > 0 ? `+${seconds}s` : `${seconds}s`);
   },
 
   onTimeUpdate() {
-    if (!this.video || isNaN(this.video.duration)) return;
-    const current = this.video.currentTime;
-    const duration = this.video.duration;
-    const pct = (current / duration) * 100;
-
-    const currentBar = document.getElementById('progressCurrent');
+    if (!this.video || !Number.isFinite(this.video.duration) || this.video.duration <= 0) return;
+    const percent = Math.max(0, Math.min(100, (this.video.currentTime / this.video.duration) * 100));
+    const current = document.getElementById('progressCurrent');
     const thumb = document.getElementById('progressThumb');
-    if (currentBar) currentBar.style.width = `${pct}%`;
-    if (thumb) thumb.style.left = `${pct}%`;
-
-    const curEl = document.getElementById('currentTime');
-    const durEl = document.getElementById('durationTime');
-    if (curEl) curEl.textContent = this.formatTime(current);
-    if (durEl) durEl.textContent = this.formatTime(duration);
+    if (current) current.style.width = `${percent}%`;
+    if (thumb) thumb.style.left = `${percent}%`;
+    const time = document.getElementById('currentTime');
+    const duration = document.getElementById('durationTime');
+    if (time) time.textContent = this.formatTime(this.video.currentTime);
+    if (duration) duration.textContent = this.formatTime(this.video.duration);
   },
 
   onProgress() {
-    if (!this.video || isNaN(this.video.duration)) return;
-    const duration = this.video.duration;
-    const buffered = this.video.buffered;
-    if (buffered.length > 0) {
-      const bufferedEnd = buffered.end(buffered.length - 1);
-      const bufferPct = (bufferedEnd / duration) * 100;
-      const bufferBar = document.getElementById('progressBuffer');
-      if (bufferBar) bufferBar.style.width = `${bufferPct}%`;
-    }
+    if (!this.video || !Number.isFinite(this.video.duration) || !this.video.buffered.length) return;
+    const buffered = this.video.buffered.end(this.video.buffered.length - 1);
+    const bar = document.getElementById('progressBuffer');
+    if (bar) bar.style.width = `${Math.max(0, Math.min(100, (buffered / this.video.duration) * 100))}%`;
   },
 
-  onProgressBarClick(e) {
-    if (!this.video || isNaN(this.video.duration)) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const pos = (e.clientX - rect.left) / rect.width;
-    this.video.currentTime = pos * this.video.duration;
+  onProgressBarClick(event) {
+    if (!this.video || !Number.isFinite(this.video.duration)) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const position = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    this.video.currentTime = position * this.video.duration;
   },
 
-  onProgressBarHover(e) {
-    if (!this.video || isNaN(this.video.duration)) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const pos = (e.clientX - rect.left) / rect.width;
-    const time = pos * this.video.duration;
-
-    const hoverEl = document.getElementById('progressHoverTime');
-    if (hoverEl) {
-      hoverEl.textContent = this.formatTime(time);
-      hoverEl.style.left = `${pos * 100}%`;
-    }
+  onProgressBarHover(event) {
+    if (!this.video || !Number.isFinite(this.video.duration)) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const position = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    const hover = document.getElementById('progressHoverTime');
+    if (!hover) return;
+    hover.textContent = this.formatTime(position * this.video.duration);
+    hover.style.left = `${position * 100}%`;
   },
 
   toggleMute() {
-    if (!this.video) return;
     this.video.muted = !this.video.muted;
     this.updateVolumeIcons();
-    this.showAlert(this.video.muted ? '🔇 Đã tắt tiếng' : '🔊 Đã bật tiếng');
   },
 
   updateVolumeIcons() {
-    const isMuted = this.video.muted || this.video.volume === 0;
-    document.getElementById('iconVolHigh').classList.toggle('hidden', isMuted);
-    document.getElementById('iconVolMute').classList.toggle('hidden', !isMuted);
+    const muted = Boolean(this.video?.muted || this.video?.volume === 0);
+    document.getElementById('iconVolHigh')?.classList.toggle('hidden', muted);
+    document.getElementById('iconVolMute')?.classList.toggle('hidden', !muted);
   },
 
   setPlaybackSpeed(speed) {
-    if (!this.video) return;
-    this.video.playbackRate = speed;
-    document.getElementById('btnSpeed').textContent = `${speed}x`;
-    document.getElementById('speedMenu').classList.add('hidden');
-    this.showAlert(`Tốc độ: ${speed}x`);
+    this.video.playbackRate = Number(speed) || 1;
+    const button = document.getElementById('btnSpeed');
+    if (button) button.textContent = `${this.video.playbackRate}x`;
+    document.getElementById('speedMenu')?.classList.add('hidden');
   },
 
-  populateQualityMenu(levels = []) {
+  populateQualityMenu(options) {
     const menu = document.getElementById('qualityMenu');
-    menu.innerHTML = '<button class="active" onclick="Player.setQuality(-1)">Auto</button>';
-    levels.forEach((lvl, idx) => {
-      const h = lvl.height || 'HD';
-      const btn = document.createElement('button');
-      btn.textContent = `${h}p`;
-      btn.onclick = () => Player.setQuality(idx);
-      menu.appendChild(btn);
+    if (!menu) return;
+    menu.replaceChildren();
+    const auto = document.createElement('button');
+    auto.type = 'button';
+    auto.dataset.level = '-1';
+    auto.className = 'active';
+    auto.textContent = 'Tự động';
+    auto.onclick = () => this.setQuality(-1);
+    menu.appendChild(auto);
+    options.forEach((option) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.level = String(option.levelIndex);
+      button.textContent = option.label;
+      button.onclick = () => this.setQuality(option.levelIndex);
+      menu.appendChild(button);
     });
+    this.setQualityButtonLabel('Tự động');
+  },
+
+  populateNativeHlsMenu() {
+    const menu = document.getElementById('qualityMenu');
+    if (!menu) return;
+    menu.replaceChildren();
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.disabled = true;
+    item.className = 'quality-note';
+    item.textContent = 'iPhone tự chọn chất lượng HLS';
+    menu.appendChild(item);
+    this.setQualityButtonLabel('Tự động iOS');
   },
 
   setQuality(levelIndex) {
-    if (!this.hls) return;
+    if (!this.hls) {
+      this.showAlert(this.usingNativeHls ? 'iPhone đang tự chọn chất lượng HLS phù hợp mạng.' : 'Luồng này không có danh sách chất lượng để chọn.');
+      document.getElementById('qualityMenu')?.classList.add('hidden');
+      return;
+    }
     this.hls.currentLevel = levelIndex;
-    const menu = document.getElementById('qualityMenu');
-    const buttons = menu.querySelectorAll('button');
-    buttons.forEach((b, idx) => {
-      b.classList.toggle('active', (levelIndex === -1 && idx === 0) || (idx === levelIndex + 1));
+    const option = levelIndex === -1 ? null : this.qualityOptions.find((item) => item.levelIndex === levelIndex);
+    this.setQualityButtonLabel(option?.label || 'Tự động');
+    this.updateQualityMenuSelection(levelIndex);
+    document.getElementById('qualityMenu')?.classList.add('hidden');
+  },
+
+  updateQualityMenuSelection(levelIndex) {
+    document.querySelectorAll('#qualityMenu button[data-level]').forEach((button) => {
+      button.classList.toggle('active', Number(button.dataset.level) === levelIndex);
     });
-    document.getElementById('btnQuality').textContent = levelIndex === -1 ? 'Auto' : buttons[levelIndex + 1]?.textContent || 'HD';
-    menu.classList.add('hidden');
+  },
+
+  setQualityButtonLabel(label) {
+    const button = document.getElementById('btnQuality');
+    if (button) button.textContent = label;
+  },
+
+  setAvailableResolution(options) {
+    const best = options[0];
+    if (best) this.setResolutionBadge(best.width, best.height, `Tối đa ${best.label}`);
+  },
+
+  updateCurrentResolution() {
+    if (this.video?.videoHeight || this.video?.videoWidth) this.setResolutionBadge(this.video.videoWidth, this.video.videoHeight);
+  },
+
+  setResolutionBadge(width, height, overrideLabel = '') {
+    const badge = document.getElementById('realResolutionBadge');
+    if (!badge) return;
+    const numericHeight = Number(height) || 0;
+    const numericWidth = Number(width) || 0;
+    badge.textContent = overrideLabel || (numericHeight ? `${numericHeight}p` : 'Đang xác minh');
+    badge.className = 'badge-real-res';
+    if (numericHeight >= 2160 || numericWidth >= 3840) badge.classList.add('res-4k');
+    else if (numericHeight >= 1440 || numericWidth >= 2560) badge.classList.add('res-2k');
+    else if (numericHeight >= 1080 || numericWidth >= 1920) badge.classList.add('res-fhd');
+    else if (numericHeight >= 720) badge.classList.add('res-hd');
   },
 
   playNextEpisode() {
-    if (this.episodesList.length > 0 && this.currentEpIndex < this.episodesList.length - 1) {
-      const nextIndex = this.currentEpIndex + 1;
-      const nextEp = this.episodesList[nextIndex];
-      this.open(this.currentMovie, nextEp, this.episodesList, nextIndex, this.allServers, this.currentServerIndex);
-      this.showAlert(`Đang chuyển sang: ${nextEp.name}`);
-    } else {
-      this.showAlert('Bạn đã xem đến tập cuối cùng!');
+    if (!this.episodesList.length || this.currentEpIndex >= this.episodesList.length - 1) {
+      this.showAlert('Bạn đã xem đến tập cuối cùng.');
+      return;
     }
+    const nextIndex = this.currentEpIndex + 1;
+    this.open(this.currentMovie, this.episodesList[nextIndex], this.episodesList, nextIndex, this.allServers, this.currentServerIndex);
   },
 
   onEnded() {
-    if (this.episodesList.length > 0 && this.currentEpIndex < this.episodesList.length - 1) {
-      this.showAlert('Tập phim đã kết thúc. Tự động chuyển tập sau 3s...');
-      setTimeout(() => {
-        this.playNextEpisode();
-      }, 3000);
+    if (this.currentEpIndex < this.episodesList.length - 1) {
+      this.showAlert('Tập phim đã kết thúc. Chuyển tập sau trong 3 giây…');
+      window.setTimeout(() => { if (this.video?.ended) this.playNextEpisode(); }, 3000);
     }
   },
 
-  toggleFullscreen() {
-    // Fullscreen on entire wrapper container ensures subtitles are never obstructed
-    if (!document.fullscreenElement) {
-      this.wrapper.requestFullscreen().catch(err => console.warn(err));
-    } else {
-      document.exitFullscreen().catch(err => console.warn(err));
-    }
+  isNativeRuntime() {
+    const capacitor = window.Capacitor;
+    return Boolean(capacitor && (capacitor.isNativePlatform?.() || ['ios', 'android'].includes(capacitor.getPlatform?.())));
   },
 
-  async toggleLandscapeFullscreen() {
-    if (this.isLandscapeForced) {
-      this.exitLandscapeFullscreen();
-      return;
-    }
+  getNativePlugin(name) {
+    if (!this.isNativeRuntime()) return null;
+    const capacitor = window.Capacitor;
+    try { return capacitor.Plugins?.[name] || capacitor.registerPlugin?.(name) || null; }
+    catch (_error) { return null; }
+  },
 
-    this.isLandscapeForced = true;
-    const btn = document.getElementById('btnLandscapeFullscreen');
-    if (btn) btn.classList.add('active');
+  async toggleCinemaFullscreen() {
+    if (this.isCinemaFullscreen) await this.exitCinemaFullscreen();
+    else await this.enterCinemaFullscreen();
+  },
 
-    // 1. Try native screen.orientation lock if available
+  async enterCinemaFullscreen() {
+    if (!this.wrapper || this.modal?.classList.contains('hidden')) return;
+    this.isCinemaFullscreen = true;
+    this.applyFullscreenUi(true);
     try {
-      if (screen.orientation && screen.orientation.lock) {
-        await screen.orientation.lock('landscape');
+      if (this.isNativeRuntime()) {
+        const orientation = this.getNativePlugin('ScreenOrientation');
+        const statusBar = this.getNativePlugin('StatusBar');
+        await orientation?.lock({ orientation: 'landscape' });
+        await statusBar?.hide();
+      } else {
+        if (!document.fullscreenElement && this.wrapper.requestFullscreen) await this.wrapper.requestFullscreen();
+        if (screen.orientation?.lock) await screen.orientation.lock('landscape');
       }
-    } catch (e) {
-      console.log('Screen orientation lock not supported:', e);
+    } catch (error) {
+      console.warn('Unable to lock fullscreen orientation:', error);
+      this.showAlert('Không thể khóa xoay trên thiết bị này; vẫn mở khung phát toàn màn.');
     }
-
-    // 2. For iOS Safari native video, enter webkit fullscreen directly
-    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-    if (isIOS && this.video && this.video.webkitEnterFullscreen) {
-      try {
-        this.video.webkitEnterFullscreen();
-        this.showAlert('🔄 Đang mở toàn màn hình ngang (iOS Native)');
-        return;
-      } catch (e) {
-        console.warn('webkitEnterFullscreen error:', e);
-      }
-    }
-
-    // 3. Request standard HTML5 fullscreen on wrapper
-    if (!document.fullscreenElement && this.wrapper.requestFullscreen) {
-      this.wrapper.requestFullscreen().catch(() => {});
-    }
-
-    // 4. Force landscape CSS rotation (for phones locked in portrait)
-    this.wrapper.classList.add('landscape-forced');
-    this.showAlert('🔄 Đã phóng to toàn màn hình ngang (16:9 Cinema)');
+    this.resetInactivityTimer();
   },
 
-  exitLandscapeFullscreen() {
-    this.isLandscapeForced = false;
-    const btn = document.getElementById('btnLandscapeFullscreen');
-    if (btn) btn.classList.remove('active');
-
-    if (this.wrapper) {
-      this.wrapper.classList.remove('landscape-forced');
-    }
-
+  async exitCinemaFullscreen() {
+    if (!this.isCinemaFullscreen && !document.fullscreenElement) return;
+    this.isCinemaFullscreen = false;
+    this.applyFullscreenUi(false);
     try {
-      if (screen.orientation && screen.orientation.unlock) {
-        screen.orientation.unlock();
+      if (this.isNativeRuntime()) {
+        const orientation = this.getNativePlugin('ScreenOrientation');
+        const statusBar = this.getNativePlugin('StatusBar');
+        await Promise.allSettled([orientation?.unlock(), statusBar?.show()].filter(Boolean));
+      } else {
+        if (screen.orientation?.unlock) screen.orientation.unlock();
+        if (document.fullscreenElement && document.exitFullscreen) await document.exitFullscreen();
       }
-    } catch (e) {}
-
-    if (document.fullscreenElement && document.exitFullscreen) {
-      document.exitFullscreen().catch(() => {});
+    } catch (error) {
+      console.warn('Unable to restore normal orientation:', error);
     }
   },
 
-  showBuffering(isBuffering, text = 'Đang tải...') {
-    const el = document.getElementById('playerBuffering');
-    const txt = document.getElementById('bufferingText');
-    if (txt) txt.textContent = text;
-    if (el) el.classList.toggle('hidden', !isBuffering);
+  applyFullscreenUi(enabled) {
+    this.wrapper?.classList.toggle('cinema-fullscreen', enabled);
+    this.modal?.classList.toggle('cinema-fullscreen', enabled);
+    document.body.classList.toggle('player-cinema-fullscreen', enabled);
+    const button = document.getElementById('btnCinemaFullscreen');
+    if (button) {
+      button.classList.toggle('active', enabled);
+      button.setAttribute('aria-pressed', String(enabled));
+      button.title = enabled ? 'Thoát toàn màn hình (F)' : 'Toàn màn hình ngang (F)';
+    }
+  },
+
+  onBrowserFullscreenChange() {
+    if (!this.isNativeRuntime() && this.isCinemaFullscreen && !document.fullscreenElement) {
+      this.isCinemaFullscreen = false;
+      this.applyFullscreenUi(false);
+      try { screen.orientation?.unlock?.(); } catch (_error) {}
+    }
+  },
+
+  onNativeVideoError() {
+    if (!this.activeStreamUrl || this.hls || this.modal?.classList.contains('hidden')) return;
+    const currentSource = this.video?.currentSrc || this.video?.src || '';
+    if (!currentSource || !this.isActiveStreamSource(currentSource)) return;
+    this.showBuffering(false);
+    this.fallbackToNextServer();
+  },
+
+  isActiveStreamSource(source) {
+    try {
+      return new URL(source, document.baseURI).href === new URL(this.activeStreamUrl, document.baseURI).href;
+    } catch (_error) {
+      return source === this.activeStreamUrl;
+    }
+  },
+
+  showBuffering(isBuffering, text = 'Đang tải…') {
+    const element = document.getElementById('playerBuffering');
+    const label = document.getElementById('bufferingText');
+    if (label) label.textContent = text;
+    element?.classList.toggle('hidden', !isBuffering);
   },
 
   showAlert(text) {
-    const alertEl = document.getElementById('playerAlert');
-    if (!alertEl) return;
-    alertEl.textContent = text;
-    alertEl.classList.remove('hidden');
+    const alert = document.getElementById('playerAlert');
+    if (!alert) return;
+    alert.textContent = text;
+    alert.classList.remove('hidden');
     clearTimeout(this.alertTimer);
-    this.alertTimer = setTimeout(() => {
-      alertEl.classList.add('hidden');
-    }, 2500);
+    this.alertTimer = window.setTimeout(() => alert.classList.add('hidden'), 2600);
+  },
+
+  closeDropdowns() {
+    ['playerServerMenu', 'speedMenu', 'qualityMenu'].forEach((id) => document.getElementById(id)?.classList.add('hidden'));
   },
 
   resetInactivityTimer() {
+    if (!this.wrapper || this.modal?.classList.contains('hidden')) return;
     this.wrapper.classList.remove('inactive');
     clearTimeout(this.inactivityTimer);
-    this.inactivityTimer = setTimeout(() => {
-      if (!this.video.paused) {
-        this.wrapper.classList.add('inactive');
-      }
-    }, 2800);
-  },
-
-  hideControls() {
-    if (!this.video.paused) {
-      this.wrapper.classList.add('inactive');
-    }
+    this.inactivityTimer = window.setTimeout(() => {
+      if (!this.video?.paused) this.wrapper.classList.add('inactive');
+    }, 3200);
   },
 
   formatTime(seconds) {
-    if (isNaN(seconds)) return '00:00';
-    const s = Math.floor(seconds);
-    const m = Math.floor(s / 60);
-    const sec = s % 60;
-    const h = Math.floor(m / 60);
-    const min = m % 60;
-    if (h > 0) {
-      return `${h}:${min < 10 ? '0' : ''}${min}:${sec < 10 ? '0' : ''}${sec}`;
-    }
-    return `${min}:${sec < 10 ? '0' : ''}${sec}`;
+    if (!Number.isFinite(seconds)) return '00:00';
+    const total = Math.max(0, Math.floor(seconds));
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const secs = total % 60;
+    return hours ? `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}` : `${minutes}:${String(secs).padStart(2, '0')}`;
   },
 
   getProgressStorageKey() {
     if (!this.currentMovie || !this.currentEpisode) return null;
-    return `watch_${this.currentMovie.slug}_${this.currentEpisode.slug || this.currentEpIndex}`;
+    return `watch_${this.currentMovie.slug || this.currentMovie.name}_${this.currentEpisode.slug || this.currentEpisode.filename || this.currentEpIndex}`;
   },
 
   getSavedWatchTime() {
     const key = this.getProgressStorageKey();
-    if (!key) return 0;
-    const val = localStorage.getItem(key);
-    return val ? parseFloat(val) : 0;
+    const saved = key ? Number(localStorage.getItem(key)) : 0;
+    return Number.isFinite(saved) ? saved : 0;
+  },
+
+  saveProgressNow() {
+    if (!this.video || this.video.paused || this.video.currentTime <= 3) return;
+    const key = this.getProgressStorageKey();
+    if (key) localStorage.setItem(key, this.video.currentTime.toFixed(1));
+    if (window.ContinueWatching && this.currentMovie && Number.isFinite(this.video.duration)) {
+      ContinueWatching.saveItem(this.currentMovie, this.currentEpisode?.name || `Tập ${this.currentEpIndex + 1}`, this.video.currentTime, this.video.duration);
+    }
   },
 
   startProgressSaveTimer() {
     if (this.saveInterval) clearInterval(this.saveInterval);
-    this.saveInterval = setInterval(() => {
-      if (this.video && !this.video.paused && this.video.currentTime > 3) {
-        const key = this.getProgressStorageKey();
-        if (key) {
-          localStorage.setItem(key, this.video.currentTime.toFixed(1));
-        }
-        if (window.ContinueWatching && this.currentMovie && this.video.duration) {
-          ContinueWatching.saveItem(
-            this.currentMovie,
-            this.currentEpisode?.name || `Tập ${this.currentEpIndex + 1}`,
-            this.video.currentTime,
-            this.video.duration
-          );
-        }
-      }
-    }, 4000);
+    this.saveInterval = window.setInterval(() => this.saveProgressNow(), 4000);
   },
 
-  onKeyDown(e) {
-    if (this.modal.classList.contains('hidden')) return;
-
-    switch (e.key) {
-      case ' ':
-        e.preventDefault();
-        this.togglePlayPause();
-        break;
-      case 'ArrowLeft':
-        e.preventDefault();
-        this.seekRelative(-10);
-        break;
-      case 'ArrowRight':
-        e.preventDefault();
-        this.seekRelative(10);
-        break;
+  onKeyDown(event) {
+    if (this.modal?.classList.contains('hidden')) return;
+    switch (event.key) {
+      case ' ': event.preventDefault(); this.togglePlayPause(); break;
+      case 'ArrowLeft': event.preventDefault(); this.seekRelative(-10); break;
+      case 'ArrowRight': event.preventDefault(); this.seekRelative(10); break;
       case 'ArrowUp':
-        e.preventDefault();
-        this.video.volume = Math.min(1, this.video.volume + 0.1);
+      case 'ArrowDown': {
+        event.preventDefault();
+        const delta = event.key === 'ArrowUp' ? 0.1 : -0.1;
+        this.video.volume = Math.max(0, Math.min(1, this.video.volume + delta));
         document.getElementById('volumeSlider').value = this.video.volume;
+        this.video.muted = false;
         this.updateVolumeIcons();
-        this.showAlert(`Âm lượng: ${Math.round(this.video.volume * 100)}%`);
         break;
-      case 'ArrowDown':
-        e.preventDefault();
-        this.video.volume = Math.max(0, this.video.volume - 0.1);
-        document.getElementById('volumeSlider').value = this.video.volume;
-        this.updateVolumeIcons();
-        this.showAlert(`Âm lượng: ${Math.round(this.video.volume * 100)}%`);
-        break;
-      case 'f':
-      case 'F':
-        this.toggleFullscreen();
-        break;
-      case 'm':
-      case 'M':
-        this.toggleMute();
-        break;
-      case 's':
-      case 'S':
-        this.toggleAspectRatio();
-        break;
-      case 'Escape':
-        this.close();
-        break;
+      }
+      case 'f': case 'F': void this.toggleCinemaFullscreen(); break;
+      case 'm': case 'M': this.toggleMute(); break;
+      case 's': case 'S': this.toggleAspectRatio(); break;
+      case 'Escape': if (this.isCinemaFullscreen) void this.exitCinemaFullscreen(); else this.close(); break;
+      default: break;
     }
   }
 };
 
-// Global Helpers for HTML inline calls
 function togglePlayPause() { Player.togglePlayPause(); }
-function seekRelative(sec) { Player.seekRelative(sec); }
+function seekRelative(seconds) { Player.seekRelative(seconds); }
 function toggleMute() { Player.toggleMute(); }
-function toggleFullscreen() { Player.toggleFullscreen(); }
-function toggleLandscapeFullscreen() { Player.toggleLandscapeFullscreen(); }
+function toggleCinemaFullscreen() { void Player.toggleCinemaFullscreen(); }
 function toggleAspectRatio() { Player.toggleAspectRatio(); }
 function playNextEpisode() { Player.playNextEpisode(); }
 function closePlayer() { Player.close(); }
-
 function togglePlayerServerMenu() {
-  document.getElementById('playerServerMenu').classList.toggle('hidden');
+  document.getElementById('playerServerMenu')?.classList.toggle('hidden');
+  document.getElementById('speedMenu')?.classList.add('hidden');
+  document.getElementById('qualityMenu')?.classList.add('hidden');
 }
-
 function toggleSpeedMenu() {
-  document.getElementById('speedMenu').classList.toggle('hidden');
-  document.getElementById('qualityMenu').classList.add('hidden');
+  document.getElementById('speedMenu')?.classList.toggle('hidden');
+  document.getElementById('qualityMenu')?.classList.add('hidden');
+  document.getElementById('playerServerMenu')?.classList.add('hidden');
 }
-
-function setPlaybackSpeed(rate) {
-  Player.setPlaybackSpeed(rate);
-}
-
+function setPlaybackSpeed(rate) { Player.setPlaybackSpeed(rate); }
 function toggleQualityMenu() {
-  document.getElementById('qualityMenu').classList.toggle('hidden');
-  document.getElementById('speedMenu').classList.add('hidden');
+  document.getElementById('qualityMenu')?.classList.toggle('hidden');
+  document.getElementById('speedMenu')?.classList.add('hidden');
+  document.getElementById('playerServerMenu')?.classList.add('hidden');
 }
+function setQuality(index) { Player.setQuality(index); }
 
-function setQuality(idx) {
-  Player.setQuality(idx);
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  Player.init();
-});
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => Player.init(), { once: true });
+else Player.init();

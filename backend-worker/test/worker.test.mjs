@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker, { createRateLimiter, json } from "../src/worker.mjs";
+import worker, { compareAppVersions, createRateLimiter, json } from "../src/worker.mjs";
 
 test("health reports an unconfigured database without exposing settings", async () => {
   const response = await worker.fetch(new Request("https://example.workers.dev/api/health"), {});
@@ -21,6 +21,12 @@ test("JSON responses include CORS and no-store headers", async () => {
   assert.equal(response.headers.get("access-control-allow-origin"), "*");
   assert.equal(response.headers.get("cache-control"), "no-store");
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+});
+
+test("app update checks compare version components rather than strings", () => {
+  assert.equal(compareAppVersions("3.10.0", "3.2.0"), 1);
+  assert.equal(compareAppVersions("3.1.9", "3.2.0"), -1);
+  assert.equal(compareAppVersions("3.2", "3.2.0"), 0);
 });
 
 test("admin master key is normalized but restricted to its configured Telegram ID", async () => {

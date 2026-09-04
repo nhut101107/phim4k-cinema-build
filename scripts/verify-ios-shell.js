@@ -8,6 +8,8 @@ const required = [
   "public/js/mobile-config.js",
   "public/js/runtime-config.js",
   "public/js/api.js",
+  "public/js/player-core.js",
+  "public/js/player.js",
   "scripts/prepare-ios-web.js"
 ];
 for (const relative of required) {
@@ -16,10 +18,13 @@ for (const relative of required) {
   }
 }
 const html = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
-for (const script of ["/js/mobile-config.js", "/js/runtime-config.js", "/js/api.js"]) {
+for (const script of ["/js/mobile-config.js", "/js/runtime-config.js", "/js/api.js", "/js/player-core.js", "/js/player.js"]) {
   if (!html.includes(script)) {
     throw new Error(`index.html does not load ${script}`);
   }
+}
+if (html.indexOf('/js/player-core.js') > html.indexOf('/js/player.js')) {
+  throw new Error('player-core.js must load before player.js');
 }
 const config = JSON.parse(fs.readFileSync(path.join(root, "capacitor.config.json"), "utf8"));
 if (config.appId !== "com.phim4k.cinema" || config.webDir !== "dist-ios") {
