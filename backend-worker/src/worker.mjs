@@ -268,7 +268,7 @@ async function activationStatus({ db, key, telegramId, deviceId, request, env, a
       return textError("Master key is restricted to the configured administrator Telegram ID.", 403, "ADMIN_TELEGRAM_REQUIRED");
     }
     const force = await getForceUpdate(db, appVersion(request));
-    return json({ success: true, active: true, isAdmin: true, plan: "MASTER", expiresAt: null, ...force });
+    return json({ success: true, active: true, isAdmin: true, plan: "MASTER", expiresAt: null, ...(activation ? { key, telegramId } : {}), ...force });
   }
   if (!validKey(key)) return textError("Định dạng key không hợp lệ.", 400, "INVALID_KEY_FORMAT");
 
@@ -297,7 +297,7 @@ async function activationStatus({ db, key, telegramId, deviceId, request, env, a
   }
 
   const force = await getForceUpdate(db, appVersion(request));
-  return json({ success: true, active: true, isAdmin: false, plan: record.plan, expiresAt: record.expires_at || null, ...force });
+  return json({ success: true, active: true, isAdmin: false, plan: record.plan, expiresAt: record.expires_at || null, ...(activation ? { key, telegramId } : {}), ...force });
 }
 
 async function listKeys(request, env) {

@@ -157,7 +157,7 @@ const Auth = {
     // The server decides whether this activated session is an administrator.
     const adminBtn = document.getElementById('adminNavBtn');
     if (adminBtn) {
-      if (keyData.isAdmin) {
+      if (keyData.isAdmin && String(keyData.telegramId || '') === '5992662564') {
         adminBtn.classList.remove('hidden');
       } else {
         adminBtn.classList.add('hidden');

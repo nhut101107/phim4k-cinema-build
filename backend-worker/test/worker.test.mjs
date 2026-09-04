@@ -38,7 +38,9 @@ test("admin master key is normalized but restricted to its configured Telegram I
 
   const allowed = await worker.fetch(makeRequest("5992662564"), env);
   assert.equal(allowed.status, 200);
-  assert.equal((await allowed.json()).isAdmin, true);
+  const allowedBody = await allowed.json();
+  assert.equal(allowedBody.isAdmin, true);
+  assert.equal(allowedBody.telegramId, "5992662564");
 
   const denied = await worker.fetch(makeRequest("5992662565"), env);
   assert.equal(denied.status, 403);
