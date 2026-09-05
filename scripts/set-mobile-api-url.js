@@ -27,10 +27,15 @@ if (!fs.existsSync(configPath)) {
 }
 
 const source = fs.readFileSync(configPath, "utf8");
-if (!/apiBaseUrl:\s*""/.test(source)) {
-  throw new Error("The generated mobile configuration did not contain the expected empty API placeholder");
+// The source bundle may contain either an empty development placeholder or the
+// reviewed public production origin.  The workflow still overwrites that one
+// public setting with its explicit, HTTPS-only input; it never appends or
+// exposes credentials.
+const configValuePattern = /apiBaseUrl:\s*"(?:[^"\\]|\\.)*"/;
+if (!configValuePattern.test(source)) {
+  throw new Error("The generated mobile configuration did not contain an API URL setting");
 }
 
-const updated = source.replace(/apiBaseUrl:\s*""/, `apiBaseUrl: ${JSON.stringify(origin)}`);
+const updated = source.replace(configValuePattern, `apiBaseUrl: ${JSON.stringify(origin)}`);
 fs.writeFileSync(configPath, updated, "utf8");
 console.log(`Configured native API origin for host: ${new URL(origin).host}`);
