@@ -118,6 +118,7 @@ test('current coverflow layout cannot crash home loading through retired hero ID
   assert.match(index, /id="coverflowSection"/);
   assert.doesNotMatch(index, /id="heroBillboard"/);
   assert.match(app, /getElementById\('heroBillboard'\)\?\.classList/);
+  assert.doesNotMatch(app, /getElementById\('heroBillboard'\)\.classList/);
   assert.match(app, /if \(!backdropEl \|\| !titleEl \|\| !subEl \|\| !descEl \|\| !yearEl \|\| !qualityEl\) return;/);
 });
 

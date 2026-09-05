@@ -230,6 +230,17 @@ try {
     return { moved, maxScroll };
   })()`);
 
+  process.stderr.write('[qa] checking category navigation\n');
+  await evaluate("window.App.switchCategory('phim-bo', 1)");
+  await waitFor('document.querySelectorAll("#categoryGrid .movie-card").length > 0', 'Category catalogue did not render');
+  const categoryState = await evaluate(`(() => ({
+    cards: document.querySelectorAll('#categoryGrid .movie-card').length,
+    categoryVisible: !document.getElementById('categoryView').classList.contains('hidden'),
+    coverflowHidden: document.getElementById('coverflowSection').classList.contains('hidden'),
+  }))()`);
+  await evaluate("window.App.switchCategory('home')");
+  await waitFor('window.App.homeFeedLoading === false && document.querySelectorAll("#dynamicSections .movie-card").length > 0', 'Home catalogue did not recover after category navigation');
+
   await evaluate("window.App.openMovieDetail('tuyet-the-chien-hon')");
   process.stderr.write('[qa] checking movie detail and episodes\n');
   await waitFor('document.querySelectorAll("#episodesList .ep-btn").length > 0', 'Movie detail did not load episodes');
@@ -273,6 +284,9 @@ try {
     && homeState.heroHasImage
     && scrollState.moved
     && scrollState.maxScroll > 0
+    && categoryState.cards > 0
+    && categoryState.categoryVisible
+    && categoryState.coverflowHidden
     && detailState.episodes > 0
     && detailState.posterWidth > 0
     && detailState.serverTabs > 0
@@ -289,6 +303,7 @@ try {
     passed: checksPassed,
     home: homeState,
     scroll: scrollState,
+    category: categoryState,
     detail: detailState,
     nativePlayer: nativePlayerState,
     exceptions,

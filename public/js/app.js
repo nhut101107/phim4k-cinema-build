@@ -98,6 +98,9 @@ const App = {
     // #heroBillboard block. Keep this path compatible with both layouts so a
     // missing optional hero cannot abort the entire catalogue promise.
     document.getElementById('heroBillboard')?.classList.remove('hidden');
+    document.getElementById('coverflowSection')?.classList.remove('hidden');
+    document.getElementById('continueWatchingSection')?.classList.remove('hidden');
+    document.getElementById('catalogFilterPanel')?.classList.remove('hidden');
     document.getElementById('dynamicSections')?.classList.remove('hidden');
     document.getElementById('categoryView')?.classList.add('hidden');
 
@@ -497,8 +500,11 @@ const App = {
     this.currentPage = page;
     this.updateActiveNav(category);
 
-    document.getElementById('heroBillboard').classList.add('hidden');
-    document.getElementById('dynamicSections').classList.add('hidden');
+    document.getElementById('heroBillboard')?.classList.add('hidden');
+    document.getElementById('coverflowSection')?.classList.add('hidden');
+    document.getElementById('continueWatchingSection')?.classList.add('hidden');
+    document.getElementById('catalogFilterPanel')?.classList.add('hidden');
+    document.getElementById('dynamicSections')?.classList.add('hidden');
     const catView = document.getElementById('categoryView');
     catView.classList.remove('hidden');
 
@@ -633,8 +639,11 @@ const App = {
   },
 
   async loadFullSearch(query, page = 1) {
-    document.getElementById('heroBillboard').classList.add('hidden');
-    document.getElementById('dynamicSections').classList.add('hidden');
+    document.getElementById('heroBillboard')?.classList.add('hidden');
+    document.getElementById('coverflowSection')?.classList.add('hidden');
+    document.getElementById('continueWatchingSection')?.classList.add('hidden');
+    document.getElementById('catalogFilterPanel')?.classList.add('hidden');
+    document.getElementById('dynamicSections')?.classList.add('hidden');
     const catView = document.getElementById('categoryView');
     catView.classList.remove('hidden');
 
