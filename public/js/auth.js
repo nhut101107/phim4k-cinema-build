@@ -284,8 +284,12 @@ async function handleActivation(e) {
         return;
       }
       setTimeout(() => {
-        Auth.unlockApp(res);
-        if (res.isAdmin) {
+        // Bind the verified session to the values submitted for this request.
+        // Some valid server responses intentionally omit the raw key and ID;
+        // without this merge the UI would open and then render as inactive.
+        const verifiedSession = { ...res, key, telegramId };
+        Auth.unlockApp(verifiedSession);
+        if (verifiedSession.isAdmin && String(verifiedSession.telegramId) === '5992662564') {
           setTimeout(() => Admin.open(), 400);
         }
       }, 500);

@@ -14,7 +14,7 @@ const API = {
   },
 
   getVersion() {
-    return '3.4.1';
+    return '3.4.2';
   },
 
   async fetchWithTimeout(input, options = {}, timeoutMs = 15000) {
@@ -257,3 +257,8 @@ const API = {
     }
   }
 };
+
+// Top-level `const` values are not guaranteed to become Window properties in
+// an iOS WKWebView. Account and other later-loaded scripts therefore use this
+// explicit, public reference rather than falling back to a stale version.
+window.API = API;
