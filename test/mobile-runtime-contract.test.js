@@ -34,7 +34,7 @@ test('account version and a verified session do not fall back to stale WebView s
   const auth = read('../public/js/auth.js');
   assert.match(api, /window\.API = API/);
   assert.match(auth, /window\.Auth = Auth/);
-  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.7'/);
+  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.8'/);
   assert.match(auth, /const verifiedSession = \{ \.\.\.res, key, telegramId \}/);
   assert.match(auth, /Auth\.unlockApp\(verifiedSession\)/);
 });
@@ -79,7 +79,7 @@ test('native catalog falls back immediately instead of leaving the UI loading', 
   vm.createContext(sandbox);
   vm.runInContext(read('../public/js/catalog-fallback.js'), sandbox);
   vm.runInContext(`${read('../public/js/api.js')}\nglobalThis.__api = API;`, sandbox);
-  assert.equal(sandbox.window.API.getVersion(), '3.4.7');
+  assert.equal(sandbox.window.API.getVersion(), '3.4.8');
   const home = await sandbox.__api.getHomeFeed();
   const detail = await sandbox.__api.getDetail(home.hero[0].slug);
   assert.ok(home.hero.length > 0);
@@ -120,6 +120,40 @@ test('current coverflow layout cannot crash home loading through retired hero ID
   assert.match(app, /getElementById\('heroBillboard'\)\?\.classList/);
   assert.doesNotMatch(app, /getElementById\('heroBillboard'\)\.classList/);
   assert.match(app, /if \(!backdropEl \|\| !titleEl \|\| !subEl \|\| !descEl \|\| !yearEl \|\| !qualityEl\) return;/);
+});
+
+test('mobile detail and admin overlays expose reliable close controls', () => {
+  const index = read('../public/index.html');
+  const styles = read('../public/css/modal.css');
+  assert.match(index, /aria-label="Đóng thông tin phim"/);
+  assert.match(index, /aria-label="Đóng bảng quản trị"/);
+  assert.match(index, /class="admin-close-action"/);
+  assert.match(styles, /\.modal-close-btn[\s\S]*min-width: 44px/);
+  assert.match(styles, /position: fixed;[\s\S]*env\(safe-area-inset-top\)/);
+});
+
+test('home removes legacy fake continue-watching cards and avoids mobile carousel rebuilds', () => {
+  const coverflow = read('../public/js/coverflow.js');
+  const styles = read('../public/css/style.css');
+  assert.match(coverflow, /getDefaultSeed\(\) \{\s*return \[\];/);
+  assert.match(coverflow, /max-width: 600px/);
+  assert.doesNotMatch(coverflow, /images\.unsplash\.com/);
+  assert.match(styles, /\.btn-cf-play svg,[\s\S]*?width: 20px;[\s\S]*?height: 20px;/);
+});
+
+test('device-only approval remains server-authoritative and bound to a device', () => {
+  const index = read('../public/index.html');
+  const api = read('../public/js/api.js');
+  const auth = read('../public/js/auth.js');
+  assert.match(index, /id="btnRequestDeviceAccess"/);
+  assert.match(api, /\/api\/auth\/request-device-access/);
+  assert.match(api, /\/api\/auth\/device-status/);
+  assert.match(auth, /deviceOnly: true/);
+  assert.match(auth, /phim4k_device_only/);
+  assert.match(auth, /phim4k_pending_device_key/);
+  assert.match(auth, /beginDeviceApprovalPolling/);
+  assert.match(index, /id="deviceRequestsList"/);
+  assert.match(index, /adminTabLogs[\s\S]*?<\/div>\s*<\/div>\s*<!-- TAB 4:[\s\S]*?adminTabDownloads/);
 });
 
 test('native movie artwork uses the allowlisted same-origin image relay', () => {

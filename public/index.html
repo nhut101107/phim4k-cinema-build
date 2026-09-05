@@ -69,6 +69,9 @@
           <span class="btn-text">XÁC THỰC VÀ VÀO XEM PHIM</span>
           <div class="spinner hidden" id="activateSpinner"></div>
         </button>
+        <button type="button" id="btnRequestDeviceAccess" class="btn-device-request" onclick="requestDeviceOnlyAccess()">
+          Không có Telegram? Báo Admin duyệt thiết bị này
+        </button>
       </form>
 
       <div id="gateMessage" class="gate-message hidden"></div>
@@ -348,7 +351,7 @@
           </div>
           <div class="acc-detail-item">
             <span>Phiên bản ứng dụng:</span>
-            <span id="accAppVersion">v3.4.7</span>
+            <span id="accAppVersion">v3.4.8</span>
           </div>
         </div>
 
@@ -397,7 +400,7 @@
   <!-- ================================================= -->
   <div id="movieModal" class="modal-overlay hidden" onclick="closeMovieModal(event)">
     <div class="modal-dialog movie-detail-dialog" onclick="event.stopPropagation()">
-      <button class="modal-close-btn" onclick="hideMovieModal()">✕</button>
+      <button class="modal-close-btn" type="button" aria-label="Đóng thông tin phim" onclick="hideMovieModal()">✕</button>
       <div class="detail-header" id="detailHeader">
         <div class="detail-backdrop" id="detailBackdrop"></div>
         <div class="detail-header-overlay"></div>
@@ -418,6 +421,7 @@
             <h4 id="detailOriginName" class="detail-origin">Origin Name</h4>
             <div class="detail-badges" id="detailBadges"></div>
             <p id="detailContent" class="detail-synopsis"></p>
+            <button id="detailSynopsisToggle" class="detail-synopsis-toggle hidden" type="button" onclick="App.toggleDetailSynopsis()">Xem thêm</button>
             <div class="detail-meta-grid" id="detailMetaGrid"></div>
           </div>
         </div>
@@ -426,7 +430,7 @@
         <div class="episodes-section">
           <div class="servers-header">
             <h3>⚡ Chọn Nguồn Server & Danh Sách Tập</h3>
-            <span class="server-note">💡 Nếu server này bị chậm hoặc lỗi sub, hãy chọn server khác ở dưới</span>
+            <span class="server-note">Nếu nguồn đang chậm, hãy thử nguồn khác.</span>
             <div id="serverTabs" class="server-tabs"></div>
           </div>
           <div id="episodesList" class="episodes-grid"></div>
@@ -564,7 +568,7 @@
   <!-- ================================================= -->
   <div id="licenseModal" class="modal-overlay hidden" onclick="closeLicenseModal(event)">
     <div class="modal-dialog license-dialog" onclick="event.stopPropagation()">
-      <button class="modal-close-btn" onclick="hideLicenseModal()">✕</button>
+      <button class="modal-close-btn" type="button" aria-label="Đóng thông tin bản quyền" onclick="hideLicenseModal()">✕</button>
       <div class="license-dialog-header">
         <div class="vip-crown">👑</div>
         <h2>Thông Tin Bản Quyền</h2>
@@ -611,12 +615,13 @@
   <!-- ================================================= -->
   <div id="adminModal" class="modal-overlay hidden" onclick="closeAdminModal(event)">
     <div class="modal-dialog admin-dialog" onclick="event.stopPropagation()">
-      <button class="modal-close-btn" onclick="hideAdminModal()">✕</button>
+      <button class="modal-close-btn" type="button" aria-label="Đóng bảng quản trị" onclick="hideAdminModal()">✕</button>
       
       <div class="admin-header">
         <div class="admin-title-row">
           <div class="admin-badge">⚡ SUPER ADMIN PANEL</div>
           <span class="admin-user-pill">Admin Telegram: <strong>@mnhutdznecon</strong></span>
+          <button class="admin-close-action" type="button" onclick="hideAdminModal()">Đóng</button>
         </div>
         <p class="admin-desc">Quản lý toàn diện: Cấp phát key, Quản lý & Ban người dùng, Tường lửa chống DDoS và Nhật ký hoạt động.</p>
       </div>
@@ -666,6 +671,19 @@
 
       <!-- TAB 1: KEYS MANAGEMENT -->
       <div id="adminTabKeys" class="admin-tab-content">
+        <div class="admin-section-box device-request-box">
+          <div class="table-header-row">
+            <div>
+              <h3>📲 Yêu Cầu Thiết Bị Không Có Telegram</h3>
+              <p class="admin-desc">Chỉ duyệt khi bạn nhận ra key và thiết bị. Duyệt thiết bị mới sẽ thay thiết bị đang gắn với key đó.</p>
+            </div>
+            <button class="btn-refresh-keys" type="button" onclick="Admin.loadDeviceRequests()">Làm mới</button>
+          </div>
+          <div id="deviceRequestsList" class="device-requests-list">
+            <p class="admin-desc">Đang tải yêu cầu…</p>
+          </div>
+        </div>
+
         <!-- Create New Key Form -->
         <div class="admin-section-box">
           <h3>➕ Tạo License Key Mới Gắn Telegram ID</h3>
@@ -841,9 +859,10 @@
             </div>
           </div>
         </div>
+      </div>
 
-        <!-- TAB 4: APP DOWNLOADS & UPDATE LINKS -->
-        <div id="adminTabDownloads" class="admin-tab-pane hidden">
+      <!-- TAB 4: APP DOWNLOADS & UPDATE LINKS -->
+      <div id="adminTabDownloads" class="admin-tab-content hidden">
           <div class="admin-keys-header">
             <h3>🚀 Cập Nhật Link Tải 3 Phiên Bản (ADR, IPA, EXE)</h3>
             <button class="btn-refresh-keys" onclick="Admin.loadDownloadsConfig()">🔄 Tải Lại Cấu Hình</button>
@@ -957,7 +976,6 @@
               </div>
             </form>
           </div>
-        </div>
       </div>
 
     </div>

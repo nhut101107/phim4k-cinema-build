@@ -16,6 +16,19 @@ CREATE TABLE IF NOT EXISTS license_keys (
 CREATE INDEX IF NOT EXISTS idx_license_telegram ON license_keys(activated_telegram_id);
 CREATE INDEX IF NOT EXISTS idx_license_device ON license_keys(device_id);
 
+CREATE TABLE IF NOT EXISTS device_access_requests (
+  license_key TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
+  requested_at TEXT NOT NULL,
+  decided_at TEXT,
+  decided_by TEXT,
+  PRIMARY KEY (license_key, device_id),
+  FOREIGN KEY (license_key) REFERENCES license_keys(license_key) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_device_access_status ON device_access_requests(status, requested_at);
+
 CREATE TABLE IF NOT EXISTS bans (
   telegram_id TEXT PRIMARY KEY,
   scopes_json TEXT NOT NULL DEFAULT '["telegram"]',
@@ -46,4 +59,3 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   target_telegram_id TEXT,
   detail TEXT
 );
-

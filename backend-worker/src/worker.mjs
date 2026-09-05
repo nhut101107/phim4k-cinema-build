@@ -141,15 +141,15 @@ function getClientIp(request) {
 }
 
 function ratePolicy(pathname) {
-  if (pathname === "/api/auth/activate") return RATE_LIMITS.authActivate;
-  if (pathname === "/api/auth/status") return RATE_LIMITS.authStatus;
+  if (pathname === "/api/auth/activate" || pathname === "/api/auth/request-device-access") return RATE_LIMITS.authActivate;
+  if (pathname === "/api/auth/status" || pathname === "/api/auth/device-status") return RATE_LIMITS.authStatus;
   if (pathname.startsWith("/api/admin/")) return RATE_LIMITS.admin;
   return RATE_LIMITS.default;
 }
 
 function distributedRateBinding(pathname, env) {
-  if (pathname === "/api/auth/activate") return env.ACTIVATION_RATE_LIMITER;
-  if (pathname === "/api/auth/status") return env.STATUS_RATE_LIMITER;
+  if (pathname === "/api/auth/activate" || pathname === "/api/auth/request-device-access") return env.ACTIVATION_RATE_LIMITER;
+  if (pathname === "/api/auth/status" || pathname === "/api/auth/device-status") return env.STATUS_RATE_LIMITER;
   if (pathname.startsWith("/api/admin/")) return env.ADMIN_RATE_LIMITER;
   return env.PUBLIC_RATE_LIMITER;
 }
@@ -158,7 +158,7 @@ function distributedRateKey(request, pathname) {
   const ip = getClientIp(request);
   // Activation and administrative attempts are limited by edge IP. Status
   // checks use a stable identity so carrier NATs do not throttle viewers.
-  if (pathname === "/api/auth/status") {
+  if (pathname === "/api/auth/status" || pathname === "/api/auth/device-status") {
     return `status:${requestKey(request) || requestTelegram(request) || ip}`;
   }
   return `${pathname}:${ip}`;
@@ -354,6 +354,115 @@ async function activationStatus({ db, key, telegramId, deviceId, request, env, a
 
   const force = await getForceUpdate(db, appVersion(request));
   return json({ success: true, active: true, isAdmin: false, plan: record.plan, expiresAt: record.expires_at || null, ...(activation ? { key, telegramId } : {}), ...force });
+}
+
+async function ensureDeviceAccessTable(db) {
+  await db.prepare(
+    "CREATE TABLE IF NOT EXISTS device_access_requests (license_key TEXT NOT NULL, device_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')), requested_at TEXT NOT NULL, decided_at TEXT, decided_by TEXT, PRIMARY KEY (license_key, device_id), FOREIGN KEY (license_key) REFERENCES license_keys(license_key) ON DELETE CASCADE)",
+  ).run();
+  await db.prepare("CREATE INDEX IF NOT EXISTS idx_device_access_status ON device_access_requests(status, requested_at)").run();
+}
+
+function maskedValue(value, visible = 4) {
+  const text = String(value || "");
+  if (text.length <= visible * 2) return `${text.slice(0, 2)}••••`;
+  return `${text.slice(0, visible)}••••${text.slice(-visible)}`;
+}
+
+async function notifyDeviceRequest(env, key, deviceId) {
+  const token = String(env.TELEGRAM_BOT_TOKEN || "").trim();
+  const chatId = normalizeId(env.ADMIN_TELEGRAM_ID);
+  if (!token || !chatId) return false;
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: `Phim4K: Có yêu cầu đăng nhập không Telegram.\nKey: ${maskedValue(key)}\nThiết bị: ${maskedValue(deviceId, 6)}\nMở Panel Admin > Yêu cầu thiết bị để duyệt.`,
+      }),
+    });
+    return response.ok;
+  } catch (_error) {
+    return false;
+  }
+}
+
+async function requestDeviceAccess(request, env) {
+  const body = await parseBody(request);
+  const key = normalizeKey(body.key);
+  const deviceId = normalizeId(body.deviceId);
+  if (!validKey(key) || !deviceId) return textError("Nhập key hợp lệ để gửi yêu cầu cho Admin.", 400, "INVALID_DEVICE_REQUEST");
+  if (await verifyMasterKey(key, env, env.DB)) return textError("Key Admin bắt buộc dùng Telegram ID quản trị.", 403, "ADMIN_TELEGRAM_REQUIRED");
+
+  const record = await queryOne(env.DB, "SELECT * FROM license_keys WHERE license_key = ?", key);
+  if (!record) return textError("Key không tồn tại.", 404, "KEY_NOT_FOUND");
+  if (!record.active) return textError("Key đã bị vô hiệu hóa.", 403, "KEY_DISABLED");
+  if (isExpired(record.expires_at)) return textError("Key đã hết hạn.", 403, "KEY_EXPIRED");
+
+  await ensureDeviceAccessTable(env.DB);
+  await env.DB.prepare(
+    "INSERT INTO device_access_requests (license_key, device_id, status, requested_at) VALUES (?, ?, 'pending', ?) ON CONFLICT(license_key, device_id) DO UPDATE SET status = CASE WHEN device_access_requests.status = 'approved' THEN 'approved' ELSE 'pending' END, requested_at = CASE WHEN device_access_requests.status = 'approved' THEN device_access_requests.requested_at ELSE excluded.requested_at END, decided_at = CASE WHEN device_access_requests.status = 'approved' THEN device_access_requests.decided_at ELSE NULL END, decided_by = CASE WHEN device_access_requests.status = 'approved' THEN device_access_requests.decided_by ELSE NULL END",
+  ).bind(key, deviceId, now()).run();
+  const existing = await queryOne(env.DB, "SELECT status FROM device_access_requests WHERE license_key = ? AND device_id = ?", key, deviceId);
+  if (existing?.status === "approved" && record.device_id === deviceId) {
+    return json({ success: true, status: "approved", message: "Thiết bị đã được Admin cấp phép." });
+  }
+  const notified = await notifyDeviceRequest(env, key, deviceId);
+  await logEvent(env.DB, "device_access_requested", { targetKey: key, detail: `device=${maskedValue(deviceId, 6)} notified=${notified}` });
+  return json({ success: true, status: "pending", notified, message: notified ? "Đã báo Admin. Ứng dụng sẽ tự kiểm tra trạng thái duyệt." : "Đã gửi yêu cầu vào Panel Admin. Ứng dụng sẽ tự kiểm tra trạng thái duyệt." });
+}
+
+async function deviceAccessStatus(request, env) {
+  const url = new URL(request.url);
+  const key = normalizeKey(url.searchParams.get("key"));
+  const deviceId = normalizeId(url.searchParams.get("deviceId"));
+  if (!validKey(key) || !deviceId) return textError("Thiếu key hoặc mã thiết bị.", 400, "MISSING_DEVICE_LICENSE_DATA");
+  await ensureDeviceAccessTable(env.DB);
+  const approval = await queryOne(env.DB, "SELECT status FROM device_access_requests WHERE license_key = ? AND device_id = ?", key, deviceId);
+  if (!approval) return json({ success: true, active: false, status: "none", message: "Chưa gửi yêu cầu cấp phép." });
+  if (approval.status !== "approved") {
+    return json({ success: true, active: false, status: approval.status, message: approval.status === "rejected" ? "Admin đã từ chối yêu cầu." : "Đang chờ Admin duyệt." });
+  }
+  const record = await queryOne(env.DB, "SELECT * FROM license_keys WHERE license_key = ?", key);
+  if (!record) return textError("Key không tồn tại.", 404, "KEY_NOT_FOUND");
+  if (!record.active) return textError("Key đã bị vô hiệu hóa.", 403, "KEY_DISABLED");
+  if (isExpired(record.expires_at)) return textError("Key đã hết hạn.", 403, "KEY_EXPIRED");
+  if (record.device_id !== deviceId) return textError("Quyền thiết bị đã thay đổi. Hãy gửi yêu cầu mới.", 403, "DEVICE_MISMATCH");
+  const force = await getForceUpdate(env.DB, appVersion(request));
+  return json({ success: true, active: true, status: "approved", deviceOnly: true, isAdmin: false, plan: record.plan, expiresAt: record.expires_at || null, key, ...force });
+}
+
+async function listDeviceAccessRequests(request, env) {
+  const denied = await requireVerifiedAdmin(request, env);
+  if (denied) return denied;
+  await ensureDeviceAccessTable(env.DB);
+  const rows = await env.DB.prepare(
+    "SELECT r.license_key, r.device_id, r.status, r.requested_at, r.decided_at, k.plan, k.expires_at, k.active FROM device_access_requests r JOIN license_keys k ON k.license_key = r.license_key ORDER BY CASE r.status WHEN 'pending' THEN 0 ELSE 1 END, r.requested_at DESC LIMIT 100",
+  ).all();
+  return json({ requests: rows.results || [] });
+}
+
+async function decideDeviceAccess(request, env) {
+  const denied = await requireVerifiedAdmin(request, env);
+  if (denied) return denied;
+  const body = await parseBody(request);
+  const key = normalizeKey(body.key);
+  const deviceId = normalizeId(body.deviceId);
+  const decision = body.decision === "approve" ? "approved" : body.decision === "reject" ? "rejected" : "";
+  if (!validKey(key) || !deviceId || !decision) return textError("Yêu cầu duyệt không hợp lệ.", 400, "INVALID_DECISION");
+  await ensureDeviceAccessTable(env.DB);
+  const pending = await queryOne(env.DB, "SELECT status FROM device_access_requests WHERE license_key = ? AND device_id = ?", key, deviceId);
+  if (!pending) return textError("Không tìm thấy yêu cầu thiết bị.", 404, "REQUEST_NOT_FOUND");
+  const timestamp = now();
+  if (decision === "approved") {
+    const record = await queryOne(env.DB, "SELECT active, expires_at FROM license_keys WHERE license_key = ?", key);
+    if (!record || !record.active || isExpired(record.expires_at)) return textError("Key không còn hoạt động.", 403, "KEY_INACTIVE");
+    await env.DB.prepare("UPDATE license_keys SET device_id = ?, updated_at = ? WHERE license_key = ?").bind(deviceId, timestamp, key).run();
+  }
+  await env.DB.prepare("UPDATE device_access_requests SET status = ?, decided_at = ?, decided_by = ? WHERE license_key = ? AND device_id = ?").bind(decision, timestamp, requestTelegram(request), key, deviceId).run();
+  await logEvent(env.DB, `device_access_${decision}`, { actorTelegramId: requestTelegram(request), targetKey: key, detail: `device=${maskedValue(deviceId, 6)}` });
+  return json({ success: true, status: decision });
 }
 
 async function listKeys(request, env) {
@@ -782,11 +891,15 @@ export default {
       if (request.method === "GET" && pathname === "/api/auth/status") {
         return activationStatus({ db: env.DB, key: normalizeKey(url.searchParams.get("key")), telegramId: normalizeId(url.searchParams.get("telegramId")), deviceId: normalizeId(url.searchParams.get("deviceId")), request, env, activation: false });
       }
+      if (request.method === "POST" && pathname === "/api/auth/request-device-access") return requestDeviceAccess(request, env);
+      if (request.method === "GET" && pathname === "/api/auth/device-status") return deviceAccessStatus(request, env);
       if (request.method === "GET" && (pathname === "/api/app/check-update" || pathname === "/api/app/version")) {
         return json(await getForceUpdate(env.DB, url.searchParams.get("version") || appVersion(request)));
       }
       if ((request.method === "GET" || request.method === "POST") && pathname === "/api/app/downloads") return handleDownloads(request, env);
       if (request.method === "GET" && pathname === "/api/admin/keys") return listKeys(request, env);
+      if (request.method === "GET" && pathname === "/api/admin/device-access-requests") return listDeviceAccessRequests(request, env);
+      if (request.method === "POST" && pathname === "/api/admin/device-access-decision") return decideDeviceAccess(request, env);
       if (request.method === "POST" && pathname === "/api/admin/rotate-master-key") return rotateMasterKey(request, env);
       if (request.method === "POST" && pathname === "/api/admin/create-key") return createKey(request, env);
       if (request.method === "POST" && pathname === "/api/admin/renew-key") return updateKey(request, env, "renew");

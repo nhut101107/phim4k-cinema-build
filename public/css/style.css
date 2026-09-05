@@ -202,6 +202,27 @@ body.activation-locked {
   transform: translateY(0);
 }
 
+.btn-device-request {
+  width: 100%;
+  min-height: 46px;
+  margin-top: 10px;
+  padding: 11px 14px;
+  border: 1px solid rgba(245, 158, 11, 0.38);
+  border-radius: var(--radius-md);
+  background: rgba(245, 158, 11, 0.08);
+  color: #fbbf24;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.btn-device-request:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
 .gate-message {
   margin-top: 14px;
   padding: 10px 14px;
@@ -221,6 +242,12 @@ body.activation-locked {
   background: rgba(16, 185, 129, 0.15);
   border: 1px solid rgba(16, 185, 129, 0.3);
   color: #34d399;
+}
+
+.gate-message.pending {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #fbbf24;
 }
 
 .demo-keys-box {
@@ -1252,6 +1279,15 @@ body.activation-locked {
   transform: scale(0.97);
 }
 
+.btn-cf-play svg,
+.btn-cf-info svg {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  flex: 0 0 20px;
+  pointer-events: none;
+}
+
 .cf-badges-row {
   display: flex;
   align-items: center;
@@ -2017,6 +2053,80 @@ body:not(.activation-locked) {
 }
 
 @media (max-width: 600px) {
+  .coverflow-section {
+    padding-top: max(10px, env(safe-area-inset-top));
+  }
+
+  .coverflow-container {
+    height: 292px;
+  }
+
+  .coverflow-card.center {
+    width: 194px;
+    height: 282px;
+  }
+
+  .coverflow-card.left,
+  .coverflow-card.right {
+    width: 184px;
+    height: 268px;
+    opacity: 0.52;
+  }
+
+  .coverflow-card.left {
+    transform: translateX(-126px) scale(0.82) rotateY(20deg) translateZ(-25px);
+  }
+
+  .coverflow-card.right {
+    transform: translateX(126px) scale(0.82) rotateY(-20deg) translateZ(-25px);
+  }
+
+  .coverflow-details {
+    padding: 12px 18px 20px;
+  }
+
+  .cf-title {
+    display: -webkit-box;
+    overflow: hidden;
+    font-size: 24px;
+    line-height: 1.18;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .cf-subtitle {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .cf-action-buttons {
+    gap: 10px;
+  }
+
+  .btn-cf-play,
+  .btn-cf-info {
+    min-height: 50px;
+    border-radius: 14px;
+    font-size: 15px;
+  }
+
+  .cf-synopsis {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .movie-section {
+    content-visibility: auto;
+    contain-intrinsic-size: 620px;
+  }
+
+  .movie-card {
+    contain: layout paint style;
+  }
+
   .catalog-filter-panel {
     margin: 14px 12px 6px;
     padding: 15px;
@@ -2052,4 +2162,3 @@ body:not(.activation-locked) {
     grid-template-columns: 1fr;
   }
 }
-

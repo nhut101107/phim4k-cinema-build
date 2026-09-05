@@ -42,9 +42,11 @@ const Coverflow = {
       card.dataset.index = item.index;
 
       const img = document.createElement('img');
-      img.src = App.resolveImageUrl(item.movie.poster_url || item.movie.thumb_url || '');
       img.alt = item.movie.name || 'Poster';
       img.loading = 'eager';
+      img.decoding = 'async';
+      img.fetchPriority = item.role === 'center' ? 'high' : 'low';
+      img.src = App.resolveImageUrl(item.movie.poster_url || item.movie.thumb_url || '');
       App.attachPosterFallback(img);
 
       card.appendChild(img);
@@ -156,9 +158,17 @@ const Coverflow = {
 
   startAutoRotate() {
     clearInterval(this.autoTimer);
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    // Rebuilding all cover cards during automatic rotation creates a visible
+    // blank frame in WKWebView while the next poster decodes. Phone users can
+    // swipe instead; keep auto rotation only on larger screens.
+    if (window.matchMedia?.('(max-width: 600px)').matches) return;
     this.autoTimer = setInterval(() => {
+      if (document.hidden) return;
+      if (!document.getElementById('movieModal')?.classList.contains('hidden')) return;
+      if (!document.getElementById('playerModal')?.classList.contains('hidden')) return;
       this.next();
-    }, 4500);
+    }, 8000);
   },
 
   resetAutoRotate() {
@@ -195,38 +205,19 @@ const ContinueWatching = {
   storageKey: 'phim4k_continue_watching',
 
   getDefaultSeed() {
-    return [
-      {
-        slug: 'cua-hang-sat-thu',
-        name: 'Cửa Hàng Sát Thủ',
-        epName: 'Tập 01',
-        timeText: '04:43 / 50:08',
-        progressPercent: 12,
-        thumb: 'https://images.unsplash.com/photo-1574267432553-4b4628081c31?w=500'
-      },
-      {
-        slug: 'the-boys-season-2',
-        name: 'The Boys (Phần 2)',
-        epName: 'Tập 01',
-        timeText: '31:51 / 1:00:52',
-        progressPercent: 52,
-        thumb: 'https://images.unsplash.com/photo-1563089145-599997674d42?w=500'
-      },
-      {
-        slug: 'sieu-anh-hung',
-        name: 'Siêu Anh Hùng Ph...',
-        epName: 'Tập 08',
-        timeText: '01:42 / 1:04:15',
-        progressPercent: 6,
-        thumb: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=500'
-      }
-    ];
+    return [];
   },
 
   getItems() {
     try {
       const raw = localStorage.getItem(this.storageKey);
-      if (raw) return JSON.parse(raw);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const legacyDemoSlugs = new Set(['cua-hang-sat-thu', 'the-boys-season-2', 'sieu-anh-hung']);
+        const cleaned = Array.isArray(parsed) ? parsed.filter((item) => !legacyDemoSlugs.has(item?.slug)) : [];
+        if (cleaned.length !== parsed.length) localStorage.setItem(this.storageKey, JSON.stringify(cleaned));
+        return cleaned;
+      }
     } catch (e) {}
     return this.getDefaultSeed();
   },
@@ -281,7 +272,7 @@ const ContinueWatching = {
 
       card.innerHTML = `
         <div class="cw-thumb-wrapper">
-          <img src="${App.resolveImageUrl(item.thumb)}" class="cw-thumb" alt="${item.name}" />
+          <img src="${App.resolveImageUrl(item.thumb)}" class="cw-thumb" alt="${item.name}" loading="lazy" decoding="async" />
           <div class="cw-progress-bar">
             <div class="cw-progress-fill" style="width: ${item.progressPercent || 30}%"></div>
           </div>
@@ -329,8 +320,8 @@ function switchTab(tabId) {
 
 function renderAccountTab() {
   const session = window.Auth?.activeKeyData;
-  const isAuthenticated = Boolean(session?.active !== false && session?.telegramId && session?.key);
-  const teleId = isAuthenticated ? String(session.telegramId) : 'Chưa đăng nhập';
+  const isAuthenticated = Boolean(session?.active !== false && session?.key && (session?.telegramId || session?.deviceOnly));
+  const teleId = isAuthenticated ? (session.deviceOnly ? 'Thiết bị được Admin duyệt' : String(session.telegramId)) : 'Chưa đăng nhập';
   const plan = isAuthenticated ? (session.isAdmin ? 'SUPER ADMIN' : (session.plan || 'VIP')) : 'Chưa kích hoạt';
   const key = isAuthenticated ? `${String(session.key).slice(0, 4)}••••${String(session.key).slice(-4)}` : 'Chưa có key';
   const isSuperAdmin = Boolean(isAuthenticated && session.isAdmin);
@@ -344,7 +335,7 @@ function renderAccountTab() {
   if (planEl) planEl.textContent = isSuperAdmin ? '👑 SUPER ADMIN' : plan;
   if (keyEl) keyEl.textContent = key;
   const versionEl = document.getElementById('accAppVersion');
-  if (versionEl) versionEl.textContent = `v${window.API?.getVersion?.() || '3.4.7'}`;
+  if (versionEl) versionEl.textContent = `v${window.API?.getVersion?.() || '3.4.8'}`;
 
   if (adminBtn) {
     adminBtn.classList.toggle('hidden', !isSuperAdmin);

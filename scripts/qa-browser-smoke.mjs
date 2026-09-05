@@ -200,6 +200,30 @@ try {
   await waitFor('document.readyState === "complete"', 'Document did not finish loading');
   await waitFor("Boolean(window.App && window.Auth && typeof Player === 'object')", 'App modules were not initialized');
 
+  process.stderr.write('[qa] checking key-only device approval unlock\n');
+  const deviceApprovalState = await evaluate(`(async () => {
+    const requestOriginal = window.API.requestDeviceAccess;
+    const statusOriginal = window.API.checkDeviceAccess;
+    window.API.requestDeviceAccess = async () => ({ status: 'pending', message: 'Đang chờ Admin duyệt' });
+    window.API.checkDeviceAccess = async () => ({
+      active: true,
+      status: 'approved',
+      plan: 'QA DEVICE',
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+    });
+    document.getElementById('keyInput').value = 'P4K-DEVICE-QA';
+    await window.requestDeviceOnlyAccess();
+    const state = {
+      unlocked: !document.getElementById('appContainer').classList.contains('hidden'),
+      deviceOnly: window.Auth.activeKeyData?.deviceOnly === true,
+      telegramEmpty: !localStorage.getItem('phim4k_telegram_id'),
+      pendingCleared: !localStorage.getItem('phim4k_pending_device_key'),
+    };
+    window.API.requestDeviceAccess = requestOriginal;
+    window.API.checkDeviceAccess = statusOriginal;
+    return state;
+  })()`);
+
   await evaluate(`window.Auth.unlockApp({
     key: 'P4K-QA-LOCAL', telegramId: '10000', plan: 'QA',
     expiresAt: new Date(Date.now() + 60000).toISOString(), isAdmin: false
@@ -245,6 +269,7 @@ try {
   process.stderr.write('[qa] checking movie detail and episodes\n');
   await waitFor('document.querySelectorAll("#episodesList .ep-btn").length > 0', 'Movie detail did not load episodes');
   await waitFor('document.getElementById("detailPoster").complete && document.getElementById("detailPoster").naturalWidth > 0', 'Detail poster did not load');
+  await waitFor("getComputedStyle(document.getElementById('detailBackdrop')).backgroundImage !== 'none'", 'Detail backdrop did not load');
   const detailState = await evaluate(`(() => ({
     title: document.getElementById('detailName').textContent,
     episodes: document.querySelectorAll('#episodesList .ep-btn').length,
@@ -254,6 +279,18 @@ try {
 
   const screenshot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
   writeFileSync(screenshotPath, Buffer.from(screenshot.data, 'base64'));
+
+  const detailCloseState = await evaluate(`(() => {
+    const button = document.querySelector('#movieModal .modal-close-btn');
+    const rect = button.getBoundingClientRect();
+    const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    const hittable = Boolean(hit?.closest('#movieModal .modal-close-btn'));
+    button.click();
+    return { width: rect.width, height: rect.height, hittable };
+  })()`);
+  await waitFor("document.getElementById('movieModal').classList.contains('hidden')", 'Movie detail close button did not work');
+  await evaluate("window.App.openMovieDetail('tuyet-the-chien-hon')");
+  await waitFor('document.querySelectorAll("#episodesList .ep-btn").length > 0', 'Movie detail did not reopen');
 
   const nativePlayerState = await evaluate(`(() => {
     window.Capacitor = {
@@ -274,10 +311,64 @@ try {
   process.stderr.write('[qa] checking native iOS HLS path\n');
   const playerScreenshot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
   writeFileSync(playerScreenshotPath, Buffer.from(playerScreenshot.data, 'base64'));
+  await evaluate('Player.close()');
+
+  process.stderr.write('[qa] checking admin tabs, device request, and close controls\n');
+  const adminCloseState = await evaluate(`(() => {
+    const originalFetch = window.fetch;
+    window.fetch = (url, options) => {
+      const path = String(url);
+      if (path.includes('/api/admin/device-access-requests')) {
+        return Promise.resolve(new Response(JSON.stringify({ requests: [] }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      }
+      if (path.includes('/api/admin/keys')) {
+        return Promise.resolve(new Response(JSON.stringify({ keys: [] }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      }
+      if (path.includes('/api/admin/downloads')) {
+        return Promise.resolve(new Response(JSON.stringify({ downloads: {} }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      }
+      return originalFetch(url, options);
+    };
+    window.Auth.activeKeyData = { isAdmin: true, telegramId: '5992662564', key: 'P4K-QA-LOCAL', active: true };
+    window.Admin.open();
+    window.Admin.switchTab('downloads');
+    const downloads = document.getElementById('adminTabDownloads');
+    const logs = document.getElementById('adminTabLogs');
+    const downloadsVisible = !downloads.classList.contains('hidden')
+      && !downloads.parentElement.closest('.hidden')
+      && downloads.getBoundingClientRect().height > 0;
+    const updateButton = downloads.querySelector('button[type="submit"]');
+    const updateButtonVisible = Boolean(updateButton && updateButton.getBoundingClientRect().height >= 40);
+    const requestButton = document.getElementById('btnRequestDeviceAccess');
+    const button = document.querySelector('#adminModal .modal-close-btn');
+    const rect = button.getBoundingClientRect();
+    const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    const hittable = Boolean(hit?.closest('#adminModal .modal-close-btn'));
+    button.click();
+    window.fetch = originalFetch;
+    return {
+      width: rect.width,
+      height: rect.height,
+      hittable,
+      downloadsVisible,
+      logsHidden: logs.classList.contains('hidden'),
+      updateButtonVisible,
+      requestButtonAvailable: Boolean(
+        requestButton
+        && requestButton.textContent.includes('Báo Admin')
+        && Number.parseFloat(getComputedStyle(requestButton).minHeight) >= 44
+      ),
+    };
+  })()`);
+  await waitFor("document.getElementById('adminModal').classList.contains('hidden')", 'Admin close button did not work');
 
   const relevantResponses = await evaluate('true');
   void relevantResponses;
-  const checksPassed = homeState.version === '3.4.7'
+  const checksPassed = homeState.version === '3.4.8'
+    && deviceApprovalState.unlocked
+    && deviceApprovalState.deviceOnly
+    && deviceApprovalState.telegramEmpty
+    && deviceApprovalState.pendingCleared
     && homeState.cards >= 6
     && homeState.loadedImages > 0
     && homeState.brokenImages === 0
@@ -290,10 +381,20 @@ try {
     && detailState.episodes > 0
     && detailState.posterWidth > 0
     && detailState.serverTabs > 0
+    && detailCloseState.width >= 44
+    && detailCloseState.height >= 44
+    && detailCloseState.hittable
     && nativePlayerState.nativeHls
     && nativePlayerState.sourceIsHls
     && nativePlayerState.quality === 'Tự động'
     && nativePlayerState.playerVisible
+    && adminCloseState.width >= 44
+    && adminCloseState.height >= 44
+    && adminCloseState.hittable
+    && adminCloseState.downloadsVisible
+    && adminCloseState.logsHidden
+    && adminCloseState.updateButtonVisible
+    && adminCloseState.requestButtonAvailable
     && exceptions.length === 0
     && consoleErrors.length === 0
     && failedRequests.length === 0
@@ -301,11 +402,14 @@ try {
 
   result = {
     passed: checksPassed,
+    deviceApproval: deviceApprovalState,
     home: homeState,
     scroll: scrollState,
     category: categoryState,
     detail: detailState,
+    detailClose: detailCloseState,
     nativePlayer: nativePlayerState,
+    adminClose: adminCloseState,
     exceptions,
     consoleErrors,
     failedRequests,

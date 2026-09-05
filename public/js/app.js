@@ -127,6 +127,10 @@ const App = {
 
     try {
       const data = await API.getHomeFeed();
+      if (renderedBundledCatalog) {
+        const artworkReady = await this.preloadHomeArtwork(data);
+        if (!artworkReady) return;
+      }
       this.applyHomeFeed(data);
     } catch (err) {
       // Do not replace a visible fallback catalogue with a transient error.
@@ -141,6 +145,46 @@ const App = {
       this.homeFeedLoading = false;
       this.syncPageScrollLock();
     }
+  },
+
+  preloadHomeArtwork(data, timeoutMs = 5000) {
+    const sections = Array.isArray(data?.sections) ? data.sections : [];
+    const candidates = this.uniqueMovies([
+      ...(Array.isArray(data?.hero) ? data.hero : []),
+      ...sections.flatMap((section) => Array.isArray(section?.items) ? section.items : [])
+    ]).slice(0, 6);
+    const urls = candidates
+      .map((movie) => this.resolveImageUrl(movie.poster_url || movie.thumb_url))
+      .filter(Boolean);
+    if (!urls.length) return Promise.resolve(false);
+
+    return new Promise((resolvePreload) => {
+      let settled = false;
+      let failures = 0;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolvePreload(value);
+      };
+      const timer = window.setTimeout(() => finish(false), timeoutMs);
+      urls.forEach((url) => {
+        const image = new Image();
+        image.decoding = 'async';
+        image.onload = () => {
+          if (typeof image.decode === 'function') {
+            image.decode().then(() => finish(true)).catch(() => finish(true));
+          } else {
+            finish(true);
+          }
+        };
+        image.onerror = () => {
+          failures += 1;
+          if (failures === urls.length) finish(false);
+        };
+        image.src = url;
+      });
+    });
   },
 
   applyHomeFeed(data) {
@@ -396,7 +440,7 @@ const App = {
 
     card.innerHTML = `
       <div class="card-poster-wrapper">
-        <img class="card-poster" src="${posterUrl}" alt="${this.escapeHtml(movie.name || 'Poster phim')}" loading="lazy" />
+        <img class="card-poster" src="${posterUrl}" alt="${this.escapeHtml(movie.name || 'Poster phim')}" loading="lazy" decoding="async" width="300" height="450" />
         <span class="card-badge-quality">${this.escapeHtml(movie.quality || 'FHD')}</span>
         ${epCurrent ? `<span class="card-badge-ep">${this.escapeHtml(epCurrent)}</span>` : ''}
       </div>
@@ -679,11 +723,15 @@ const App = {
   async openMovieDetail(slug) {
     const modal = document.getElementById('movieModal');
     modal.classList.remove('hidden');
+    const detailBody = modal.querySelector('.detail-body');
+    if (detailBody) detailBody.scrollTop = 0;
 
     // Reset fields while loading
     document.getElementById('detailName').textContent = 'Đang tải thông tin phim...';
     document.getElementById('detailOriginName').textContent = '';
     document.getElementById('detailContent').textContent = 'Vui lòng chờ trong giây lát...';
+    document.getElementById('detailContent').classList.remove('expanded');
+    document.getElementById('detailSynopsisToggle').classList.add('hidden');
     document.getElementById('detailBadges').innerHTML = '';
     document.getElementById('detailMetaGrid').innerHTML = '';
     document.getElementById('serverTabs').innerHTML = '';
@@ -727,7 +775,12 @@ const App = {
 
     // Synopsis
     const cleanContent = movie.content ? movie.content.replace(/<[^>]*>?/gm, '') : 'Không có mô tả chi tiết.';
-    document.getElementById('detailContent').textContent = cleanContent;
+    const synopsis = document.getElementById('detailContent');
+    const synopsisToggle = document.getElementById('detailSynopsisToggle');
+    synopsis.textContent = cleanContent;
+    synopsis.classList.remove('expanded');
+    synopsisToggle.textContent = 'Xem thêm';
+    synopsisToggle.classList.toggle('hidden', cleanContent.length < 220);
 
     // Meta grid
     const metaGrid = document.getElementById('detailMetaGrid');
@@ -745,6 +798,14 @@ const App = {
 
     // Render Server Tabs
     this.renderServerTabs(episodes);
+  },
+
+  toggleDetailSynopsis() {
+    const synopsis = document.getElementById('detailContent');
+    const toggle = document.getElementById('detailSynopsisToggle');
+    if (!synopsis || !toggle) return;
+    const expanded = synopsis.classList.toggle('expanded');
+    toggle.textContent = expanded ? 'Thu gọn' : 'Xem thêm';
   },
 
   renderServerTabs(episodes = []) {

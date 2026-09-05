@@ -27,6 +27,7 @@ function deletePersistentCookie(name) {
 const Auth = {
   activeKeyData: null,
   heartbeatTimer: null,
+  deviceApprovalTimer: null,
 
   getDeviceId() {
     let id = localStorage.getItem('phim4k_device_id') || getPersistentCookie('phim4k_device_id');
@@ -42,6 +43,7 @@ const Auth = {
     // Persistent login: Read from localStorage or fallback to cookie
     const savedKey = localStorage.getItem('phim4k_key') || getPersistentCookie('phim4k_key');
     const savedTeleId = localStorage.getItem('phim4k_telegram_id') || getPersistentCookie('phim4k_telegram_id');
+    const deviceOnly = localStorage.getItem('phim4k_device_only') === '1';
     const deviceId = this.getDeviceId();
 
     const teleInput = document.getElementById('telegramInput');
@@ -52,20 +54,27 @@ const Auth = {
     if (teleInput) teleInput.value = '';
     if (keyInput) keyInput.value = '';
 
-    if (!savedKey || !savedTeleId) {
+    if (!savedKey || (!savedTeleId && !deviceOnly)) {
+      const pendingDeviceKey = localStorage.getItem('phim4k_pending_device_key');
       this.triggerLock();
+      if (pendingDeviceKey) {
+        if (keyInput) keyInput.value = pendingDeviceKey;
+        beginDeviceApprovalPolling(pendingDeviceKey);
+      }
       return;
     }
 
     try {
-      const res = await API.checkStatus(savedKey, savedTeleId, deviceId);
+      const res = deviceOnly
+        ? await API.checkDeviceAccess(savedKey, deviceId)
+        : await API.checkStatus(savedKey, savedTeleId, deviceId);
       if (res.forceUpdate || res.code === 'FORCE_UPDATE_REQUIRED') {
         showForceUpdateModal(res);
         return;
       }
       if (res.active) {
         // Automatically unlock without requiring re-entry
-        this.unlockApp({ ...res, key: savedKey, telegramId: savedTeleId });
+        this.unlockApp({ ...res, key: savedKey, telegramId: deviceOnly ? '' : savedTeleId, deviceOnly });
         this.startHeartbeat();
       } else if (res.code === 'KEY_EXPIRED') {
         // Only require new key when expired! Pre-fill Telegram ID
@@ -103,6 +112,10 @@ const Auth = {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
     }
+    if (this.deviceApprovalTimer) {
+      clearInterval(this.deviceApprovalTimer);
+      this.deviceApprovalTimer = null;
+    }
 
     document.body.classList.add('activation-locked');
     document.getElementById('activationGate').classList.remove('hidden');
@@ -126,6 +139,7 @@ const Auth = {
     localStorage.removeItem('phim4k_key');
     localStorage.removeItem('phim4k_telegram_id');
     localStorage.removeItem('phim4k_plan');
+    localStorage.removeItem('phim4k_device_only');
     deletePersistentCookie('phim4k_key');
     deletePersistentCookie('phim4k_telegram_id');
   },
@@ -144,6 +158,15 @@ const Auth = {
 
   unlockApp(keyData) {
     this.activeKeyData = keyData;
+    if (this.deviceApprovalTimer) {
+      clearTimeout(this.deviceApprovalTimer);
+      this.deviceApprovalTimer = null;
+    }
+    const deviceRequestButton = document.getElementById('btnRequestDeviceAccess');
+    if (deviceRequestButton) {
+      deviceRequestButton.disabled = false;
+      deviceRequestButton.textContent = 'Không có Telegram? Báo Admin duyệt thiết bị này';
+    }
     
     // Save to both localStorage and persistent cookie (365 days)
     localStorage.setItem('phim4k_key', keyData.key);
@@ -152,6 +175,13 @@ const Auth = {
     if (keyData.telegramId) {
       localStorage.setItem('phim4k_telegram_id', keyData.telegramId);
       setPersistentCookie('phim4k_telegram_id', keyData.telegramId, 365);
+    }
+    if (keyData.deviceOnly) {
+      localStorage.setItem('phim4k_device_only', '1');
+      localStorage.removeItem('phim4k_telegram_id');
+      deletePersistentCookie('phim4k_telegram_id');
+    } else {
+      localStorage.removeItem('phim4k_device_only');
     }
     localStorage.setItem('phim4k_plan', keyData.isAdmin ? 'SUPER ADMIN' : (keyData.plan || 'VIP PRO'));
 
@@ -180,7 +210,7 @@ const Auth = {
     // Footer info
     const footerTele = document.getElementById('footerTeleBadge');
     if (footerTele) {
-      footerTele.textContent = keyData.telegramId || 'Chưa liên kết';
+      footerTele.textContent = keyData.deviceOnly ? 'Thiết bị được Admin duyệt' : (keyData.telegramId || 'Chưa liên kết');
     }
     const footerBadge = document.getElementById('footerKeyBadge');
     if (footerBadge) {
@@ -207,10 +237,13 @@ const Auth = {
     this.heartbeatTimer = setInterval(async () => {
       const key = localStorage.getItem('phim4k_key') || getPersistentCookie('phim4k_key');
       const teleId = localStorage.getItem('phim4k_telegram_id') || getPersistentCookie('phim4k_telegram_id');
-      if (!key || !teleId) return;
+      const deviceOnly = localStorage.getItem('phim4k_device_only') === '1';
+      if (!key || (!teleId && !deviceOnly)) return;
 
       try {
-        const res = await API.checkStatus(key, teleId, this.getDeviceId());
+        const res = deviceOnly
+          ? await API.checkDeviceAccess(key, this.getDeviceId())
+          : await API.checkStatus(key, teleId, this.getDeviceId());
         if (!res.active) {
           console.warn('Heartbeat detected expired, blocked, or device/tele mismatch:', res);
           
@@ -312,6 +345,107 @@ async function handleActivation(e) {
     spinner.classList.add('hidden');
   }
 }
+
+async function requestDeviceOnlyAccess() {
+  const keyInput = document.getElementById('keyInput');
+  const button = document.getElementById('btnRequestDeviceAccess');
+  const msgEl = document.getElementById('gateMessage');
+  const key = String(keyInput?.value || '').trim().toUpperCase();
+  if (!key) {
+    msgEl.textContent = 'Hãy nhập License Key trước khi báo Admin.';
+    msgEl.className = 'gate-message error';
+    msgEl.classList.remove('hidden');
+    keyInput?.focus();
+    return;
+  }
+
+  button.disabled = true;
+  button.textContent = 'Đang gửi yêu cầu…';
+  try {
+    const response = await API.requestDeviceAccess(key, Auth.getDeviceId());
+    msgEl.textContent = response.message || 'Đã gửi yêu cầu. Đang chờ Admin duyệt…';
+    msgEl.className = response.status === 'approved' ? 'gate-message success' : 'gate-message pending';
+    msgEl.classList.remove('hidden');
+    localStorage.setItem('phim4k_pending_device_key', key);
+    await beginDeviceApprovalPolling(key);
+  } catch (error) {
+    msgEl.textContent = error.message || 'Không thể gửi yêu cầu cho Admin.';
+    msgEl.className = 'gate-message error';
+    msgEl.classList.remove('hidden');
+    button.disabled = false;
+    button.textContent = 'Không có Telegram? Báo Admin duyệt thiết bị này';
+  }
+}
+
+async function beginDeviceApprovalPolling(key) {
+  const cleanKey = String(key || '').trim().toUpperCase();
+  if (!cleanKey || Auth.activeKeyData) return;
+
+  const button = document.getElementById('btnRequestDeviceAccess');
+  const msgEl = document.getElementById('gateMessage');
+  const deviceId = Auth.getDeviceId();
+  if (Auth.deviceApprovalTimer) clearTimeout(Auth.deviceApprovalTimer);
+  Auth.deviceApprovalTimer = null;
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Đang chờ Admin duyệt thiết bị…';
+  }
+
+  const scheduleNext = () => {
+    if (!Auth.activeKeyData) {
+      Auth.deviceApprovalTimer = setTimeout(checkApproval, 5000);
+    }
+  };
+
+  const checkApproval = async () => {
+    Auth.deviceApprovalTimer = null;
+    try {
+      const status = await API.checkDeviceAccess(cleanKey, deviceId);
+      if (status.active && status.status === 'approved') {
+        localStorage.removeItem('phim4k_pending_device_key');
+        if (msgEl) {
+          msgEl.textContent = 'Admin đã cấp phép thiết bị. Đang mở ứng dụng…';
+          msgEl.className = 'gate-message success';
+          msgEl.classList.remove('hidden');
+        }
+        Auth.unlockApp({ ...status, key: cleanKey, telegramId: '', deviceOnly: true });
+        return;
+      }
+
+      if (status.status === 'rejected') {
+        localStorage.removeItem('phim4k_pending_device_key');
+        if (msgEl) {
+          msgEl.textContent = 'Admin đã từ chối yêu cầu cho thiết bị này.';
+          msgEl.className = 'gate-message error';
+          msgEl.classList.remove('hidden');
+        }
+        if (button) {
+          button.disabled = false;
+          button.textContent = 'Không có Telegram? Báo Admin duyệt thiết bị này';
+        }
+        return;
+      }
+
+      if (msgEl) {
+        msgEl.textContent = 'Đã báo Admin · đang tự kiểm tra trạng thái duyệt…';
+        msgEl.className = 'gate-message pending';
+        msgEl.classList.remove('hidden');
+      }
+      scheduleNext();
+    } catch (_error) {
+      if (msgEl) {
+        msgEl.textContent = 'Yêu cầu đã lưu. Đang chờ kết nối để kiểm tra Admin duyệt.';
+        msgEl.className = 'gate-message pending';
+        msgEl.classList.remove('hidden');
+      }
+      scheduleNext();
+    }
+  };
+
+  await checkApproval();
+}
+
+window.requestDeviceOnlyAccess = requestDeviceOnlyAccess;
 
 // License Info Modal
 function openLicenseModal() {

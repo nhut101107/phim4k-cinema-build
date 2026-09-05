@@ -14,7 +14,7 @@ const API = {
   },
 
   getVersion() {
-    return '3.4.7';
+    return '3.4.8';
   },
 
   async fetchWithTimeout(input, options = {}, timeoutMs = 15000) {
@@ -113,6 +113,20 @@ const API = {
     } catch (err) {}
 
     return { active: false, isAdmin: false, plan: 'OFFLINE' };
+  },
+
+  async requestDeviceAccess(key, deviceId) {
+    return this.fetchJson('/api/auth/request-device-access', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-app-version': this.getVersion() },
+      body: JSON.stringify({ key, deviceId })
+    }, 15000);
+  },
+
+  async checkDeviceAccess(key, deviceId) {
+    return this.fetchJson(`/api/auth/device-status?key=${encodeURIComponent(key)}&deviceId=${encodeURIComponent(deviceId)}`, {
+      headers: { 'x-app-version': this.getVersion() }
+    }, 12000);
   },
 
   async checkUpdate(version = this.getVersion()) {

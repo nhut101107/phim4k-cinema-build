@@ -29,7 +29,10 @@ const Admin = {
       if (content) content.classList.toggle('hidden', t !== tab);
     });
 
-    if (tab === 'keys') this.loadKeys();
+    if (tab === 'keys') {
+      this.loadKeys();
+      this.loadDeviceRequests();
+    }
     if (tab === 'users') this.loadUsers();
     if (tab === 'downloads') this.loadDownloadsConfig();
     if (tab === 'content') this.loadContentStatus();
@@ -43,6 +46,75 @@ const Admin = {
     for (let i = 0; i < 4; i++) p2 += chars.charAt(Math.floor(Math.random() * chars.length));
     const generated = `P4K-${p1}-${p2}`;
     document.getElementById('newKeyInput').value = generated;
+  },
+
+  async loadDeviceRequests() {
+    const container = document.getElementById('deviceRequestsList');
+    if (!container) return;
+    container.innerHTML = '<p class="admin-desc">Đang tải yêu cầu thiết bị…</p>';
+    try {
+      const response = await fetch('/api/admin/device-access-requests', { headers: this.getAdminHeaders() });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.message || `HTTP ${response.status}`);
+      const requests = Array.isArray(payload.requests) ? payload.requests : [];
+      container.innerHTML = '';
+      if (!requests.length) {
+        container.innerHTML = '<p class="admin-desc">Chưa có yêu cầu nào.</p>';
+        return;
+      }
+      requests.forEach((request) => {
+        const card = document.createElement('div');
+        card.className = `device-request-card status-${request.status || 'pending'}`;
+        const info = document.createElement('div');
+        info.className = 'device-request-info';
+        const key = document.createElement('strong');
+        key.textContent = request.license_key || '-';
+        const device = document.createElement('code');
+        device.textContent = request.device_id || '-';
+        const meta = document.createElement('span');
+        meta.textContent = `${request.plan || 'VIP'} · ${request.status === 'approved' ? 'Đã duyệt' : request.status === 'rejected' ? 'Đã từ chối' : 'Đang chờ'}`;
+        info.append(key, device, meta);
+        card.appendChild(info);
+        if (request.status === 'pending') {
+          const actions = document.createElement('div');
+          actions.className = 'device-request-actions';
+          const approve = document.createElement('button');
+          approve.type = 'button';
+          approve.className = 'btn-action-mini btn-unban';
+          approve.textContent = 'Duyệt máy';
+          approve.onclick = () => this.decideDeviceRequest(request.license_key, request.device_id, 'approve');
+          const reject = document.createElement('button');
+          reject.type = 'button';
+          reject.className = 'btn-action-mini btn-delete';
+          reject.textContent = 'Từ chối';
+          reject.onclick = () => this.decideDeviceRequest(request.license_key, request.device_id, 'reject');
+          actions.append(approve, reject);
+          card.appendChild(actions);
+        }
+        container.appendChild(card);
+      });
+    } catch (error) {
+      container.innerHTML = '';
+      const message = document.createElement('p');
+      message.className = 'gate-message error';
+      message.textContent = `Không tải được yêu cầu thiết bị: ${error.message}`;
+      container.appendChild(message);
+    }
+  },
+
+  async decideDeviceRequest(key, deviceId, decision) {
+    try {
+      const response = await fetch('/api/admin/device-access-decision', {
+        method: 'POST',
+        headers: this.getAdminHeaders(),
+        body: JSON.stringify({ key, deviceId, decision })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.message || `HTTP ${response.status}`);
+      await Promise.all([this.loadDeviceRequests(), this.loadKeys()]);
+    } catch (error) {
+      alert(`Không thể xử lý yêu cầu: ${error.message}`);
+    }
   },
 
   getAdminHeaders() {

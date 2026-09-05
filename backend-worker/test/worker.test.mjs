@@ -112,6 +112,82 @@ test("admin master key is normalized but restricted to its configured Telegram I
   assert.equal((await denied.json()).code, "ADMIN_TELEGRAM_REQUIRED");
 });
 
+test("device-only access stays pending until the verified admin approves that exact device", async () => {
+  const state = {
+    requestStatus: null,
+    deviceId: null,
+    license: {
+      license_key: "P4K-DEVICE-TEST",
+      plan: "VIP",
+      expires_at: null,
+      active: 1,
+      assigned_telegram_id: null,
+      activated_telegram_id: null,
+      device_id: null,
+    },
+  };
+  const db = {
+    prepare(sql) {
+      return {
+        bind(...values) {
+          return {
+            async first() {
+              if (sql.includes("FROM app_settings")) return null;
+              if (sql.includes("FROM license_keys WHERE license_key")) return state.license;
+              if (sql.includes("SELECT status FROM device_access_requests")) return state.requestStatus ? { status: state.requestStatus } : null;
+              return null;
+            },
+            async run() {
+              if (sql.startsWith("INSERT INTO device_access_requests")) state.requestStatus ||= "pending";
+              if (sql.startsWith("UPDATE license_keys SET device_id")) {
+                state.deviceId = values[0];
+                state.license.device_id = values[0];
+              }
+              if (sql.startsWith("UPDATE device_access_requests SET status")) state.requestStatus = values[0];
+              return { success: true };
+            },
+            async all() { return { results: [] }; },
+          };
+        },
+        async run() { return { success: true }; },
+      };
+    },
+  };
+  const env = { DB: db, ADMIN_LICENSE_KEY: "MASTER-DEVICE-KEY", ADMIN_TELEGRAM_ID: "5992662564" };
+  const request = await worker.fetch(new Request("https://example.workers.dev/api/auth/request-device-access", {
+    method: "POST",
+    headers: { "content-type": "application/json", "cf-connecting-ip": "203.0.113.31" },
+    body: JSON.stringify({ key: "P4K-DEVICE-TEST", deviceId: "device-no-telegram" }),
+  }), env);
+  assert.equal(request.status, 200);
+  assert.equal((await request.json()).status, "pending");
+
+  const pending = await worker.fetch(new Request("https://example.workers.dev/api/auth/device-status?key=P4K-DEVICE-TEST&deviceId=device-no-telegram", {
+    headers: { "cf-connecting-ip": "203.0.113.32" },
+  }), env);
+  assert.equal((await pending.json()).active, false);
+
+  const approved = await worker.fetch(new Request("https://example.workers.dev/api/admin/device-access-decision", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-license-key": "MASTER-DEVICE-KEY",
+      "x-telegram-id": "5992662564",
+      "cf-connecting-ip": "203.0.113.33",
+    },
+    body: JSON.stringify({ key: "P4K-DEVICE-TEST", deviceId: "device-no-telegram", decision: "approve" }),
+  }), env);
+  assert.equal(approved.status, 200);
+  assert.equal(state.deviceId, "device-no-telegram");
+
+  const active = await worker.fetch(new Request("https://example.workers.dev/api/auth/device-status?key=P4K-DEVICE-TEST&deviceId=device-no-telegram", {
+    headers: { "cf-connecting-ip": "203.0.113.34", "x-app-version": "3.4.8" },
+  }), env);
+  const activeBody = await active.json();
+  assert.equal(activeBody.active, true);
+  assert.equal(activeBody.deviceOnly, true);
+});
+
 test("auth activation is rate limited with a retry window", () => {
   const limiter = createRateLimiter();
   const request = new Request("https://example.workers.dev/api/auth/activate", {
