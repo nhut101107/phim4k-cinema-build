@@ -34,7 +34,7 @@ test('account version and a verified session do not fall back to stale WebView s
   const auth = read('../public/js/auth.js');
   assert.match(api, /window\.API = API/);
   assert.match(auth, /window\.Auth = Auth/);
-  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.12'/);
+  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.13'/);
   assert.match(auth, /const verifiedSession = \{ \.\.\.res, key, telegramId \}/);
   assert.match(auth, /Auth\.unlockApp\(verifiedSession\)/);
 });
@@ -79,7 +79,7 @@ test('native catalog falls back immediately instead of leaving the UI loading', 
   vm.createContext(sandbox);
   vm.runInContext(read('../public/js/catalog-fallback.js'), sandbox);
   vm.runInContext(`${read('../public/js/api.js')}\nglobalThis.__api = API;`, sandbox);
-  assert.equal(sandbox.window.API.getVersion(), '3.4.12');
+  assert.equal(sandbox.window.API.getVersion(), '3.4.13');
   const home = await sandbox.__api.getHomeFeed();
   const detail = await sandbox.__api.getDetail(home.hero[0].slug);
   assert.ok(home.hero.length > 0);
@@ -232,4 +232,23 @@ test('mobile performance avoids repeated requests and expensive fixed blur repai
   assert.match(app, /createDocumentFragment/);
   assert.match(styles, /WKWebView scrolls more consistently/);
   assert.match(styles, /prefers-reduced-motion/);
+});
+
+test('home refreshes near real time without rebuilding unchanged cards and supports timed pinned announcements', () => {
+  const api = read('../public/js/api.js');
+  const app = read('../public/js/app.js');
+  const admin = read('../public/js/admin.js');
+  const index = read('../public/index.html');
+  const worker = read('../backend-worker/src/worker.mjs');
+  assert.match(api, /cachedMovieRequest\('\/api\/movies\/home', 25000\)/);
+  assert.match(app, /\}, 30000\);/);
+  assert.match(app, /catalogSignature/);
+  assert.match(app, /signature !== this\.homeFeedSignature/);
+  assert.match(app, /window\.addEventListener\('online'/);
+  assert.match(index, /id="globalAnnouncement"/);
+  assert.match(index, /id="announcementPublishBtn"/);
+  assert.match(admin, /publishAnnouncement/);
+  assert.match(admin, /durationMinutes/);
+  assert.match(worker, /global_announcement_v1/);
+  assert.match(worker, /MAX_ANNOUNCEMENT_MINUTES/);
 });

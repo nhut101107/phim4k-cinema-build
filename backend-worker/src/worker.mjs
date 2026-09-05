@@ -19,6 +19,8 @@ const LICENSE_PATTERN = /^[A-Z0-9][A-Z0-9-]{3,63}$/;
 const MASTER_KEY_MIN_LENGTH = 12;
 const MAX_JSON_BODY_BYTES = 16 * 1024;
 const ADMIN_KEY_HASH_SETTING = "admin_key_hmac_v1";
+const ANNOUNCEMENT_SETTING = "global_announcement_v1";
+const MAX_ANNOUNCEMENT_MINUTES = 30 * 24 * 60;
 const TELEMETRY_ACTIONS = new Set([
   "app_open", "tab_view", "category_view", "filter_applied", "search",
   "movie_open", "episode_open", "playback_start", "playback_ready",
@@ -422,6 +424,71 @@ async function getForceUpdate(db, version) {
   } catch (_error) {
     return { forceUpdate: false, isLatest: true, message: "Bạn đang dùng phiên bản mới nhất." };
   }
+}
+
+export function normalizeAnnouncementSetting(raw, timestamp = Date.now()) {
+  let value = raw;
+  if (typeof raw === "string") {
+    try { value = JSON.parse(raw); } catch (_error) { return { active: false }; }
+  }
+  if (!value || typeof value !== "object" || !value.enabled) return { active: false };
+  const message = String(value.message || "").trim().slice(0, 600);
+  const title = String(value.title || "Thông báo từ Admin").trim().slice(0, 80) || "Thông báo từ Admin";
+  const expiresAt = String(value.expiresAt || "");
+  if (!message || !Number.isFinite(Date.parse(expiresAt)) || Date.parse(expiresAt) <= timestamp) return { active: false };
+  return {
+    active: true,
+    id: String(value.id || "").slice(0, 80),
+    title,
+    message,
+    publishedAt: String(value.publishedAt || ""),
+    expiresAt,
+  };
+}
+
+async function getAnnouncement(db) {
+  const row = await queryOne(db, "SELECT setting_value FROM app_settings WHERE setting_key = ?", ANNOUNCEMENT_SETTING);
+  return normalizeAnnouncementSetting(row?.setting_value);
+}
+
+async function handleAnnouncementAdmin(request, env) {
+  const denied = await requireVerifiedAdmin(request, env);
+  if (denied) return denied;
+  const body = await parseBody(request);
+  const timestamp = now();
+  if (String(body.action || "publish").toLowerCase() === "clear") {
+    const value = JSON.stringify({ enabled: false, clearedAt: timestamp });
+    await env.DB.prepare(
+      "INSERT INTO app_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?) ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = excluded.updated_at",
+    ).bind(ANNOUNCEMENT_SETTING, value, timestamp).run();
+    await logEvent(env.DB, "admin_announcement_cleared", { actorTelegramId: requestTelegram(request) });
+    return json({ success: true, active: false, message: "Đã gỡ thông báo khỏi ứng dụng." });
+  }
+
+  const title = String(body.title || "Thông báo từ Admin").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 80) || "Thông báo từ Admin";
+  const message = String(body.message || "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 600);
+  const durationMinutes = Number.parseInt(String(body.durationMinutes || ""), 10);
+  if (!message) return textError("Hãy nhập nội dung thông báo.", 400, "ANNOUNCEMENT_MESSAGE_REQUIRED");
+  if (!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > MAX_ANNOUNCEMENT_MINUTES) {
+    return textError("Thời lượng thông báo phải từ 1 phút đến 30 ngày.", 400, "INVALID_ANNOUNCEMENT_DURATION");
+  }
+  const expiresAt = new Date(Date.now() + durationMinutes * 60 * 1000).toISOString();
+  const announcement = {
+    enabled: true,
+    id: crypto.randomUUID(),
+    title,
+    message,
+    publishedAt: timestamp,
+    expiresAt,
+  };
+  await env.DB.prepare(
+    "INSERT INTO app_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?) ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = excluded.updated_at",
+  ).bind(ANNOUNCEMENT_SETTING, JSON.stringify(announcement), timestamp).run();
+  await logEvent(env.DB, "admin_announcement_published", {
+    actorTelegramId: requestTelegram(request),
+    detail: JSON.stringify({ title, durationMinutes, expiresAt }),
+  });
+  return json({ success: true, message: "Đã ghim thông báo cho người dùng.", announcement: normalizeAnnouncementSetting(announcement) });
 }
 
 async function activationStatus({ db, key, telegramId, deviceId, request, env, activation }) {
@@ -847,7 +914,7 @@ async function handleContentStatus(request, env) {
     checkedAt: now(),
     lastSuccessfulRefreshAt: catalogStatus === "READY" ? now() : null,
     cacheActive: true,
-    cacheTtlSeconds: 1200,
+    cacheTtlSeconds: 30,
     providers: [
       { id: "catalog", label: "PhimAPI metadata", status: catalogStatus, purpose: "Danh mục, mô tả và poster" },
       jellyfin,
@@ -1013,7 +1080,7 @@ async function fetchCatalogJson(path, { force = false } = {}) {
   }
   const response = await fetch(`${MOVIE_CATALOG_ORIGIN}${path}`, {
     headers: { accept: "application/json" },
-    cf: { cacheEverything: true, cacheTtl: 120 },
+    cf: { cacheEverything: true, cacheTtl: 30 },
   });
   if (!response.ok) throw new Error(`catalog HTTP ${response.status}`);
   const contentType = response.headers.get("content-type") || "";
@@ -1024,7 +1091,7 @@ async function fetchCatalogJson(path, { force = false } = {}) {
       await cache.put(cacheKey, new Response(JSON.stringify(payload), {
         headers: {
           "content-type": "application/json; charset=utf-8",
-          "cache-control": "public, max-age=1200, s-maxage=1200",
+          "cache-control": "public, max-age=30, s-maxage=30, stale-while-revalidate=30",
         },
       }));
     } catch (_error) {
@@ -1054,7 +1121,7 @@ async function handleMovieCatalog(request) {
         { id: "series", title: "Phim bo", items: series.length ? series : latestItems.slice(8, 24) },
         { id: "animation", title: "Hoat hinh", items: animation.length ? animation : latestItems.slice(16, 32) },
       ],
-    }, 200, { "cache-control": "public, max-age=120, s-maxage=120" });
+    }, 200, { "cache-control": "public, max-age=30, s-maxage=30, stale-while-revalidate=30" });
   }
 
   if (pathname === "/api/movies/filter") {
@@ -1164,6 +1231,7 @@ export default {
       if (request.method === "GET" && (pathname === "/api/app/check-update" || pathname === "/api/app/version")) {
         return json(await getForceUpdate(env.DB, url.searchParams.get("version") || appVersion(request)));
       }
+      if (request.method === "GET" && pathname === "/api/app/announcement") return json(await getAnnouncement(env.DB));
       if (request.method === "POST" && pathname === "/api/telemetry") return handleTelemetry(request, env);
       if ((request.method === "GET" || request.method === "POST") && pathname === "/api/app/downloads") return handleDownloads(request, env);
       if (request.method === "GET" && pathname === "/api/admin/keys") return listKeys(request, env);
@@ -1183,6 +1251,7 @@ export default {
       if ((request.method === "GET" || request.method === "DELETE") && pathname === "/api/admin/logs") return handleLogs(request, env);
       if (request.method === "GET" && pathname === "/api/admin/content-status") return handleContentStatus(request, env);
       if (request.method === "POST" && pathname === "/api/admin/refresh-movies") return handleMovieRefresh(request, env);
+      if (request.method === "POST" && pathname === "/api/admin/announcement") return handleAnnouncementAdmin(request, env);
       if (request.method === "POST" && pathname === "/api/admin/set-force-update") return handleForceUpdate(request, env);
       if (pathname === "/api/stream/proxy") return handleMovieFallback(request);
       return textError("Không tìm thấy endpoint.", 404, "NOT_FOUND");

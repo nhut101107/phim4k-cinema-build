@@ -13,6 +13,7 @@ const playerScreenshotPath = resolve(projectRoot, 'data', 'qa', 'phim4k-player-s
 const scheduleScreenshotPath = resolve(projectRoot, 'data', 'qa', 'phim4k-schedule-smoke.png');
 const filterScreenshotPath = resolve(projectRoot, 'data', 'qa', 'phim4k-filter-smoke.png');
 const adminLogsScreenshotPath = resolve(projectRoot, 'data', 'qa', 'phim4k-admin-logs-smoke.png');
+const announcementScreenshotPath = resolve(projectRoot, 'data', 'qa', 'phim4k-announcement-admin-smoke.png');
 const mimeTypes = new Map([
   ['.css', 'text/css; charset=utf-8'],
   ['.html', 'text/html; charset=utf-8'],
@@ -47,6 +48,11 @@ const staticServer = createServer((request, response) => {
   const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
   if (pathname === '/favicon.ico') {
     response.writeHead(204).end();
+    return;
+  }
+  if (pathname === '/api/app/announcement') {
+    response.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+    response.end(JSON.stringify({ active: false }));
     return;
   }
   const requested = pathname === '/' ? '/index.html' : pathname;
@@ -408,12 +414,28 @@ try {
       if (path.includes('/api/admin/content-status')) {
         return Promise.resolve(new Response(JSON.stringify({
           source: 'PhimAPI metadata', status: 'READY', lastSuccessfulRefreshAt: new Date().toISOString(),
-          cacheActive: true, cacheTtlSeconds: 1200, ads: { sdkEmbedded: false },
+          cacheActive: true, cacheTtlSeconds: 30, ads: { sdkEmbedded: false },
           providers: [
             { id: 'catalog', label: 'PhimAPI metadata', status: 'READY', purpose: 'Danh mục và poster' },
             { id: 'jellyfin', label: 'Jellyfin tự host', status: 'NEEDS_CONFIGURATION', purpose: 'Kho được cấp quyền' }
           ]
         }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      }
+      if (path.includes('/api/admin/announcement')) {
+        const body = JSON.parse(options?.body || '{}');
+        if (body.action === 'clear') window.__qaAnnouncement = { active: false };
+        else window.__qaAnnouncement = {
+          active: true, id: 'notice-qa', title: body.title, message: body.message,
+          expiresAt: new Date(Date.now() + body.durationMinutes * 60000).toISOString()
+        };
+        return Promise.resolve(new Response(JSON.stringify({
+          success: true,
+          message: body.action === 'clear' ? 'Đã gỡ thông báo.' : 'Đã ghim thông báo.',
+          announcement: window.__qaAnnouncement
+        }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      }
+      if (path.includes('/api/app/announcement')) {
+        return Promise.resolve(new Response(JSON.stringify(window.__qaAnnouncement || { active: false }), { status: 200, headers: { 'content-type': 'application/json' } }));
       }
       return originalFetch(url, options);
     };
@@ -438,6 +460,16 @@ try {
     await window.Admin.switchTab('content');
     const providerCards = document.querySelectorAll('#contentProviderList .content-provider-card').length;
     const adsStatus = document.getElementById('contentAdsStatus').textContent;
+    document.getElementById('announcementTitleInput').value = 'Tin QA';
+    document.getElementById('announcementMessageInput').value = 'Phim mới đã cập nhật.';
+    document.getElementById('announcementDurationInput').value = '2';
+    document.getElementById('announcementDurationUnit').value = '60';
+    await window.Admin.publishAnnouncement();
+    const announcementButton = document.getElementById('announcementPublishBtn');
+    const announcementButtonRect = announcementButton.getBoundingClientRect();
+    const announcementVisible = !document.getElementById('globalAnnouncement').classList.contains('hidden');
+    const announcementText = document.getElementById('globalAnnouncementMessage').textContent;
+    const announcementState = document.getElementById('announcementAdminState').textContent;
     await window.Admin.switchTab('logs');
     const requestButton = document.getElementById('btnRequestDeviceAccess');
     const button = document.querySelector('#adminModal .modal-close-btn');
@@ -459,6 +491,10 @@ try {
       watchTime,
       providerCards,
       adsStatus,
+      announcementVisible,
+      announcementText,
+      announcementState,
+      announcementButtonHeight: announcementButtonRect.height,
       loadMoreVisible,
       requestButtonAvailable: Boolean(
         requestButton
@@ -467,6 +503,10 @@ try {
       ),
     };
   })()`);
+  await evaluate("window.Admin.switchTab('content')");
+  const announcementScreenshot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+  writeFileSync(announcementScreenshotPath, Buffer.from(announcementScreenshot.data, 'base64'));
+  await evaluate("window.Admin.switchTab('logs')");
   const adminLogsScreenshot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
   writeFileSync(adminLogsScreenshotPath, Buffer.from(adminLogsScreenshot.data, 'base64'));
   await evaluate(`(() => {
@@ -478,7 +518,7 @@ try {
 
   const relevantResponses = await evaluate('true');
   void relevantResponses;
-  const checksPassed = homeState.version === '3.4.12'
+  const checksPassed = homeState.version === '3.4.13'
     && deviceApprovalState.unlocked
     && deviceApprovalState.deviceOnly
     && deviceApprovalState.telegramEmpty
@@ -529,6 +569,10 @@ try {
     && adminCloseState.watchTime.includes('2 phút')
     && adminCloseState.providerCards === 2
     && adminCloseState.adsStatus.includes('Không nhúng')
+    && adminCloseState.announcementVisible
+    && adminCloseState.announcementText.includes('cập nhật')
+    && adminCloseState.announcementState.includes('Đang ghim')
+    && adminCloseState.announcementButtonHeight >= 44
     && adminCloseState.loadMoreVisible
     && exceptions.length === 0
     && consoleErrors.length === 0
@@ -557,6 +601,7 @@ try {
     scheduleScreenshot: scheduleScreenshotPath,
     filterScreenshot: filterScreenshotPath,
     adminLogsScreenshot: adminLogsScreenshotPath,
+    announcementScreenshot: announcementScreenshotPath,
   };
   if (!checksPassed) process.exitCode = 1;
 } catch (error) {

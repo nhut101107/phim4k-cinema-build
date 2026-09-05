@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker, { auditTypeForAction, compareAppVersions, createRateLimiter, json, normalizeTelemetryEvents } from "../src/worker.mjs";
+import worker, { auditTypeForAction, compareAppVersions, createRateLimiter, json, normalizeAnnouncementSetting, normalizeTelemetryEvents } from "../src/worker.mjs";
 
 test("health reports an unconfigured database without exposing settings", async () => {
   const response = await worker.fetch(new Request("https://example.workers.dev/api/health"), {});
@@ -344,4 +344,66 @@ test("admin content status checks catalog and exposes only authorized provider r
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("announcement normalization hides disabled and expired messages", () => {
+  const timestamp = Date.parse("2026-09-06T00:00:00.000Z");
+  assert.deepEqual(normalizeAnnouncementSetting({ enabled: false }, timestamp), { active: false });
+  assert.deepEqual(normalizeAnnouncementSetting({
+    enabled: true, message: "Đã hết hạn", expiresAt: "2026-09-05T23:59:00.000Z",
+  }, timestamp), { active: false });
+  assert.equal(normalizeAnnouncementSetting({
+    enabled: true, id: "notice-1", title: "Bảo trì", message: "Hệ thống sắp bảo trì.",
+    publishedAt: "2026-09-05T23:00:00.000Z", expiresAt: "2026-09-06T01:00:00.000Z",
+  }, timestamp).active, true);
+});
+
+test("verified admin can publish and clear a timed global announcement", async () => {
+  const state = { announcement: null, auditActions: [] };
+  const db = {
+    prepare(sql) {
+      return {
+        bind(...values) {
+          return {
+            async first() {
+              if (sql.includes("FROM app_settings") && values[0] === "global_announcement_v1") {
+                return state.announcement ? { setting_value: state.announcement } : null;
+              }
+              return null;
+            },
+            async run() {
+              if (sql.startsWith("INSERT INTO app_settings") && values[0] === "global_announcement_v1") state.announcement = values[1];
+              if (sql.startsWith("INSERT INTO audit_logs")) state.auditActions.push(values[1]);
+              return { success: true };
+            },
+            async all() { return { results: [] }; },
+          };
+        },
+      };
+    },
+  };
+  const env = { DB: db, ADMIN_LICENSE_KEY: "MASTER-NOTICE-KEY", ADMIN_TELEGRAM_ID: "5992662564" };
+  const headers = {
+    "content-type": "application/json", "x-license-key": "MASTER-NOTICE-KEY", "x-telegram-id": "5992662564",
+  };
+  const publish = await worker.fetch(new Request("https://example.workers.dev/api/admin/announcement", {
+    method: "POST", headers, body: JSON.stringify({ title: "Tin mới", message: "Phim mới đã cập nhật.", durationMinutes: 90 }),
+  }), env);
+  assert.equal(publish.status, 200);
+  const published = await publish.json();
+  assert.equal(published.announcement.active, true);
+  assert.equal(published.announcement.message, "Phim mới đã cập nhật.");
+  assert.ok(Date.parse(published.announcement.expiresAt) > Date.now());
+
+  const visible = await worker.fetch(new Request("https://example.workers.dev/api/app/announcement"), env);
+  assert.equal((await visible.json()).active, true);
+  assert.ok(state.auditActions.includes("admin_announcement_published"));
+
+  const clear = await worker.fetch(new Request("https://example.workers.dev/api/admin/announcement", {
+    method: "POST", headers, body: JSON.stringify({ action: "clear" }),
+  }), env);
+  assert.equal(clear.status, 200);
+  assert.equal((await clear.json()).active, false);
+  assert.equal((await (await worker.fetch(new Request("https://example.workers.dev/api/app/announcement"), env)).json()).active, false);
+  assert.ok(state.auditActions.includes("admin_announcement_cleared"));
 });

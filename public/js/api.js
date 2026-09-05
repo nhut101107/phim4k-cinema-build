@@ -21,7 +21,7 @@ const API = {
   },
 
   getVersion() {
-    return '3.4.12';
+    return '3.4.13';
   },
 
   getSessionId() {
@@ -243,6 +243,10 @@ const API = {
     return { isLatest: true, currentVersion: version, latestVersion: version };
   },
 
+  async getAnnouncement() {
+    return this.fetchJson('/api/app/announcement', {}, 10000);
+  },
+
   getBundledHomeFeed() {
     const items = Array.isArray(window.PHIM4K_CATALOG_FALLBACK) ? window.PHIM4K_CATALOG_FALLBACK : [];
     return {
@@ -264,7 +268,7 @@ const API = {
   // Movies: Direct standalone fallback to live public movie API
   async getHomeFeed() {
     try {
-      return await this.cachedMovieRequest('/api/movies/home', 90000);
+      return await this.cachedMovieRequest('/api/movies/home', 25000);
     } catch (err) {
       // Capacitor cannot use the catalog directly because it has no CORS
       // permission.  Do not leave the screen spinning while a rate-limited

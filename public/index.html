@@ -155,6 +155,15 @@
       </div>
     </header>
 
+    <aside id="globalAnnouncement" class="global-announcement hidden" role="status" aria-live="polite" aria-atomic="true">
+      <span class="global-announcement-pin" aria-hidden="true">📌</span>
+      <div class="global-announcement-copy">
+        <strong id="globalAnnouncementTitle">Thông báo từ Admin</strong>
+        <p id="globalAnnouncementMessage"></p>
+        <small id="globalAnnouncementExpiry"></small>
+      </div>
+    </aside>
+
     <!-- ================= TAB 1: TRANG CHỦ (HOME) ================= -->
     <div id="homeTabContent" class="tab-content">
       <!-- 1. Top 3D Coverflow Carousel (Exact UI as in photo) -->
@@ -332,7 +341,7 @@
           </div>
           <div class="acc-detail-item">
             <span>Phiên bản ứng dụng:</span>
-            <span id="accAppVersion">v3.4.12</span>
+            <span id="accAppVersion">v3.4.13</span>
           </div>
         </div>
 
@@ -783,7 +792,7 @@
           <div class="table-header-row">
             <div>
               <h3>🎬 Nguồn phim và poster</h3>
-              <p class="admin-desc">Trang chủ tự đồng bộ khi đang mở. Poster hỏng sẽ chuyển sang ảnh dự phòng trong app thay vì hiện ô ảnh vỡ.</p>
+              <p class="admin-desc">Trang chủ kiểm tra phim mới mỗi 30 giây và đồng bộ ngay khi app mở lại hoặc có mạng. Poster hỏng sẽ chuyển sang ảnh dự phòng.</p>
             </div>
             <button id="adminRefreshMoviesBtn" class="btn-refresh-keys content-refresh-btn" onclick="Admin.refreshMovies()">🔄 Làm mới ngay</button>
           </div>
@@ -803,7 +812,7 @@
             </div>
             <div class="content-status-card">
               <span class="content-status-label">Tự làm mới trang chủ</span>
-              <strong id="contentAutoRefresh">2 phút khi đang mở</strong>
+              <strong id="contentAutoRefresh">30 giây khi đang mở</strong>
             </div>
             <div class="content-status-card">
               <span class="content-status-label">Quảng cáo trong app</span>
@@ -812,6 +821,43 @@
           </div>
           <div id="contentProviderList" class="content-provider-list" aria-label="Trạng thái các nguồn nội dung"></div>
           <div id="adminContentAlert" class="gate-message hidden" style="margin-top: 14px;"></div>
+        </div>
+
+        <div class="admin-section-box announcement-editor">
+          <div class="table-header-row">
+            <div>
+              <h3>📌 Thông báo ghim cho người dùng</h3>
+              <p class="admin-desc">Thông báo xuất hiện ở đầu ứng dụng trên mọi máy và tự ẩn đúng thời hạn.</p>
+            </div>
+            <span id="announcementAdminState" class="announcement-admin-state">Chưa có thông báo</span>
+          </div>
+          <div class="announcement-form-grid">
+            <label>
+              <span>Tiêu đề</span>
+              <input id="announcementTitleInput" type="text" maxlength="80" value="Thông báo từ Admin" autocomplete="off" />
+            </label>
+            <label class="announcement-message-field">
+              <span>Nội dung thông báo</span>
+              <textarea id="announcementMessageInput" maxlength="600" rows="4" placeholder="Nhập nội dung cần ghim cho người dùng…"></textarea>
+            </label>
+            <label>
+              <span>Thời lượng</span>
+              <input id="announcementDurationInput" type="number" min="1" max="43200" value="1" inputmode="numeric" />
+            </label>
+            <label>
+              <span>Đơn vị</span>
+              <select id="announcementDurationUnit">
+                <option value="60">Giờ</option>
+                <option value="1">Phút</option>
+                <option value="1440">Ngày</option>
+              </select>
+            </label>
+          </div>
+          <div class="announcement-actions">
+            <button id="announcementPublishBtn" class="btn-primary" type="button" onclick="Admin.publishAnnouncement()">📣 Gửi và ghim thông báo</button>
+            <button id="announcementClearBtn" class="btn-action-mini btn-delete" type="button" onclick="Admin.clearAnnouncement()">Gỡ thông báo hiện tại</button>
+          </div>
+          <div id="announcementAdminAlert" class="gate-message hidden" role="status"></div>
         </div>
       </div>
 

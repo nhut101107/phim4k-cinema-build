@@ -43,7 +43,7 @@ const Admin = {
     }
     if (tab === 'users') this.loadUsers();
     if (tab === 'downloads') this.loadDownloadsConfig();
-    if (tab === 'content') return this.loadContentStatus();
+    if (tab === 'content') return Promise.all([this.loadContentStatus(), this.loadAnnouncementEditor()]);
     if (tab === 'logs') {
       const loading = this.loadLogs();
       this.startLogAutoRefresh();
@@ -745,7 +745,7 @@ const Admin = {
         ? new Date(data.lastSuccessfulRefreshAt).toLocaleString('vi-VN')
         : 'Chưa có lượt tải mới';
       cacheEl.textContent = data.cacheActive
-        ? `Edge cache ${Math.round((data.cacheTtlSeconds || 0) / 60)} phút`
+        ? `Edge cache ${data.cacheTtlSeconds || 0} giây`
         : 'Không dùng cache';
       if (adsEl) adsEl.textContent = data.ads?.sdkEmbedded ? 'Có SDK quảng cáo' : 'Không nhúng SDK quảng cáo';
       if (providerList) {
@@ -805,6 +805,95 @@ const Admin = {
         button.disabled = false;
         button.textContent = '🔄 Làm mới ngay';
       }
+    }
+  },
+
+  setAnnouncementAlert(message, success = true) {
+    const alertEl = document.getElementById('announcementAdminAlert');
+    if (!alertEl) return;
+    alertEl.textContent = message;
+    alertEl.className = `gate-message ${success ? 'success' : 'error'}`;
+    alertEl.classList.remove('hidden');
+  },
+
+  async loadAnnouncementEditor() {
+    const state = document.getElementById('announcementAdminState');
+    if (state) state.textContent = 'Đang kiểm tra…';
+    try {
+      const data = await window.API.getAnnouncement();
+      if (!data.active) {
+        if (state) state.textContent = 'Chưa có thông báo';
+        return;
+      }
+      const title = document.getElementById('announcementTitleInput');
+      const message = document.getElementById('announcementMessageInput');
+      if (title) title.value = data.title || 'Thông báo từ Admin';
+      if (message) message.value = data.message || '';
+      if (state) state.textContent = `Đang ghim đến ${new Date(data.expiresAt).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })}`;
+    } catch (_error) {
+      if (state) state.textContent = 'Không đọc được trạng thái';
+    }
+  },
+
+  async publishAnnouncement() {
+    const button = document.getElementById('announcementPublishBtn');
+    const title = document.getElementById('announcementTitleInput')?.value.trim() || 'Thông báo từ Admin';
+    const message = document.getElementById('announcementMessageInput')?.value.trim() || '';
+    const duration = Number.parseInt(document.getElementById('announcementDurationInput')?.value || '0', 10);
+    const unit = Number.parseInt(document.getElementById('announcementDurationUnit')?.value || '1', 10);
+    const durationMinutes = duration * unit;
+    if (!message) {
+      this.setAnnouncementAlert('Hãy nhập nội dung thông báo.', false);
+      return;
+    }
+    if (!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 43200) {
+      this.setAnnouncementAlert('Thời lượng phải từ 1 phút đến 30 ngày.', false);
+      return;
+    }
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Đang gửi…';
+    }
+    try {
+      const response = await fetch('/api/admin/announcement', {
+        method: 'POST',
+        headers: this.getAdminHeaders(),
+        body: JSON.stringify({ action: 'publish', title, message, durationMinutes })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || `HTTP ${response.status}`);
+      this.setAnnouncementAlert(`✓ ${data.message}`);
+      window.App?.renderAnnouncement?.(data.announcement);
+      await this.loadAnnouncementEditor();
+    } catch (error) {
+      this.setAnnouncementAlert(`Không gửi được: ${error.message}`, false);
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = '📣 Gửi và ghim thông báo';
+      }
+    }
+  },
+
+  async clearAnnouncement() {
+    if (!confirm('Gỡ thông báo đang ghim khỏi tất cả thiết bị?')) return;
+    const button = document.getElementById('announcementClearBtn');
+    if (button) button.disabled = true;
+    try {
+      const response = await fetch('/api/admin/announcement', {
+        method: 'POST',
+        headers: this.getAdminHeaders(),
+        body: JSON.stringify({ action: 'clear' })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || `HTTP ${response.status}`);
+      this.setAnnouncementAlert(`✓ ${data.message}`);
+      window.App?.renderAnnouncement?.({ active: false });
+      await this.loadAnnouncementEditor();
+    } catch (error) {
+      this.setAnnouncementAlert(`Không gỡ được: ${error.message}`, false);
+    } finally {
+      if (button) button.disabled = false;
     }
   },
 

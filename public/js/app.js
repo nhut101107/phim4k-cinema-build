@@ -7,8 +7,11 @@ const App = {
   heroList: [],
   heroRotateTimer: null,
   feedRefreshTimer: null,
+  announcementRefreshTimer: null,
+  announcementExpiryTimer: null,
   homeFeedLoading: false,
   homeFeedUpdatedAt: null,
+  homeFeedSignature: '',
   homeCatalog: [],
   homeSections: [],
   activeHomeFilters: { genre: '', country: '' },
@@ -28,6 +31,7 @@ const App = {
     this.bindTouchFeedback();
     this.syncPageScrollLock();
     this.startHomeFeedRefresh();
+    this.startAnnouncementRefresh();
   },
 
   bindTouchFeedback() {
@@ -92,8 +96,15 @@ const App = {
 
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden && this.currentCategory === 'home') {
+        API.clearMovieCache();
         this.loadHomeFeed({ silent: true });
+        this.loadAnnouncement();
       }
+    });
+    window.addEventListener('online', () => {
+      API.clearMovieCache();
+      if (this.currentCategory === 'home') this.loadHomeFeed({ silent: true });
+      this.loadAnnouncement();
     });
   },
 
@@ -150,7 +161,9 @@ const App = {
         const artworkReady = await this.preloadHomeArtwork(data);
         if (!artworkReady) return;
       }
-      this.applyHomeFeed(data);
+      const signature = this.catalogSignature(data);
+      if (!silent || signature !== this.homeFeedSignature) this.applyHomeFeed(data);
+      else this.updateLiveFeedLabel();
     } catch (err) {
       // Do not replace a visible fallback catalogue with a transient error.
       if (silent || renderedBundledCatalog) return;
@@ -164,6 +177,17 @@ const App = {
       this.homeFeedLoading = false;
       this.syncPageScrollLock();
     }
+  },
+
+  catalogSignature(data) {
+    const sections = Array.isArray(data?.sections) ? data.sections : [];
+    return JSON.stringify({ hero: data?.hero, sections });
+  },
+
+  updateLiveFeedLabel() {
+    document.querySelectorAll('.section-update-status').forEach((element) => {
+      element.textContent = `LIVE · ${new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`;
+    });
   },
 
   preloadHomeArtwork(data, timeoutMs = 5000) {
@@ -211,6 +235,7 @@ const App = {
     const hasMovies = sections.some((section) => Array.isArray(section?.items) && section.items.length > 0);
     if (!hasMovies) throw new Error('MOVIE_CATALOG_EMPTY');
     this.homeFeedUpdatedAt = data.updatedAt || new Date().toISOString();
+    this.homeFeedSignature = this.catalogSignature(data);
     this.heroList = data.hero || [];
     const rawCatalog = this.uniqueMovies([
       ...this.heroList,
@@ -569,7 +594,41 @@ const App = {
       if (!document.hidden && this.currentCategory === 'home') {
         this.loadHomeFeed({ silent: true });
       }
-    }, 120000);
+    }, 30000);
+  },
+
+  startAnnouncementRefresh() {
+    clearInterval(this.announcementRefreshTimer);
+    void this.loadAnnouncement();
+    this.announcementRefreshTimer = setInterval(() => {
+      if (!document.hidden) void this.loadAnnouncement();
+    }, 30000);
+  },
+
+  async loadAnnouncement() {
+    try {
+      this.renderAnnouncement(await API.getAnnouncement());
+    } catch (_error) {
+      // Keep the last valid banner during a transient network interruption.
+    }
+  },
+
+  renderAnnouncement(data) {
+    const banner = document.getElementById('globalAnnouncement');
+    if (!banner) return;
+    clearTimeout(this.announcementExpiryTimer);
+    const expiresAt = Date.parse(data?.expiresAt || '');
+    if (!data?.active || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+      banner.classList.add('hidden');
+      banner.dataset.announcementId = '';
+      return;
+    }
+    document.getElementById('globalAnnouncementTitle').textContent = data.title || 'Thông báo từ Admin';
+    document.getElementById('globalAnnouncementMessage').textContent = data.message || '';
+    document.getElementById('globalAnnouncementExpiry').textContent = `Ghim đến ${new Date(expiresAt).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })}`;
+    banner.dataset.announcementId = data.id || '';
+    banner.classList.remove('hidden');
+    this.announcementExpiryTimer = setTimeout(() => this.renderAnnouncement(data), Math.min(expiresAt - Date.now() + 250, 2147483647));
   },
 
   renderHeroBillboard(movie) {
@@ -614,7 +673,7 @@ const App = {
     sec.innerHTML = `
       <div class="section-header">
         <h2 class="section-title">${this.escapeHtml(section.title)}</h2>
-        ${section.id === 'latest' && this.homeFeedUpdatedAt ? `<span class="section-update-status">Cập nhật ${new Date(this.homeFeedUpdatedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</span>` : ''}
+        ${section.id === 'latest' && this.homeFeedUpdatedAt ? `<span class="section-update-status">LIVE · ${new Date(this.homeFeedUpdatedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</span>` : ''}
       </div>
       <div class="${section.layout === 'grid' ? 'movie-grid filtered-movie-grid' : 'movie-row'}"></div>
     `;
