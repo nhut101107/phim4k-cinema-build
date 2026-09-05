@@ -10,6 +10,7 @@ const webRoot = resolve(projectRoot, 'ios', 'App', 'App', 'public');
 const screenshotPath = resolve(projectRoot, 'data', 'qa', 'phim4k-detail-smoke.png');
 const homeScreenshotPath = resolve(projectRoot, 'data', 'qa', 'phim4k-home-smoke.png');
 const playerScreenshotPath = resolve(projectRoot, 'data', 'qa', 'phim4k-player-smoke.png');
+const scheduleScreenshotPath = resolve(projectRoot, 'data', 'qa', 'phim4k-schedule-smoke.png');
 const mimeTypes = new Map([
   ['.css', 'text/css; charset=utf-8'],
   ['.html', 'text/html; charset=utf-8'],
@@ -265,6 +266,31 @@ try {
   await evaluate("window.App.switchCategory('home')");
   await waitFor('window.App.homeFeedLoading === false && document.querySelectorAll("#dynamicSections .movie-card").length > 0', 'Home catalogue did not recover after category navigation');
 
+  process.stderr.write('[qa] checking live schedule tab\n');
+  await evaluate("window.switchTab('schedule')");
+  await waitFor('document.querySelectorAll("#scheduleGrid .schedule-card").length >= 10', 'Schedule did not render current movies');
+  await waitFor('[...document.querySelectorAll("#scheduleGrid .schedule-poster")].some((img) => img.complete && img.naturalWidth > 0)', 'Schedule artwork did not load');
+  const scheduleState = await evaluate(`(() => {
+    const cards = [...document.querySelectorAll('#scheduleGrid .schedule-card')];
+    const refresh = document.getElementById('scheduleRefreshBtn');
+    const originalOpen = window.App.openMovieDetail;
+    let openedSlug = '';
+    window.App.openMovieDetail = (slug) => { openedSlug = slug; };
+    cards[0].click();
+    window.App.openMovieDetail = originalOpen;
+    return {
+      cards: cards.length,
+      loadedPosters: [...document.querySelectorAll('#scheduleGrid .schedule-poster')].filter((img) => img.complete && img.naturalWidth > 0).length,
+      updatedText: document.getElementById('scheduleUpdatedAt').textContent,
+      refreshHeight: refresh.getBoundingClientRect().height,
+      openedSlug,
+      staleStaticDates: document.getElementById('scheduleTabContent').textContent.includes('31.07.2026'),
+    };
+  })()`);
+  const scheduleScreenshot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+  writeFileSync(scheduleScreenshotPath, Buffer.from(scheduleScreenshot.data, 'base64'));
+  await evaluate("window.switchTab('home')");
+
   await evaluate("window.App.openMovieDetail('tuyet-the-chien-hon')");
   process.stderr.write('[qa] checking movie detail and episodes\n');
   await waitFor('document.querySelectorAll("#episodesList .ep-btn").length > 0', 'Movie detail did not load episodes');
@@ -364,7 +390,7 @@ try {
 
   const relevantResponses = await evaluate('true');
   void relevantResponses;
-  const checksPassed = homeState.version === '3.4.8'
+  const checksPassed = homeState.version === '3.4.9'
     && deviceApprovalState.unlocked
     && deviceApprovalState.deviceOnly
     && deviceApprovalState.telegramEmpty
@@ -378,6 +404,12 @@ try {
     && categoryState.cards > 0
     && categoryState.categoryVisible
     && categoryState.coverflowHidden
+    && scheduleState.cards >= 10
+    && scheduleState.loadedPosters > 0
+    && scheduleState.updatedText.includes('Đồng bộ lúc')
+    && scheduleState.refreshHeight >= 44
+    && Boolean(scheduleState.openedSlug)
+    && !scheduleState.staleStaticDates
     && detailState.episodes > 0
     && detailState.posterWidth > 0
     && detailState.serverTabs > 0
@@ -406,6 +438,7 @@ try {
     home: homeState,
     scroll: scrollState,
     category: categoryState,
+    schedule: scheduleState,
     detail: detailState,
     detailClose: detailCloseState,
     nativePlayer: nativePlayerState,
@@ -417,6 +450,7 @@ try {
     screenshot: screenshotPath,
     homeScreenshot: homeScreenshotPath,
     playerScreenshot: playerScreenshotPath,
+    scheduleScreenshot: scheduleScreenshotPath,
   };
   if (!checksPassed) process.exitCode = 1;
 } catch (error) {

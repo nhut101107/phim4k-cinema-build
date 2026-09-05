@@ -315,6 +315,10 @@ function switchTab(tabId) {
     renderAccountTab();
   }
 
+  if (tabId === 'schedule') {
+    window.App?.renderSchedule?.();
+  }
+
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -335,7 +339,7 @@ function renderAccountTab() {
   if (planEl) planEl.textContent = isSuperAdmin ? '👑 SUPER ADMIN' : plan;
   if (keyEl) keyEl.textContent = key;
   const versionEl = document.getElementById('accAppVersion');
-  if (versionEl) versionEl.textContent = `v${window.API?.getVersion?.() || '3.4.8'}`;
+  if (versionEl) versionEl.textContent = `v${window.API?.getVersion?.() || '3.4.9'}`;
 
   if (adminBtn) {
     adminBtn.classList.toggle('hidden', !isSuperAdmin);

@@ -34,7 +34,7 @@ test('account version and a verified session do not fall back to stale WebView s
   const auth = read('../public/js/auth.js');
   assert.match(api, /window\.API = API/);
   assert.match(auth, /window\.Auth = Auth/);
-  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.8'/);
+  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.9'/);
   assert.match(auth, /const verifiedSession = \{ \.\.\.res, key, telegramId \}/);
   assert.match(auth, /Auth\.unlockApp\(verifiedSession\)/);
 });
@@ -79,7 +79,7 @@ test('native catalog falls back immediately instead of leaving the UI loading', 
   vm.createContext(sandbox);
   vm.runInContext(read('../public/js/catalog-fallback.js'), sandbox);
   vm.runInContext(`${read('../public/js/api.js')}\nglobalThis.__api = API;`, sandbox);
-  assert.equal(sandbox.window.API.getVersion(), '3.4.8');
+  assert.equal(sandbox.window.API.getVersion(), '3.4.9');
   const home = await sandbox.__api.getHomeFeed();
   const detail = await sandbox.__api.getDetail(home.hero[0].slug);
   assert.ok(home.hero.length > 0);
@@ -154,6 +154,20 @@ test('device-only approval remains server-authoritative and bound to a device', 
   assert.match(auth, /beginDeviceApprovalPolling/);
   assert.match(index, /id="deviceRequestsList"/);
   assert.match(index, /adminTabLogs[\s\S]*?<\/div>\s*<\/div>\s*<!-- TAB 4:[\s\S]*?adminTabDownloads/);
+});
+
+test('schedule is generated from the live catalogue and opens movie details', () => {
+  const index = read('../public/index.html');
+  const app = read('../public/js/app.js');
+  const tabs = read('../public/js/coverflow.js');
+  assert.match(index, /id="scheduleGrid"/);
+  assert.match(index, /id="scheduleRefreshBtn"/);
+  assert.doesNotMatch(index, /31\.07\.2026|11\.07\.2026|01\.05\.2026/);
+  assert.match(app, /getScheduleMovies\(\)/);
+  assert.match(app, /renderSchedule\(\)/);
+  assert.match(app, /refreshSchedule\(\)/);
+  assert.match(app, /card\.addEventListener\('click', \(\) => this\.openMovieDetail\(movie\.slug\)\)/);
+  assert.match(tabs, /tabId === 'schedule'[\s\S]*?renderSchedule/);
 });
 
 test('native movie artwork uses the allowlisted same-origin image relay', () => {

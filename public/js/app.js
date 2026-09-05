@@ -212,6 +212,101 @@ const App = {
     }
 
     this.renderHomeCatalog();
+    this.renderSchedule();
+  },
+
+  getScheduleMovies() {
+    return (this.homeCatalog || [])
+      .map((movie, index) => ({ movie, index, timestamp: Date.parse(movie?.modified?.time || '') || 0 }))
+      .sort((a, b) => (b.timestamp - a.timestamp) || (a.index - b.index))
+      .slice(0, 20)
+      .map((entry) => entry.movie);
+  },
+
+  formatScheduleTime(value) {
+    const date = new Date(value || '');
+    if (Number.isNaN(date.getTime())) return { day: 'MỚI', time: 'Vừa cập nhật' };
+    return {
+      day: date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }),
+      time: date.toLocaleString('vi-VN', {
+        day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+      })
+    };
+  },
+
+  renderSchedule() {
+    const grid = document.getElementById('scheduleGrid');
+    const state = document.getElementById('scheduleState');
+    const updated = document.getElementById('scheduleUpdatedAt');
+    if (!grid || !state || !updated) return;
+
+    const movies = this.getScheduleMovies();
+    const feedDate = new Date(this.homeFeedUpdatedAt || '');
+    updated.textContent = Number.isNaN(feedDate.getTime())
+      ? 'Dữ liệu mới nhất từ kho phim'
+      : `Đồng bộ lúc ${feedDate.toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })}`;
+
+    grid.innerHTML = '';
+    if (!movies.length) {
+      state.textContent = 'Chưa tải được lịch cập nhật. Hãy bấm Làm mới.';
+      state.classList.remove('hidden');
+      return;
+    }
+
+    state.classList.add('hidden');
+    movies.forEach((movie) => {
+      const timestamp = this.formatScheduleTime(movie?.modified?.time);
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'schedule-card';
+      card.setAttribute('aria-label', `Mở phim ${movie.name || movie.origin_name || ''}`);
+      card.innerHTML = `
+        <img class="schedule-poster" src="${this.escapeHtml(this.resolveImageUrl(movie.poster_url || movie.thumb_url))}" alt="" loading="lazy" decoding="async" />
+        <span class="schedule-date"><strong>${this.escapeHtml(timestamp.day)}</strong><small>${this.escapeHtml(timestamp.time)}</small></span>
+        <span class="schedule-info">
+          <strong class="schedule-name">${this.escapeHtml(movie.name || movie.origin_name || 'Phim mới')}</strong>
+          <span class="schedule-origin">${this.escapeHtml(movie.origin_name || 'Đang cập nhật thông tin')}</span>
+          <span class="schedule-meta">
+            <b>${this.escapeHtml(String(movie.year || 'Mới'))}</b>
+            <b>${this.escapeHtml(movie.quality || 'Mới cập nhật')}</b>
+            <b>${this.escapeHtml(movie.lang || 'Vietsub')}</b>
+          </span>
+        </span>
+        <span class="schedule-open" aria-hidden="true">›</span>
+      `;
+      this.attachPosterFallback(card.querySelector('.schedule-poster'));
+      card.addEventListener('click', () => this.openMovieDetail(movie.slug));
+      grid.appendChild(card);
+    });
+  },
+
+  async refreshSchedule() {
+    const button = document.getElementById('scheduleRefreshBtn');
+    const state = document.getElementById('scheduleState');
+    if (button?.disabled) return;
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Đang tải…';
+    }
+    if (state) {
+      state.textContent = 'Đang lấy lịch cập nhật mới nhất…';
+      state.classList.remove('hidden');
+    }
+    try {
+      const data = await API.getHomeFeed();
+      this.applyHomeFeed(data);
+      this.renderSchedule();
+    } catch (_error) {
+      if (state) {
+        state.textContent = 'Không thể cập nhật lúc này. Dữ liệu đã tải trước đó vẫn được giữ lại.';
+        state.classList.remove('hidden');
+      }
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = 'Làm mới';
+      }
+    }
   },
 
   uniqueMovies(items) {

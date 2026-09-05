@@ -300,34 +300,15 @@
     <!-- ================= TAB 3: LỊCH CHIẾU (SCHEDULE) ================= -->
     <div id="scheduleTabContent" class="tab-content hidden schedule-tab-view">
       <div class="schedule-header">
-        <h2>📅 Lịch Chiếu & Bom Tấn Sắp Ra Mắt 2026</h2>
-        <p>Lịch công chiếu các siêu phẩm điện ảnh chiếu rạp cập nhật liên tục</p>
+        <div>
+          <span class="schedule-kicker">PHIM VỪA LÊN SÓNG</span>
+          <h2>📅 Lịch cập nhật phim</h2>
+          <p id="scheduleUpdatedAt">Đang đồng bộ dữ liệu mới nhất…</p>
+        </div>
+        <button type="button" id="scheduleRefreshBtn" class="schedule-refresh-btn" onclick="App.refreshSchedule()">Làm mới</button>
       </div>
-      <div class="schedule-grid">
-        <div class="schedule-card">
-          <div class="schedule-date">31.07.2026</div>
-          <div class="schedule-info">
-            <h3>Người Nhện: Khởi Đầu Mới (Spider-Man: Brand New Day)</h3>
-            <p>Peter Parker trở lại với khởi đầu hoàn toàn mới sau Spider-Man: No Way Home.</p>
-            <span class="badge-status status-active">Đã lên lịch phát 4K</span>
-          </div>
-        </div>
-        <div class="schedule-card">
-          <div class="schedule-date">11.07.2026</div>
-          <div class="schedule-info">
-            <h3>Superman: Legacy (2026)</h3>
-            <p>Kỷ nguyên mới của Vũ trụ Điện ảnh DC dưới sự chỉ đạo của James Gunn.</p>
-            <span class="badge-status status-active">Đang chờ bản Rạp 4K</span>
-          </div>
-        </div>
-        <div class="schedule-card">
-          <div class="schedule-date">01.05.2026</div>
-          <div class="schedule-info">
-            <h3>Avengers: Doomsday</h3>
-            <p>Sự trở lại chấn động của Robert Downey Jr. trong vai Doctor Doom.</p>
-            <span class="badge-status status-active">Bom tấn mùa hè 2026</span>
-          </div>
-        </div>
+      <div id="scheduleState" class="schedule-state">Đang tải lịch cập nhật…</div>
+      <div id="scheduleGrid" class="schedule-grid" aria-live="polite">
       </div>
     </div>
 
@@ -351,7 +332,7 @@
           </div>
           <div class="acc-detail-item">
             <span>Phiên bản ứng dụng:</span>
-            <span id="accAppVersion">v3.4.8</span>
+            <span id="accAppVersion">v3.4.9</span>
           </div>
         </div>
 
