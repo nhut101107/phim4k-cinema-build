@@ -59,3 +59,18 @@ test('native catalog falls back immediately instead of leaving the UI loading', 
   assert.equal(detail.episodes.length, 0);
   assert.equal(detail.movie.slug, home.hero[0].slug);
 });
+
+test('home catalog has working genre and country filters with grouped rows', () => {
+  const sandbox = { window: {}, console: { warn() {}, log() {} } };
+  vm.createContext(sandbox);
+  vm.runInContext(read('../public/js/catalog-fallback.js'), sandbox);
+  const appSource = read('../public/js/app.js').split('// Global Helpers for HTML inline calls')[0];
+  vm.runInContext(`${appSource}\nglobalThis.__app = App;`, sandbox);
+  const app = sandbox.__app;
+  app.homeCatalog = sandbox.window.PHIM4K_CATALOG_FALLBACK;
+  assert.ok(app.filterMoviesByTag('category', 'Hành Động').length > 0);
+  assert.ok(app.filterMoviesByTag('country', 'Trung Quốc').length > 0);
+  app.activeHomeFilters = { genre: 'Hoạt Hình', country: 'Nhật Bản' };
+  assert.ok(app.moviesMatching().length > 0);
+  assert.ok(app.buildHomeSections([]).some((section) => section.id === 'country-china'));
+});

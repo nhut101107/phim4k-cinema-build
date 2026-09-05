@@ -219,23 +219,24 @@
         <div class="cw-row" id="continueWatchingRow"></div>
       </section>
 
-      <!-- 3. Section: Bạn muốn xem gì? (Categories) -->
-      <section class="explore-section" id="exploreSection">
-        <div class="explore-header" onclick="switchCategory('phim-le')">
-          <h2>Bạn muốn xem gì?</h2>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+      <!-- 3. Catalog filters. Buttons are populated from the loaded catalog. -->
+      <section class="catalog-filter-panel" id="catalogFilterPanel" aria-label="Lọc phim">
+        <div class="catalog-filter-header">
+          <div>
+            <p class="catalog-filter-kicker">DUYỆT KHO PHIM</p>
+            <h2>Lọc theo thể loại hoặc quốc gia</h2>
+          </div>
+          <button id="resetCatalogFilter" class="catalog-reset-btn hidden" type="button" onclick="App.clearHomeFilters()">Bỏ lọc</button>
         </div>
-        <div class="explore-chips-row" id="exploreChipsRow">
-          <button class="explore-chip" onclick="filterByGenre('Hành Động')">Phim Hành Động</button>
-          <button class="explore-chip" onclick="filterByGenre('Khoa Học Viễn Tưởng')">Khoa Học Viễn Tưởng</button>
-          <button class="explore-chip" onclick="filterByGenre('Marvel')">Marvel</button>
-          <button class="explore-chip" onclick="filterByGenre('DC Comics')">DC Comics</button>
-          <button class="explore-chip" onclick="filterByGenre('Hàn Quốc')">Phim Hàn Quốc</button>
-          <button class="explore-chip" onclick="filterByGenre('Anime')">Anime & Hoạt Hình</button>
-          <button class="explore-chip" onclick="filterByGenre('Cổ Trang')">Phim Cổ Trang</button>
-          <button class="explore-chip" onclick="filterByGenre('Kinh Dị')">Kinh Dị</button>
-          <button class="explore-chip" onclick="filterByGenre('Tình Cảm')">Tình Cảm</button>
+        <div class="catalog-filter-group">
+          <span class="catalog-filter-label">Thể loại</span>
+          <div class="catalog-chip-row" id="genreFilterChips"></div>
         </div>
+        <div class="catalog-filter-group">
+          <span class="catalog-filter-label">Quốc gia</span>
+          <div class="catalog-chip-row" id="countryFilterChips"></div>
+        </div>
+        <p id="catalogFilterSummary" class="catalog-filter-summary" role="status">Chọn thể loại hoặc quốc gia bạn muốn xem.</p>
       </section>
 
       <!-- 4. Main Movie Rows Feed -->
@@ -347,7 +348,7 @@
           </div>
           <div class="acc-detail-item">
             <span>Phiên bản ứng dụng:</span>
-            <span id="accAppVersion">v3.3.0</span>
+            <span id="accAppVersion">v3.4.0</span>
           </div>
         </div>
 

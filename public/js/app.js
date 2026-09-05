@@ -9,12 +9,16 @@ const App = {
   feedRefreshTimer: null,
   homeFeedLoading: false,
   homeFeedUpdatedAt: null,
+  homeCatalog: [],
+  homeSections: [],
+  activeHomeFilters: { genre: '', country: '' },
   activeMovieDetail: null,
   activeServerIndex: 0,
   searchDebounceTimer: null,
 
   init() {
     this.bindEvents();
+    this.syncPageScrollLock();
     this.startHomeFeedRefresh();
   },
 
@@ -61,6 +65,10 @@ const App = {
       if (!e.target.closest('.search-box')) {
         this.hideSearchDropdown();
       }
+      // Some iOS WebView sessions retain a stale body lock after dismissing a
+      // dialog. Re-evaluate it after every tap instead of leaving the home
+      // feed permanently unscrollable.
+      requestAnimationFrame(() => this.syncPageScrollLock());
     });
 
     document.addEventListener('visibilitychange', () => {
@@ -68,6 +76,12 @@ const App = {
         this.loadHomeFeed({ silent: true });
       }
     });
+  },
+
+  syncPageScrollLock() {
+    const gateOpen = !document.getElementById('activationGate')?.classList.contains('hidden');
+    const overlayOpen = Array.from(document.querySelectorAll('.modal-overlay, .player-modal')).some((element) => !element.classList.contains('hidden'));
+    document.body.classList.toggle('locked', Boolean(gateOpen || overlayOpen));
   },
 
   // =================================================
@@ -97,6 +111,12 @@ const App = {
       if (!hasMovies) throw new Error('MOVIE_CATALOG_EMPTY');
       this.homeFeedUpdatedAt = data.updatedAt || new Date().toISOString();
       this.heroList = data.hero || [];
+      const rawCatalog = this.uniqueMovies([
+        ...this.heroList,
+        ...sections.flatMap((section) => Array.isArray(section?.items) ? section.items : [])
+      ]);
+      this.homeCatalog = this.enrichCatalogFilters(rawCatalog);
+      this.homeSections = this.buildHomeSections(sections);
       if (this.heroList.length > 0) {
         if (window.Coverflow) {
           Coverflow.init(this.heroList);
@@ -109,11 +129,7 @@ const App = {
         ContinueWatching.render();
       }
 
-      container.innerHTML = '';
-      sections.forEach(sec => {
-        const secEl = this.createSectionElement(sec);
-        container.appendChild(secEl);
-      });
+      this.renderHomeCatalog();
     } catch (err) {
       if (silent) return;
       container.innerHTML = `
@@ -124,7 +140,157 @@ const App = {
       `;
     } finally {
       this.homeFeedLoading = false;
+      this.syncPageScrollLock();
     }
+  },
+
+  uniqueMovies(items) {
+    const seen = new Set();
+    return (items || []).filter((movie) => {
+      const key = String(movie?.slug || movie?.name || '');
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  },
+
+  enrichCatalogFilters(items) {
+    const fallback = Array.isArray(window.PHIM4K_CATALOG_FALLBACK) ? window.PHIM4K_CATALOG_FALLBACK : [];
+    const bySlug = new Map(fallback.map((movie) => [movie.slug, movie]));
+    const enriched = (items || []).map((movie) => {
+      const known = bySlug.get(movie.slug);
+      if (!known) return movie;
+      return {
+        ...known,
+        ...movie,
+        category: this.getMovieTags(movie, 'category').length ? movie.category : known.category,
+        country: this.getMovieTags(movie, 'country').length ? movie.country : known.country,
+      };
+    });
+    return this.uniqueMovies([...enriched, ...fallback]);
+  },
+
+  normalizeFilterValue(value) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLocaleLowerCase('vi-VN')
+      .trim();
+  },
+
+  getMovieTags(movie, field) {
+    const raw = movie?.[field];
+    const values = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+    return values
+      .map((item) => typeof item === 'string' ? item : item?.name)
+      .filter(Boolean)
+      .map((value) => String(value).trim());
+  },
+
+  moviesMatching(filters = this.activeHomeFilters) {
+    return this.homeCatalog.filter((movie) => {
+      const genreMatch = !filters.genre || this.getMovieTags(movie, 'category').some((tag) => this.normalizeFilterValue(tag) === this.normalizeFilterValue(filters.genre));
+      const countryMatch = !filters.country || this.getMovieTags(movie, 'country').some((tag) => this.normalizeFilterValue(tag) === this.normalizeFilterValue(filters.country));
+      return genreMatch && countryMatch;
+    });
+  },
+
+  buildHomeSections(sourceSections = []) {
+    const catalog = this.homeCatalog;
+    const latest = this.uniqueMovies(sourceSections.find((section) => section?.id === 'latest')?.items || catalog).slice(0, 18);
+    const groups = [
+      { id: 'latest', title: 'Phim mới cập nhật', items: latest },
+      { id: 'genre-action', title: 'Phim hành động', items: this.filterMoviesByTag('category', 'Hành Động') },
+      { id: 'genre-animation', title: 'Hoạt hình và Anime', items: this.filterMoviesByTag('category', 'Hoạt Hình') },
+      { id: 'country-china', title: 'Phim Trung Quốc', items: this.filterMoviesByTag('country', 'Trung Quốc') },
+      { id: 'country-korea', title: 'Phim Hàn Quốc', items: this.filterMoviesByTag('country', 'Hàn Quốc') },
+      { id: 'country-japan', title: 'Phim Nhật Bản', items: this.filterMoviesByTag('country', 'Nhật Bản') },
+      { id: 'country-western', title: 'Phim Âu Mỹ', items: this.filterMoviesByTag('country', 'Âu Mỹ') },
+    ];
+    return groups.filter((section) => section.items.length > 0);
+  },
+
+  filterMoviesByTag(field, value) {
+    const expected = this.normalizeFilterValue(value);
+    return this.homeCatalog.filter((movie) => this.getMovieTags(movie, field).some((tag) => this.normalizeFilterValue(tag) === expected));
+  },
+
+  renderHomeCatalog() {
+    const container = document.getElementById('dynamicSections');
+    if (!container) return;
+    const hasFilter = Boolean(this.activeHomeFilters.genre || this.activeHomeFilters.country);
+    const filteredMovies = this.moviesMatching();
+    const sections = hasFilter
+      ? [{ id: 'filtered', title: this.getFilterTitle(), items: filteredMovies }]
+      : this.homeSections;
+
+    container.innerHTML = '';
+    if (!sections.length || (hasFilter && !filteredMovies.length)) {
+      const empty = document.createElement('div');
+      empty.className = 'catalog-empty-state';
+      empty.textContent = 'Chưa có phim phù hợp trong mục này. Hãy chọn bộ lọc khác hoặc bấm Bỏ lọc.';
+      container.appendChild(empty);
+    } else {
+      sections.forEach((section) => container.appendChild(this.createSectionElement(section)));
+    }
+    this.renderCatalogControls();
+  },
+
+  getFilterTitle() {
+    const labels = [this.activeHomeFilters.genre, this.activeHomeFilters.country].filter(Boolean);
+    return `Kết quả lọc: ${labels.join(' · ')}`;
+  },
+
+  collectFilterTags(field, preferred) {
+    const available = this.homeCatalog.flatMap((movie) => this.getMovieTags(movie, field));
+    const deduped = Array.from(new Map(available.map((value) => [this.normalizeFilterValue(value), value])).values());
+    const ordered = preferred.filter((value) => deduped.some((tag) => this.normalizeFilterValue(tag) === this.normalizeFilterValue(value)));
+    return [...ordered, ...deduped.filter((tag) => !ordered.some((value) => this.normalizeFilterValue(tag) === this.normalizeFilterValue(value)))].slice(0, 10);
+  },
+
+  renderCatalogControls() {
+    const genreBox = document.getElementById('genreFilterChips');
+    const countryBox = document.getElementById('countryFilterChips');
+    const summary = document.getElementById('catalogFilterSummary');
+    const reset = document.getElementById('resetCatalogFilter');
+    if (!genreBox || !countryBox || !summary || !reset) return;
+
+    const genres = this.collectFilterTags('category', ['Hành Động', 'Hoạt Hình', 'Tình Cảm', 'Khoa Học Viễn Tưởng', 'Cổ Trang', 'Kinh Dị']);
+    const countries = this.collectFilterTags('country', ['Việt Nam', 'Trung Quốc', 'Hàn Quốc', 'Nhật Bản', 'Âu Mỹ', 'Thái Lan']);
+    this.renderFilterButtons(genreBox, genres, 'genre');
+    this.renderFilterButtons(countryBox, countries, 'country');
+    const hasFilter = Boolean(this.activeHomeFilters.genre || this.activeHomeFilters.country);
+    reset.classList.toggle('hidden', !hasFilter);
+    summary.textContent = hasFilter
+      ? `${this.moviesMatching().length} phim phù hợp với ${[this.activeHomeFilters.genre, this.activeHomeFilters.country].filter(Boolean).join(' · ')}.`
+      : `${this.homeCatalog.length} phim hiện có. Chọn một hoặc hai điều kiện để lọc.`;
+  },
+
+  renderFilterButtons(container, values, kind) {
+    container.innerHTML = '';
+    values.forEach((value) => {
+      const button = document.createElement('button');
+      const selected = this.normalizeFilterValue(this.activeHomeFilters[kind]) === this.normalizeFilterValue(value);
+      button.type = 'button';
+      button.className = 'catalog-filter-chip';
+      button.classList.toggle('active', selected);
+      button.setAttribute('aria-pressed', String(selected));
+      button.textContent = value;
+      button.onclick = () => this.setHomeFilter(kind, value);
+      container.appendChild(button);
+    });
+  },
+
+  setHomeFilter(kind, value) {
+    if (!['genre', 'country'].includes(kind)) return;
+    this.activeHomeFilters[kind] = this.normalizeFilterValue(this.activeHomeFilters[kind]) === this.normalizeFilterValue(value) ? '' : value;
+    this.renderHomeCatalog();
+    document.getElementById('dynamicSections')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  },
+
+  clearHomeFilters() {
+    this.activeHomeFilters = { genre: '', country: '' };
+    this.renderHomeCatalog();
   },
 
   startHomeFeedRefresh() {
@@ -194,6 +360,8 @@ const App = {
 
     const posterUrl = this.resolveImageUrl(movie.poster_url || movie.thumb_url);
     const epCurrent = movie.episode_current || movie.episode_total || '';
+    const genre = this.getMovieTags(movie, 'category')[0] || '';
+    const country = this.getMovieTags(movie, 'country')[0] || '';
 
     card.innerHTML = `
       <div class="card-poster-wrapper">
@@ -207,6 +375,7 @@ const App = {
           <span>${this.escapeHtml(movie.year || '2026')}</span>
           <span>${this.escapeHtml(movie.lang || 'Vietsub')}</span>
         </div>
+        ${(genre || country) ? `<div class="card-catalog-tags">${genre ? `<span>${this.escapeHtml(genre)}</span>` : ''}${country ? `<span>${this.escapeHtml(country)}</span>` : ''}</div>` : ''}
       </div>
     `;
 
@@ -616,7 +785,7 @@ function infoHeroMovie() {
 
 function hideMovieModal() {
   document.getElementById('movieModal').classList.add('hidden');
-  document.body.classList.remove('locked');
+  App.syncPageScrollLock();
 }
 
 function closeMovieModal(e) {

@@ -352,7 +352,8 @@ function renderAccountTab() {
 }
 
 function filterByGenre(genre) {
-  switchCategory('phim-le', genre);
+  switchTab('home');
+  App.setHomeFilter('genre', genre);
 }
 
 function clearContinueWatching() {
