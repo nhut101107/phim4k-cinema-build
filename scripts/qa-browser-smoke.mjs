@@ -11,6 +11,7 @@ const screenshotPath = resolve(projectRoot, 'data', 'qa', 'phim4k-detail-smoke.p
 const homeScreenshotPath = resolve(projectRoot, 'data', 'qa', 'phim4k-home-smoke.png');
 const playerScreenshotPath = resolve(projectRoot, 'data', 'qa', 'phim4k-player-smoke.png');
 const scheduleScreenshotPath = resolve(projectRoot, 'data', 'qa', 'phim4k-schedule-smoke.png');
+const filterScreenshotPath = resolve(projectRoot, 'data', 'qa', 'phim4k-filter-smoke.png');
 const mimeTypes = new Map([
   ['.css', 'text/css; charset=utf-8'],
   ['.html', 'text/html; charset=utf-8'],
@@ -255,6 +256,44 @@ try {
     return { moved, maxScroll };
   })()`);
 
+  process.stderr.write('[qa] checking full catalogue filters and load more\n');
+  await evaluate(`(() => {
+    const button = [...document.querySelectorAll('#genreFilterChips .catalog-filter-chip')]
+      .find((item) => item.textContent.trim() === 'Hành Động');
+    if (!button) throw new Error('Action filter button missing');
+    button.click();
+  })()`);
+  await waitFor('window.App.filterLoading === false && window.App.filterResults.length >= 24', 'Genre filter did not load a full page');
+  const genreTotal = await evaluate('window.App.filterPagination.totalItems');
+  await evaluate(`(() => {
+    const button = [...document.querySelectorAll('#countryFilterChips .catalog-filter-chip')]
+      .find((item) => item.textContent.trim() === 'Trung Quốc');
+    if (!button) throw new Error('Country filter button missing');
+    button.click();
+  })()`);
+  await waitFor('window.App.filterLoading === false && window.App.filterResults.length >= 24', 'Combined filter did not load a full page');
+  await waitFor('Boolean(document.getElementById("catalogLoadMoreBtn"))', 'Load-more control was not rendered');
+  await evaluate('document.getElementById("catalogLoadMoreBtn").click()');
+  await waitFor('window.App.filterLoading === false && window.App.filterResults.length >= 48', 'Load more did not append the next page');
+  await waitFor('[...document.querySelectorAll(".filtered-movie-grid .card-poster")].some((img) => img.complete && img.naturalWidth > 0)', 'Filtered poster artwork did not load');
+  const filterState = await evaluate(`(() => {
+    const grid = document.querySelector('.filtered-movie-grid');
+    const loadMore = document.getElementById('catalogLoadMoreBtn');
+    return {
+      genreTotal: ${genreTotal},
+      loaded: window.App.filterResults.length,
+      combinedTotal: window.App.filterPagination.totalItems,
+      currentPage: window.App.filterPagination.currentPage,
+      cards: grid?.querySelectorAll('.movie-card').length || 0,
+      columns: getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length,
+      loadMoreHeight: loadMore?.getBoundingClientRect().height || 0,
+      summary: document.getElementById('catalogFilterSummary').textContent,
+    };
+  })()`);
+  const filterScreenshot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+  writeFileSync(filterScreenshotPath, Buffer.from(filterScreenshot.data, 'base64'));
+  await evaluate('window.App.clearHomeFilters()');
+
   process.stderr.write('[qa] checking category navigation\n');
   await evaluate("window.App.switchCategory('phim-bo', 1)");
   await waitFor('document.querySelectorAll("#categoryGrid .movie-card").length > 0', 'Category catalogue did not render');
@@ -390,7 +429,7 @@ try {
 
   const relevantResponses = await evaluate('true');
   void relevantResponses;
-  const checksPassed = homeState.version === '3.4.9'
+  const checksPassed = homeState.version === '3.4.10'
     && deviceApprovalState.unlocked
     && deviceApprovalState.deviceOnly
     && deviceApprovalState.telegramEmpty
@@ -401,6 +440,13 @@ try {
     && homeState.heroHasImage
     && scrollState.moved
     && scrollState.maxScroll > 0
+    && filterState.genreTotal > 24
+    && filterState.loaded >= 48
+    && filterState.combinedTotal > 24
+    && filterState.currentPage === 2
+    && filterState.cards >= 48
+    && filterState.columns === 2
+    && filterState.loadMoreHeight >= 44
     && categoryState.cards > 0
     && categoryState.categoryVisible
     && categoryState.coverflowHidden
@@ -437,6 +483,7 @@ try {
     deviceApproval: deviceApprovalState,
     home: homeState,
     scroll: scrollState,
+    filter: filterState,
     category: categoryState,
     schedule: scheduleState,
     detail: detailState,
@@ -451,6 +498,7 @@ try {
     homeScreenshot: homeScreenshotPath,
     playerScreenshot: playerScreenshotPath,
     scheduleScreenshot: scheduleScreenshotPath,
+    filterScreenshot: filterScreenshotPath,
   };
   if (!checksPassed) process.exitCode = 1;
 } catch (error) {

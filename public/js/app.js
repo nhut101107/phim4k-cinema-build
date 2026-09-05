@@ -12,6 +12,11 @@ const App = {
   homeCatalog: [],
   homeSections: [],
   activeHomeFilters: { genre: '', country: '' },
+  filterResults: [],
+  filterPagination: { currentPage: 0, totalPages: 0, totalItems: 0 },
+  filterLoading: false,
+  filterError: '',
+  filterRequestId: 0,
   activeMovieDetail: null,
   activeServerIndex: 0,
   searchDebounceTimer: null,
@@ -321,8 +326,13 @@ const App = {
 
   enrichCatalogFilters(items) {
     const fallback = Array.isArray(window.PHIM4K_CATALOG_FALLBACK) ? window.PHIM4K_CATALOG_FALLBACK : [];
+    return this.uniqueMovies([...this.enrichMovies(items), ...fallback]);
+  },
+
+  enrichMovies(items) {
+    const fallback = Array.isArray(window.PHIM4K_CATALOG_FALLBACK) ? window.PHIM4K_CATALOG_FALLBACK : [];
     const bySlug = new Map(fallback.map((movie) => [movie.slug, movie]));
-    const enriched = (items || []).map((movie) => {
+    return this.uniqueMovies((items || []).map((movie) => {
       const known = bySlug.get(movie.slug);
       if (!known) return movie;
       return {
@@ -331,8 +341,7 @@ const App = {
         category: this.getMovieTags(movie, 'category').length ? movie.category : known.category,
         country: this.getMovieTags(movie, 'country').length ? movie.country : known.country,
       };
-    });
-    return this.uniqueMovies([...enriched, ...fallback]);
+    }));
   },
 
   normalizeFilterValue(value) {
@@ -384,12 +393,18 @@ const App = {
     const container = document.getElementById('dynamicSections');
     if (!container) return;
     const hasFilter = Boolean(this.activeHomeFilters.genre || this.activeHomeFilters.country);
-    const filteredMovies = this.moviesMatching();
+    document.getElementById('mainContent')?.classList.toggle('filter-active', hasFilter);
+    const filteredMovies = hasFilter ? this.filterResults : this.moviesMatching();
     const sections = hasFilter
-      ? [{ id: 'filtered', title: this.getFilterTitle(), items: filteredMovies }]
+      ? [{ id: 'filtered', title: this.getFilterTitle(), items: filteredMovies, layout: 'grid' }]
       : this.homeSections;
 
     container.innerHTML = '';
+    if (hasFilter && this.filterLoading && !filteredMovies.length) {
+      container.innerHTML = '<div class="loading-spinner-wrapper"><div class="spinner"></div><p>Đang tải thêm phim từ toàn bộ kho…</p></div>';
+      this.renderCatalogControls();
+      return;
+    }
     if (!sections.length || (hasFilter && !filteredMovies.length)) {
       const empty = document.createElement('div');
       empty.className = 'catalog-empty-state';
@@ -397,6 +412,16 @@ const App = {
       container.appendChild(empty);
     } else {
       sections.forEach((section) => container.appendChild(this.createSectionElement(section)));
+      if (hasFilter && this.filterPagination.currentPage < this.filterPagination.totalPages) {
+        const loadMore = document.createElement('button');
+        loadMore.type = 'button';
+        loadMore.id = 'catalogLoadMoreBtn';
+        loadMore.className = 'catalog-load-more-btn';
+        loadMore.disabled = this.filterLoading;
+        loadMore.textContent = this.filterLoading ? 'Đang tải thêm…' : 'Tải thêm 24 phim';
+        loadMore.onclick = () => this.loadHomeFilterResults({ reset: false });
+        container.appendChild(loadMore);
+      }
     }
     this.renderCatalogControls();
   },
@@ -409,7 +434,7 @@ const App = {
   collectFilterTags(field, preferred) {
     const available = this.homeCatalog.flatMap((movie) => this.getMovieTags(movie, field));
     const deduped = Array.from(new Map(available.map((value) => [this.normalizeFilterValue(value), value])).values());
-    const ordered = preferred.filter((value) => deduped.some((tag) => this.normalizeFilterValue(tag) === this.normalizeFilterValue(value)));
+    const ordered = preferred;
     return [...ordered, ...deduped.filter((tag) => !ordered.some((value) => this.normalizeFilterValue(tag) === this.normalizeFilterValue(value)))].slice(0, 10);
   },
 
@@ -420,14 +445,17 @@ const App = {
     const reset = document.getElementById('resetCatalogFilter');
     if (!genreBox || !countryBox || !summary || !reset) return;
 
-    const genres = this.collectFilterTags('category', ['Hành Động', 'Hoạt Hình', 'Tình Cảm', 'Khoa Học Viễn Tưởng', 'Cổ Trang', 'Kinh Dị']);
+    const genres = this.collectFilterTags('category', ['Hành Động', 'Hoạt Hình', 'Tình Cảm', 'Viễn Tưởng', 'Cổ Trang', 'Kinh Dị', 'Hài Hước', 'Tâm Lý', 'Võ Thuật', 'Phiêu Lưu']);
     const countries = this.collectFilterTags('country', ['Việt Nam', 'Trung Quốc', 'Hàn Quốc', 'Nhật Bản', 'Âu Mỹ', 'Thái Lan']);
     this.renderFilterButtons(genreBox, genres, 'genre');
     this.renderFilterButtons(countryBox, countries, 'country');
     const hasFilter = Boolean(this.activeHomeFilters.genre || this.activeHomeFilters.country);
     reset.classList.toggle('hidden', !hasFilter);
+    const filterLabels = [this.activeHomeFilters.genre, this.activeHomeFilters.country].filter(Boolean).join(' · ');
     summary.textContent = hasFilter
-      ? `${this.moviesMatching().length} phim phù hợp với ${[this.activeHomeFilters.genre, this.activeHomeFilters.country].filter(Boolean).join(' · ')}.`
+      ? (this.filterLoading && !this.filterResults.length
+        ? `Đang tìm phim ${filterLabels} trong toàn bộ kho…`
+        : `${this.filterResults.length}/${this.filterPagination.totalItems || this.filterResults.length} phim ${filterLabels} đã tải.${this.filterError ? ` ${this.filterError}` : ''}`)
       : `${this.homeCatalog.length} phim hiện có. Chọn một hoặc hai điều kiện để lọc.`;
   },
 
@@ -446,15 +474,74 @@ const App = {
     });
   },
 
+  filterValueToSlug(value) {
+    return this.normalizeFilterValue(value)
+      .replace(/đ/g, 'd')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+  },
+
+  async loadHomeFilterResults({ reset = true } = {}) {
+    const hasFilter = Boolean(this.activeHomeFilters.genre || this.activeHomeFilters.country);
+    if (!hasFilter) return;
+    if (!reset && this.filterLoading) return;
+    const requestId = reset ? ++this.filterRequestId : this.filterRequestId;
+    const page = reset ? 1 : this.filterPagination.currentPage + 1;
+    if (reset) {
+      this.filterResults = [];
+      this.filterPagination = { currentPage: 0, totalPages: 0, totalItems: 0 };
+    }
+    this.filterLoading = true;
+    this.filterError = '';
+    this.renderHomeCatalog();
+    try {
+      const data = await API.getFilteredCatalog({
+        genre: this.filterValueToSlug(this.activeHomeFilters.genre),
+        country: this.filterValueToSlug(this.activeHomeFilters.country),
+      }, page);
+      if (requestId !== this.filterRequestId) return;
+      const incoming = this.enrichMovies(Array.isArray(data.items) ? data.items : []);
+      this.filterResults = reset ? incoming : this.uniqueMovies([...this.filterResults, ...incoming]);
+      this.filterPagination = {
+        currentPage: Number(data.pagination?.currentPage || page),
+        totalPages: Number(data.pagination?.totalPages || page),
+        totalItems: Number(data.pagination?.totalItems || this.filterResults.length),
+      };
+    } catch (_error) {
+      if (requestId !== this.filterRequestId) return;
+      if (reset) this.filterResults = this.moviesMatching();
+      this.filterPagination = {
+        currentPage: this.filterResults.length ? 1 : 0,
+        totalPages: this.filterResults.length ? 1 : 0,
+        totalItems: this.filterResults.length,
+      };
+      this.filterError = 'Máy chủ tạm gián đoạn nên đang hiển thị dữ liệu đã lưu.';
+    } finally {
+      if (requestId === this.filterRequestId) {
+        this.filterLoading = false;
+        this.renderHomeCatalog();
+      }
+    }
+  },
+
   setHomeFilter(kind, value) {
     if (!['genre', 'country'].includes(kind)) return;
     this.activeHomeFilters[kind] = this.normalizeFilterValue(this.activeHomeFilters[kind]) === this.normalizeFilterValue(value) ? '' : value;
-    this.renderHomeCatalog();
+    if (this.activeHomeFilters.genre || this.activeHomeFilters.country) {
+      this.loadHomeFilterResults({ reset: true });
+    } else {
+      this.clearHomeFilters();
+    }
     document.getElementById('dynamicSections')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   },
 
   clearHomeFilters() {
+    this.filterRequestId += 1;
     this.activeHomeFilters = { genre: '', country: '' };
+    this.filterResults = [];
+    this.filterPagination = { currentPage: 0, totalPages: 0, totalItems: 0 };
+    this.filterLoading = false;
+    this.filterError = '';
     this.renderHomeCatalog();
   },
 
@@ -511,10 +598,10 @@ const App = {
         <h2 class="section-title">${this.escapeHtml(section.title)}</h2>
         ${section.id === 'latest' && this.homeFeedUpdatedAt ? `<span class="section-update-status">Cập nhật ${new Date(this.homeFeedUpdatedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</span>` : ''}
       </div>
-      <div class="movie-row"></div>
+      <div class="${section.layout === 'grid' ? 'movie-grid filtered-movie-grid' : 'movie-row'}"></div>
     `;
 
-    const row = sec.querySelector('.movie-row');
+    const row = sec.querySelector(section.layout === 'grid' ? '.filtered-movie-grid' : '.movie-row');
     (section.items || []).forEach(movie => {
       const card = this.createMovieCard(movie);
       row.appendChild(card);

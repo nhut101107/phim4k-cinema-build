@@ -14,7 +14,7 @@ const API = {
   },
 
   getVersion() {
-    return '3.4.9';
+    return '3.4.10';
   },
 
   async fetchWithTimeout(input, options = {}, timeoutMs = 15000) {
@@ -226,6 +226,13 @@ const API = {
         pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 10 }
       };
     }
+  },
+
+  async getFilteredCatalog({ genre = '', country = '' } = {}, page = 1) {
+    const query = new URLSearchParams({ page: String(page) });
+    if (genre) query.set('genre', genre);
+    if (country) query.set('country', country);
+    return this.request(`/api/movies/filter?${query.toString()}`);
   },
 
   async search(query, page = 1) {

@@ -36,6 +36,21 @@ const MOVIE_IMAGE_HOSTS = new Set(["phimimg.com"]);
 const MOVIE_CATALOG_CATEGORIES = new Set([
   "phim-moi-cap-nhat", "phim-le", "phim-bo", "hoat-hinh", "tv-shows",
 ]);
+const MOVIE_FILTER_GENRES = new Set([
+  "bi-an", "chien-tranh", "chinh-kich", "co-trang", "gia-dinh", "hai-huoc",
+  "hanh-dong", "hinh-su", "hoc-duong", "khoa-hoc", "kinh-di", "kinh-dien",
+  "lich-su", "mien-tay", "phim-18", "phim-ngan", "phieu-luu", "than-thoai",
+  "the-thao", "tre-em", "tai-lieu", "tam-ly", "tinh-cam", "vien-tuong",
+  "vo-thuat", "am-nhac", "hoat-hinh",
+]);
+const MOVIE_FILTER_COUNTRIES = new Set([
+  "anh", "ba-lan", "brazil", "bo-dao-nha", "canada", "chau-phi", "ha-lan",
+  "han-quoc", "hong-kong", "indonesia", "malaysia", "mexico", "na-uy",
+  "nam-phi", "nga", "nhat-ban", "philippines", "phap", "quoc-gia-khac",
+  "thai-lan", "tho-nhi-ky", "thuy-si", "thuy-dien", "trung-quoc",
+  "tay-ban-nha", "uae", "ukraina", "viet-nam", "au-my", "uc", "y",
+  "dan-mach", "dai-loan", "duc", "a-rap-xe-ut", "an-do",
+]);
 
 const now = () => new Date().toISOString();
 
@@ -812,6 +827,31 @@ async function handleMovieCatalog(request) {
         { id: "animation", title: "Hoat hinh", items: animation.length ? animation : latestItems.slice(16, 32) },
       ],
     }, 200, { "cache-control": "public, max-age=120, s-maxage=120" });
+  }
+
+  if (pathname === "/api/movies/filter") {
+    const genre = String(url.searchParams.get("genre") || "").trim().toLowerCase();
+    const country = String(url.searchParams.get("country") || "").trim().toLowerCase();
+    if (!genre && !country) return textError("Thieu bo loc phim.", 400, "MISSING_MOVIE_FILTER");
+    if (genre && !MOVIE_FILTER_GENRES.has(genre)) return textError("The loai khong hop le.", 400, "INVALID_GENRE_FILTER");
+    if (country && !MOVIE_FILTER_COUNTRIES.has(country)) return textError("Quoc gia khong hop le.", 400, "INVALID_COUNTRY_FILTER");
+
+    const page = catalogPage(url.searchParams.get("page"));
+    let target;
+    if (genre === "hoat-hinh") {
+      target = `/v1/api/danh-sach/hoat-hinh?page=${page}&limit=24`;
+    } else if (genre) {
+      target = `/v1/api/the-loai/${genre}?page=${page}&limit=24`;
+    } else {
+      target = `/v1/api/quoc-gia/${country}?page=${page}&limit=24`;
+    }
+    if (country && genre) target += `&country=${encodeURIComponent(country)}`;
+    const data = await fetchCatalogJson(target);
+    return json({
+      filters: { genre, country },
+      items: catalogItems(data),
+      pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1, totalItems: 0 },
+    }, 200, { "cache-control": "public, max-age=300, s-maxage=300" });
   }
 
   const categoryMatch = pathname.match(/^\/api\/movies\/category\/([a-z0-9-]+)$/);

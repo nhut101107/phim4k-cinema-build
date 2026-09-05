@@ -44,9 +44,16 @@ test("movie metadata relay works without D1 and never accepts an arbitrary upstr
     assert.equal(requests.length, 1);
     assert.ok(requests.every((target) => target.startsWith("https://phimapi.com/")));
 
+    const filtered = await worker.fetch(new Request("https://example.workers.dev/api/movies/filter?genre=hanh-dong&country=trung-quoc&page=2"), {});
+    assert.equal(filtered.status, 200);
+    assert.equal(requests.at(-1), "https://phimapi.com/v1/api/the-loai/hanh-dong?page=2&limit=24&country=trung-quoc");
+
+    const invalidFilter = await worker.fetch(new Request("https://example.workers.dev/api/movies/filter?genre=../../secret"), {});
+    assert.equal(invalidFilter.status, 400);
+
     const invalid = await worker.fetch(new Request("https://example.workers.dev/api/movies/category/not-allowed"), {});
     assert.equal(invalid.status, 400);
-    assert.equal(requests.length, 1);
+    assert.equal(requests.length, 2);
   } finally {
     globalThis.fetch = originalFetch;
   }

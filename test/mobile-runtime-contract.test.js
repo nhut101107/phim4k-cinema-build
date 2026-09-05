@@ -34,7 +34,7 @@ test('account version and a verified session do not fall back to stale WebView s
   const auth = read('../public/js/auth.js');
   assert.match(api, /window\.API = API/);
   assert.match(auth, /window\.Auth = Auth/);
-  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.9'/);
+  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.10'/);
   assert.match(auth, /const verifiedSession = \{ \.\.\.res, key, telegramId \}/);
   assert.match(auth, /Auth\.unlockApp\(verifiedSession\)/);
 });
@@ -79,7 +79,7 @@ test('native catalog falls back immediately instead of leaving the UI loading', 
   vm.createContext(sandbox);
   vm.runInContext(read('../public/js/catalog-fallback.js'), sandbox);
   vm.runInContext(`${read('../public/js/api.js')}\nglobalThis.__api = API;`, sandbox);
-  assert.equal(sandbox.window.API.getVersion(), '3.4.9');
+  assert.equal(sandbox.window.API.getVersion(), '3.4.10');
   const home = await sandbox.__api.getHomeFeed();
   const detail = await sandbox.__api.getDetail(home.hero[0].slug);
   assert.ok(home.hero.length > 0);
@@ -100,6 +100,23 @@ test('home catalog has working genre and country filters with grouped rows', () 
   app.activeHomeFilters = { genre: 'Hoạt Hình', country: 'Nhật Bản' };
   assert.ok(app.moviesMatching().length > 0);
   assert.ok(app.buildHomeSections([]).some((section) => section.id === 'country-china'));
+});
+
+test('home filters query the full server catalogue with pagination and a mobile grid', () => {
+  const api = read('../public/js/api.js');
+  const app = read('../public/js/app.js');
+  const worker = read('../backend-worker/src/worker.mjs');
+  const styles = read('../public/css/style.css');
+  assert.match(api, /getFilteredCatalog/);
+  assert.match(api, /\/api\/movies\/filter/);
+  assert.match(app, /loadHomeFilterResults/);
+  assert.match(app, /catalogLoadMoreBtn/);
+  assert.match(app, /Tải thêm 24 phim/);
+  assert.match(app, /layout: 'grid'/);
+  assert.match(worker, /pathname === "\/api\/movies\/filter"/);
+  assert.match(worker, /MOVIE_FILTER_GENRES/);
+  assert.match(worker, /MOVIE_FILTER_COUNTRIES/);
+  assert.match(styles, /\.filtered-movie-grid/);
 });
 
 test('native home paints its bundled catalogue before waiting for the live feed', () => {
