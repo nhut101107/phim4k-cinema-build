@@ -43,7 +43,7 @@ const Admin = {
     }
     if (tab === 'users') this.loadUsers();
     if (tab === 'downloads') this.loadDownloadsConfig();
-    if (tab === 'content') this.loadContentStatus();
+    if (tab === 'content') return this.loadContentStatus();
     if (tab === 'logs') {
       const loading = this.loadLogs();
       this.startLogAutoRefresh();
@@ -691,7 +691,7 @@ const Admin = {
     const filter = this.logAccountFilter || document.getElementById('logAccountFilter')?.value.trim() || '';
     const type = this.logTypeFilter || document.getElementById('logTypeFilter')?.value || 'ALL';
     const query = new URLSearchParams({ limit: '100', type });
-    if (filter) query.set('telegramId', filter);
+    if (filter) query.set('identity', filter);
     if (append && this.logCursor) query.set('before', String(this.logCursor));
     const liveState = document.getElementById('logLiveState');
     if (liveState) liveState.textContent = '● ĐANG ĐỒNG BỘ';
@@ -730,6 +730,8 @@ const Admin = {
     const sourceEl = document.getElementById('contentSourceStatus');
     const refreshEl = document.getElementById('contentLastRefresh');
     const cacheEl = document.getElementById('contentCacheStatus');
+    const adsEl = document.getElementById('contentAdsStatus');
+    const providerList = document.getElementById('contentProviderList');
     if (!sourceEl || !refreshEl || !cacheEl) return;
 
     sourceEl.textContent = 'Đang kiểm tra…';
@@ -738,17 +740,37 @@ const Admin = {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
 
-      sourceEl.textContent = `${data.source || 'Nguồn phim'} · hoạt động`;
+      sourceEl.textContent = `${data.source || 'Nguồn phim'} · ${data.status === 'READY' ? 'hoạt động' : 'cần kiểm tra'}`;
       refreshEl.textContent = data.lastSuccessfulRefreshAt
         ? new Date(data.lastSuccessfulRefreshAt).toLocaleString('vi-VN')
         : 'Chưa có lượt tải mới';
       cacheEl.textContent = data.cacheActive
-        ? `Đang dùng đến ${new Date(data.cacheExpiresAt).toLocaleTimeString('vi-VN')}`
-        : 'Trống — lượt tải tiếp theo sẽ lấy mới';
+        ? `Edge cache ${Math.round((data.cacheTtlSeconds || 0) / 60)} phút`
+        : 'Không dùng cache';
+      if (adsEl) adsEl.textContent = data.ads?.sdkEmbedded ? 'Có SDK quảng cáo' : 'Không nhúng SDK quảng cáo';
+      if (providerList) {
+        providerList.replaceChildren();
+        (data.providers || []).forEach((provider) => {
+          const card = document.createElement('article');
+          card.className = `content-provider-card status-${String(provider.status || 'unknown').toLowerCase()}`;
+          const copy = document.createElement('div');
+          const title = document.createElement('strong');
+          title.textContent = provider.label || provider.id || 'Nguồn nội dung';
+          const description = document.createElement('span');
+          description.textContent = provider.purpose || '';
+          copy.append(title, description);
+          const badge = document.createElement('b');
+          badge.textContent = ({ READY: 'Sẵn sàng', NEEDS_CONFIGURATION: 'Chưa cấu hình', UNREACHABLE: 'Mất kết nối', EMPTY: 'Trống' })[provider.status] || provider.status || 'Chưa rõ';
+          card.append(copy, badge);
+          providerList.appendChild(card);
+        });
+      }
     } catch (err) {
       sourceEl.textContent = 'Không đọc được trạng thái';
       refreshEl.textContent = '—';
       cacheEl.textContent = '—';
+      if (adsEl) adsEl.textContent = '—';
+      if (providerList) providerList.replaceChildren();
     }
   },
 
@@ -792,10 +814,13 @@ const Admin = {
 
     if (logs.length === 0) {
       container.innerHTML = '<div class="log-line log-dim">[System] Nhật ký hệ thống trống.</div>';
-      ['logLoadedCount', 'logViewerCount', 'logUserCount', 'logErrorCount'].forEach((id) => {
+      ['logLoadedCount', 'logViewerCount', 'logUserCount', 'logErrorCount', 'logSessionCount'].forEach((id) => {
         const element = document.getElementById(id);
         if (element) element.textContent = '0';
       });
+      document.getElementById('logWatchTime').textContent = '0 phút';
+      document.getElementById('logLatestMovie').textContent = '—';
+      document.getElementById('logLastSeen').textContent = '—';
       return;
     }
 
@@ -811,7 +836,8 @@ const Admin = {
     const contextLabels = {
       movie: 'Phim', episode: 'Tập', tab: 'Tab', category: 'Danh mục', genre: 'Thể loại',
       country: 'Quốc gia', query: 'Từ khóa', results: 'Kết quả', server: 'Server', quality: 'Chất lượng',
-      seconds: 'Vị trí', duration: 'Thời lượng', error: 'Lỗi', entry: 'Cách vào', version: 'Phiên bản'
+      seconds: 'Vị trí', duration: 'Thời lượng', watched: 'Đã xem', error: 'Lỗi', entry: 'Cách vào', version: 'Phiên bản',
+      session: 'Phiên', runtime: 'Nền tảng', screen: 'Màn hình', language: 'Ngôn ngữ', network: 'Mạng'
     };
 
     logs.forEach(l => {
@@ -853,6 +879,17 @@ const Admin = {
     document.getElementById('logViewerCount').textContent = String(logs.filter((log) => log.type === 'USER').length);
     document.getElementById('logUserCount').textContent = String(new Set(logs.map((log) => log.account?.telegramId).filter(Boolean)).size);
     document.getElementById('logErrorCount').textContent = String(logs.filter((log) => log.action === 'usage_playback_error').length);
+    document.getElementById('logSessionCount').textContent = String(new Set(logs.map((log) => log.context?.session).filter(Boolean)).size);
+    const watchedSeconds = logs.reduce((sum, log) => sum + (Number(log.context?.watched) || 0), 0);
+    document.getElementById('logWatchTime').textContent = watchedSeconds >= 3600
+      ? `${(watchedSeconds / 3600).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} giờ`
+      : `${Math.round(watchedSeconds / 60)} phút`;
+    const latestMovie = logs.find((log) => log.context?.movie)?.context?.movie || '—';
+    document.getElementById('logLatestMovie').textContent = latestMovie;
+    const latestTimestamp = logs[0]?.timestamp;
+    document.getElementById('logLastSeen').textContent = latestTimestamp
+      ? new Date(latestTimestamp).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })
+      : '—';
   },
 
   async clearLogs() {

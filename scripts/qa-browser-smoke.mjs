@@ -401,9 +401,19 @@ try {
       if (path.includes('/api/admin/logs')) {
         return Promise.resolve(new Response(JSON.stringify({ logs: [{
           id: 91, timestamp: new Date().toISOString(), action: 'usage_movie_open', type: 'USER',
-          details: '', context: { movie: 'Phim QA', episode: 'Tập 1', device: 'device••••qa' },
+          details: '', context: { movie: 'Phim QA', episode: 'Tập 1', device: 'device••••qa', session: 's-qa', runtime: 'iOS app', network: '4g', watched: 125 },
           account: { telegramId: '5992662564', deviceHash: 'device••••qa' }
         }], hasMore: true, nextCursor: 91 }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      }
+      if (path.includes('/api/admin/content-status')) {
+        return Promise.resolve(new Response(JSON.stringify({
+          source: 'PhimAPI metadata', status: 'READY', lastSuccessfulRefreshAt: new Date().toISOString(),
+          cacheActive: true, cacheTtlSeconds: 1200, ads: { sdkEmbedded: false },
+          providers: [
+            { id: 'catalog', label: 'PhimAPI metadata', status: 'READY', purpose: 'Danh mục và poster' },
+            { id: 'jellyfin', label: 'Jellyfin tự host', status: 'NEEDS_CONFIGURATION', purpose: 'Kho được cấp quyền' }
+          ]
+        }), { status: 200, headers: { 'content-type': 'application/json' } }));
       }
       return originalFetch(url, options);
     };
@@ -413,6 +423,8 @@ try {
     const logPanelVisible = !document.getElementById('adminTabLogs').classList.contains('hidden');
     const userLogRendered = document.getElementById('terminalLogsBody').textContent.includes('Phim QA');
     const viewerCount = document.getElementById('logViewerCount').textContent;
+    const sessionCount = document.getElementById('logSessionCount').textContent;
+    const watchTime = document.getElementById('logWatchTime').textContent;
     const loadMoreVisible = !document.getElementById('logsLoadMoreBtn').classList.contains('hidden');
     window.Admin.switchTab('downloads');
     const downloads = document.getElementById('adminTabDownloads');
@@ -423,6 +435,9 @@ try {
     const updateButton = downloads.querySelector('button[type="submit"]');
     const updateButtonVisible = Boolean(updateButton && updateButton.getBoundingClientRect().height >= 40);
     const logsHiddenAfterSwitchDownloads = logs.classList.contains('hidden');
+    await window.Admin.switchTab('content');
+    const providerCards = document.querySelectorAll('#contentProviderList .content-provider-card').length;
+    const adsStatus = document.getElementById('contentAdsStatus').textContent;
     await window.Admin.switchTab('logs');
     const requestButton = document.getElementById('btnRequestDeviceAccess');
     const button = document.querySelector('#adminModal .modal-close-btn');
@@ -440,6 +455,10 @@ try {
       logPanelVisible,
       userLogRendered,
       viewerCount,
+      sessionCount,
+      watchTime,
+      providerCards,
+      adsStatus,
       loadMoreVisible,
       requestButtonAvailable: Boolean(
         requestButton
@@ -459,7 +478,7 @@ try {
 
   const relevantResponses = await evaluate('true');
   void relevantResponses;
-  const checksPassed = homeState.version === '3.4.11'
+  const checksPassed = homeState.version === '3.4.12'
     && deviceApprovalState.unlocked
     && deviceApprovalState.deviceOnly
     && deviceApprovalState.telegramEmpty
@@ -506,6 +525,10 @@ try {
     && adminCloseState.logPanelVisible
     && adminCloseState.userLogRendered
     && adminCloseState.viewerCount === '1'
+    && adminCloseState.sessionCount === '1'
+    && adminCloseState.watchTime.includes('2 phút')
+    && adminCloseState.providerCards === 2
+    && adminCloseState.adsStatus.includes('Không nhúng')
     && adminCloseState.loadMoreVisible
     && exceptions.length === 0
     && consoleErrors.length === 0

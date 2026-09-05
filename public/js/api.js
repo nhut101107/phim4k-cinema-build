@@ -6,6 +6,7 @@ const API = {
   usageFlushTimer: null,
   lastUsageFingerprint: '',
   lastUsageAt: 0,
+  maxMovieCacheEntries: 80,
 
   getKey() {
     return localStorage.getItem('phim4k_key') || '';
@@ -20,7 +21,34 @@ const API = {
   },
 
   getVersion() {
-    return '3.4.11';
+    return '3.4.12';
+  },
+
+  getSessionId() {
+    let id = sessionStorage.getItem('phim4k_session_id');
+    if (!id) {
+      const random = globalThis.crypto?.getRandomValues
+        ? globalThis.crypto.getRandomValues(new Uint32Array(1))[0].toString(36)
+        : Math.random().toString(36).slice(2, 10);
+      id = `s-${Date.now().toString(36)}-${random}`;
+      sessionStorage.setItem('phim4k_session_id', id);
+    }
+    return id;
+  },
+
+  getOperationalContext() {
+    const standalone = window.matchMedia?.('(display-mode: standalone)')?.matches;
+    const runtime = window.Capacitor?.isNativePlatform?.()
+      ? `iOS app`
+      : (standalone ? 'PWA' : 'Web');
+    const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    return {
+      session: this.getSessionId(),
+      runtime,
+      screen: `${Math.round(window.screen?.width || innerWidth)}x${Math.round(window.screen?.height || innerHeight)}`,
+      language: String(navigator.language || 'unknown').slice(0, 20),
+      network: String(connection?.effectiveType || (navigator.onLine ? 'online' : 'offline')).slice(0, 20)
+    };
   },
 
   async cachedMovieRequest(endpoint, ttlMs = 60000) {
@@ -30,6 +58,9 @@ const API = {
     const promise = this.request(endpoint)
       .then((data) => {
         this.movieCache.set(endpoint, { data, expiresAt: Date.now() + ttlMs });
+        while (this.movieCache.size > this.maxMovieCacheEntries) {
+          this.movieCache.delete(this.movieCache.keys().next().value);
+        }
         return data;
       })
       .catch((error) => {
@@ -48,7 +79,10 @@ const API = {
     if (!this.getKey() || !this.getDeviceId()) return;
     const safeAction = String(action || '').trim().toLowerCase();
     if (!safeAction) return;
-    const safeContext = Object.fromEntries(Object.entries(context)
+    const operational = safeAction === 'app_open'
+      ? this.getOperationalContext()
+      : { session: this.getSessionId() };
+    const safeContext = Object.fromEntries(Object.entries({ ...operational, ...context })
       .filter(([, value]) => typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value)))
       .map(([key, value]) => [key, typeof value === 'string' ? value.slice(0, 160) : value]));
     const fingerprint = `${safeAction}:${JSON.stringify(safeContext)}`;

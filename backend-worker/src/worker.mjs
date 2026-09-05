@@ -26,7 +26,8 @@ const TELEMETRY_ACTIONS = new Set([
 ]);
 const TELEMETRY_FIELDS = new Set([
   "tab", "category", "genre", "country", "query", "results", "movie",
-  "episode", "server", "quality", "seconds", "duration", "error", "entry",
+  "episode", "server", "quality", "seconds", "duration", "watched", "error", "entry",
+  "session", "runtime", "screen", "language", "network",
 ]);
 const RATE_LIMITS = Object.freeze({
   authActivate: { limit: 20, windowSeconds: 60 },
@@ -722,15 +723,17 @@ async function handleLogs(request, env) {
   }
   const url = new URL(request.url);
   const limit = Math.min(Math.max(Number.parseInt(url.searchParams.get("limit") || "100", 10) || 100, 1), 200);
-  const telegramId = normalizeId(url.searchParams.get("telegramId"));
+  const identity = cleanTelemetryValue(url.searchParams.get("identity"), 128)
+    || cleanTelemetryValue(url.searchParams.get("telegramId"), 128)
+    || "";
   const cursor = Math.max(Number.parseInt(url.searchParams.get("before") || "0", 10) || 0, 0);
   const requestedType = String(url.searchParams.get("type") || "ALL").trim().toUpperCase();
   const type = new Set(["ALL", "USER", "AUTH", "ADMIN", "BAN", "SECURITY", "SYSTEM"]).has(requestedType) ? requestedType : "ALL";
   const clauses = [];
   const values = [];
-  if (telegramId) {
-    clauses.push("(actor_telegram_id = ? OR target_telegram_id = ?)");
-    values.push(telegramId, telegramId);
+  if (identity) {
+    clauses.push("(actor_telegram_id = ? OR target_telegram_id = ? OR detail LIKE ?)");
+    values.push(identity, identity, `%${identity.replace(/[\\%_]/g, "")}%`);
   }
   if (cursor) {
     clauses.push("id < ?");
@@ -770,6 +773,102 @@ async function handleLogs(request, env) {
       account: { telegramId: actorTelegramId, deviceHash: context?.device || "" },
     };
   }), hasMore, nextCursor: hasMore ? page.at(-1)?.id || null : null, type });
+}
+
+function configuredJellyfinOrigin(env) {
+  const raw = String(env.JELLYFIN_BASE_URL || "").trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:" || url.username || url.password) return null;
+    url.pathname = url.pathname.replace(/\/+$/, "");
+    url.search = "";
+    url.hash = "";
+    return url;
+  } catch (_error) {
+    return null;
+  }
+}
+
+async function probeJellyfin(env) {
+  const origin = configuredJellyfinOrigin(env);
+  if (!origin) {
+    return {
+      id: "jellyfin",
+      label: "Jellyfin tự host",
+      status: "NEEDS_CONFIGURATION",
+      purpose: "Kho phim Full HD/4K do bạn sở hữu hoặc được cấp quyền",
+    };
+  }
+  try {
+    const basePath = origin.pathname === "/" ? "" : origin.pathname.replace(/\/+$/, "");
+    const target = new URL(`${basePath}/System/Info/Public`, origin.origin);
+    const response = await fetch(target.href, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const info = await response.json();
+    return {
+      id: "jellyfin",
+      label: "Jellyfin tự host",
+      status: "READY",
+      serverName: cleanTelemetryValue(info.ServerName, 80) || "Jellyfin",
+      version: cleanTelemetryValue(info.Version, 32) || "unknown",
+      purpose: "Kho phim Full HD/4K do bạn sở hữu hoặc được cấp quyền",
+    };
+  } catch (_error) {
+    return {
+      id: "jellyfin",
+      label: "Jellyfin tự host",
+      status: "UNREACHABLE",
+      purpose: "Kho phim Full HD/4K do bạn sở hữu hoặc được cấp quyền",
+    };
+  }
+}
+
+async function handleContentStatus(request, env) {
+  const denied = await requireVerifiedAdmin(request, env);
+  if (denied) return denied;
+  let catalogStatus = "READY";
+  let itemCount = 0;
+  try {
+    const data = await fetchCatalogJson("/danh-sach/phim-moi-cap-nhat?page=1");
+    itemCount = catalogItems(data).length;
+    if (!itemCount) catalogStatus = "EMPTY";
+  } catch (_error) {
+    catalogStatus = "UNREACHABLE";
+  }
+  const jellyfin = await probeJellyfin(env);
+  return json({
+    source: "PhimAPI metadata",
+    status: catalogStatus,
+    itemCount,
+    checkedAt: now(),
+    lastSuccessfulRefreshAt: catalogStatus === "READY" ? now() : null,
+    cacheActive: true,
+    cacheTtlSeconds: 1200,
+    providers: [
+      { id: "catalog", label: "PhimAPI metadata", status: catalogStatus, purpose: "Danh mục, mô tả và poster" },
+      jellyfin,
+    ],
+    ads: { sdkEmbedded: false, mode: "NO_AD_SDK" },
+  });
+}
+
+async function handleMovieRefresh(request, env) {
+  const denied = await requireVerifiedAdmin(request, env);
+  if (denied) return denied;
+  const path = "/danh-sach/phim-moi-cap-nhat?page=1";
+  const cache = typeof caches !== "undefined" ? caches.default : null;
+  if (cache) await cache.delete(catalogCacheKey(path));
+  const data = await fetchCatalogJson(path, { force: true });
+  const itemCount = catalogItems(data).length;
+  await logEvent(env.DB, "admin_catalog_refreshed", {
+    actorTelegramId: requestTelegram(request),
+    detail: JSON.stringify({ itemCount }),
+  });
+  return json({ success: true, message: `Đã kiểm tra và làm mới ${itemCount} mục phim.`, itemCount, refreshedAt: now() });
 }
 
 async function rotateMasterKey(request, env) {
@@ -897,10 +996,14 @@ function catalogItems(data) {
   return Array.isArray(data?.items) ? data.items : (Array.isArray(data?.data?.items) ? data.data.items : []);
 }
 
-async function fetchCatalogJson(path) {
+function catalogCacheKey(path) {
+  return new Request(`https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/__catalog_cache${path}`);
+}
+
+async function fetchCatalogJson(path, { force = false } = {}) {
   const cache = typeof caches !== "undefined" ? caches.default : null;
-  const cacheKey = new Request(`https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/__catalog_cache${path}`);
-  if (cache) {
+  const cacheKey = catalogCacheKey(path);
+  if (cache && !force) {
     try {
       const cached = await cache.match(cacheKey);
       if (cached) return await cached.json();
@@ -1078,8 +1181,10 @@ export default {
       if (request.method === "POST" && pathname === "/api/admin/ban-user") return setBan(request, env, true);
       if (request.method === "POST" && pathname === "/api/admin/unban-user") return setBan(request, env, false);
       if ((request.method === "GET" || request.method === "DELETE") && pathname === "/api/admin/logs") return handleLogs(request, env);
+      if (request.method === "GET" && pathname === "/api/admin/content-status") return handleContentStatus(request, env);
+      if (request.method === "POST" && pathname === "/api/admin/refresh-movies") return handleMovieRefresh(request, env);
       if (request.method === "POST" && pathname === "/api/admin/set-force-update") return handleForceUpdate(request, env);
-      if (pathname === "/api/stream/proxy" || pathname === "/api/admin/content-status" || pathname === "/api/admin/refresh-movies") return handleMovieFallback(request);
+      if (pathname === "/api/stream/proxy") return handleMovieFallback(request);
       return textError("Không tìm thấy endpoint.", 404, "NOT_FOUND");
     } catch (error) {
       return textError("Backend gặp lỗi nội bộ.", 500, "INTERNAL_ERROR");

@@ -332,7 +332,7 @@
           </div>
           <div class="acc-detail-item">
             <span>Phiên bản ứng dụng:</span>
-            <span id="accAppVersion">v3.4.11</span>
+            <span id="accAppVersion">v3.4.12</span>
           </div>
         </div>
 
@@ -805,7 +805,12 @@
               <span class="content-status-label">Tự làm mới trang chủ</span>
               <strong id="contentAutoRefresh">2 phút khi đang mở</strong>
             </div>
+            <div class="content-status-card">
+              <span class="content-status-label">Quảng cáo trong app</span>
+              <strong id="contentAdsStatus">Không nhúng SDK quảng cáo</strong>
+            </div>
           </div>
+          <div id="contentProviderList" class="content-provider-list" aria-label="Trạng thái các nguồn nội dung"></div>
           <div id="adminContentAlert" class="gate-message hidden" style="margin-top: 14px;"></div>
         </div>
       </div>
@@ -816,7 +821,7 @@
           <div class="table-header-row">
             <h3>📊 Hoạt Động Người Dùng & Nhật Ký Hệ Thống</h3>
             <div class="log-actions-bar">
-              <input id="logAccountFilter" type="text" inputmode="numeric" placeholder="Lọc Telegram ID" aria-label="Lọc nhật ký theo Telegram ID" />
+              <input id="logAccountFilter" type="text" placeholder="Telegram ID hoặc mã thiết bị" aria-label="Lọc nhật ký theo Telegram ID hoặc mã thiết bị" />
               <select id="logTypeFilter" aria-label="Lọc loại nhật ký" onchange="Admin.applyLogFilter()">
                 <option value="ALL">Tất cả hoạt động</option>
                 <option value="USER">Người dùng xem phim</option>
@@ -839,6 +844,10 @@
             <div><span id="logViewerCount">0</span><small>Hoạt động xem</small></div>
             <div><span id="logUserCount">0</span><small>Người dùng</small></div>
             <div><span id="logErrorCount">0</span><small>Lỗi phát</small></div>
+            <div><span id="logSessionCount">0</span><small>Phiên sử dụng</small></div>
+            <div><span id="logWatchTime">0 phút</span><small>Thời gian xem ghi nhận</small></div>
+            <div><span id="logLatestMovie">—</span><small>Phim gần nhất</small></div>
+            <div><span id="logLastSeen">—</span><small>Hoạt động gần nhất</small></div>
           </div>
           
           <!-- Terminal / Cyber Log Console -->

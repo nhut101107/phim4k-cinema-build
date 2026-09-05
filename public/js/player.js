@@ -25,6 +25,8 @@ const Player = {
   failedServerIndexes: new Set(),
   mediaRecoveryCount: 0,
   playbackStartLogged: false,
+  watchedSeconds: 0,
+  activePlayStartedAt: 0,
 
   init() {
     if (this.video) return;
@@ -34,6 +36,7 @@ const Player = {
     if (!this.video || !this.modal || !this.wrapper) return;
 
     this.video.addEventListener('play', () => {
+      if (!this.activePlayStartedAt) this.activePlayStartedAt = performance.now();
       this.updatePlayBtn(true);
       this.resetInactivityTimer();
       if (!this.playbackStartLogged) {
@@ -41,7 +44,10 @@ const Player = {
         API.trackUsage('playback_start', this.usageContext());
       }
     });
-    this.video.addEventListener('pause', () => this.updatePlayBtn(false));
+    this.video.addEventListener('pause', () => {
+      this.captureWatchedTime();
+      this.updatePlayBtn(false);
+    });
     this.video.addEventListener('timeupdate', () => this.onTimeUpdate());
     this.video.addEventListener('progress', () => this.onProgress());
     this.video.addEventListener('waiting', () => this.showBuffering(true, 'Đang đệm dữ liệu…'));
@@ -86,6 +92,8 @@ const Player = {
     this.currentServerIndex = Number.isInteger(serverIndex) ? serverIndex : 0;
     this.failedServerIndexes.clear();
     this.playbackStartLogged = false;
+    this.watchedSeconds = 0;
+    this.activePlayStartedAt = 0;
     API.trackUsage('episode_open', this.usageContext(movie, episode));
 
     document.getElementById('playerMovieTitle').textContent = movie.name || 'Phim';
@@ -103,11 +111,13 @@ const Player = {
 
   close() {
     this.saveProgressNow();
+    this.captureWatchedTime();
     if (Number(this.video?.currentTime) > 1) {
       API.trackUsage('playback_stop', {
         ...this.usageContext(),
         seconds: this.video.currentTime,
-        duration: Number.isFinite(this.video.duration) ? this.video.duration : 0
+        duration: Number.isFinite(this.video.duration) ? this.video.duration : 0,
+        watched: this.watchedSeconds
       });
     }
     void this.exitCinemaFullscreen();
@@ -126,6 +136,13 @@ const Player = {
     this.wrapper?.classList.remove('inactive');
     this.modal?.classList.add('hidden');
     document.body.classList.remove('player-open');
+    this.activePlayStartedAt = 0;
+  },
+
+  captureWatchedTime() {
+    if (!this.activePlayStartedAt) return;
+    this.watchedSeconds += Math.max(0, (performance.now() - this.activePlayStartedAt) / 1000);
+    this.activePlayStartedAt = 0;
   },
 
   loadEpisode(episode, options = {}) {

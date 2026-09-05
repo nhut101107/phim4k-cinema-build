@@ -25,8 +25,21 @@ const App = {
 
   init() {
     this.bindEvents();
+    this.bindTouchFeedback();
     this.syncPageScrollLock();
     this.startHomeFeedRefresh();
+  },
+
+  bindTouchFeedback() {
+    const selector = 'button, [role="button"], .movie-card, .coverflow-card, .schedule-card';
+    const clear = () => document.querySelectorAll('.is-pressing').forEach((element) => element.classList.remove('is-pressing'));
+    document.addEventListener('pointerdown', (event) => {
+      const target = event.target.closest?.(selector);
+      if (target && !target.disabled) target.classList.add('is-pressing');
+    }, { passive: true });
+    document.addEventListener('pointerup', clear, { passive: true });
+    document.addEventListener('pointercancel', clear, { passive: true });
+    window.addEventListener('blur', clear);
   },
 
   bindEvents() {

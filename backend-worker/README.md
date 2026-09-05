@@ -6,6 +6,10 @@ after deployment:
 
 - `ADMIN_LICENSE_KEY`: existing master license key, or a newly generated private key.
 - `ADMIN_TELEGRAM_ID`: optional Telegram ID allowed to use the administrative panel.
+- `JELLYFIN_BASE_URL`: optional HTTPS origin of a self-hosted Jellyfin server. The
+  admin content panel probes only `/System/Info/Public` and reports readiness; no
+  Jellyfin credential is returned to the app. Use this only with media you own or
+  are licensed to distribute.
 
 Deployment sequence:
 

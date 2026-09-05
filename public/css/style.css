@@ -1594,6 +1594,28 @@ body.activation-locked {
   -webkit-touch-callout: none;
 }
 
+button,
+[role="button"],
+.movie-card,
+.coverflow-card,
+.schedule-card {
+  touch-action: manipulation;
+}
+
+.is-pressing {
+  transform: scale(0.975) !important;
+  filter: brightness(0.92);
+  transition: transform 70ms ease-out, filter 70ms ease-out !important;
+}
+
+button:focus-visible,
+[role="button"]:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid #facc15;
+  outline-offset: 3px;
+}
+
 body {
   -webkit-user-select: none;
   user-select: none;
@@ -2183,6 +2205,70 @@ body:not(.activation-locked) {
   overflow-wrap: anywhere;
   color: #f8fafc;
   font-size: 14px;
+}
+
+.content-provider-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.content-provider-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 14px;
+  background: rgba(2, 6, 23, 0.5);
+}
+
+.content-provider-card div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.content-provider-card strong {
+  color: #f8fafc;
+  font-size: 14px;
+}
+
+.content-provider-card span {
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.content-provider-card b {
+  flex: 0 0 auto;
+  padding: 6px 9px;
+  border-radius: 999px;
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.12);
+  font-size: 11px;
+}
+
+.content-provider-card.status-ready b {
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.terminal-body .log-line {
+  content-visibility: auto;
+  contain-intrinsic-size: 74px;
+}
+
+.log-summary-grid > div {
+  min-width: 0;
+}
+
+.log-summary-grid span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (min-width: 901px) {

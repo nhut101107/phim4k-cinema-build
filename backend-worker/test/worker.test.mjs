@@ -283,3 +283,65 @@ test("viewer telemetry accepts only allowlisted fields and never stores stream U
   assert.equal(inserted[0][2], "123456789");
   assert.doesNotMatch(inserted[0][5], /https?:|m3u8|secret|P4K-USER-TEST/i);
 });
+
+test("viewer telemetry keeps privacy-safe session and playback diagnostics", () => {
+  const [event] = normalizeTelemetryEvents([{
+    action: "playback_stop",
+    context: {
+      movie: "Phim kiểm thử", watched: 125.36, session: "s-fixture", runtime: "iOS app",
+      screen: "390x844", language: "vi-VN", network: "4g", authorization: "Bearer secret",
+    },
+  }]);
+  assert.deepEqual(event, {
+    action: "usage_playback_stop",
+    context: {
+      movie: "Phim kiểm thử", watched: 125.4, session: "s-fixture", runtime: "iOS app",
+      screen: "390x844", language: "vi-VN", network: "4g",
+    },
+  });
+});
+
+test("admin content status checks catalog and exposes only authorized provider readiness", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.includes("/System/Info/Public")) {
+      return new Response(JSON.stringify({ ServerName: "Licensed Library", Version: "10.11.11" }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({ items: [{ name: "Fixture", slug: "fixture" }] }), {
+      status: 200, headers: { "content-type": "application/json" },
+    });
+  };
+  const db = {
+    prepare() {
+      return {
+        bind() {
+          return {
+            async first() { return null; },
+            async run() { return { success: true }; },
+            async all() { return { results: [] }; },
+          };
+        },
+      };
+    },
+  };
+  try {
+    const response = await worker.fetch(new Request("https://example.workers.dev/api/admin/content-status", {
+      headers: { "x-license-key": "MASTER-CONTENT-KEY", "x-telegram-id": "5992662564" },
+    }), {
+      DB: db, ADMIN_LICENSE_KEY: "MASTER-CONTENT-KEY", ADMIN_TELEGRAM_ID: "5992662564",
+      JELLYFIN_BASE_URL: "https://media.example.com",
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.status, "READY");
+    assert.equal(payload.providers[1].status, "READY");
+    assert.equal(payload.providers[1].serverName, "Licensed Library");
+    assert.equal(payload.ads.sdkEmbedded, false);
+    assert.doesNotMatch(JSON.stringify(payload), /KEY|secret|token/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
