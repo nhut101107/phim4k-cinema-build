@@ -1,7 +1,7 @@
 (function (root) {
   'use strict';
   const labels = { ios: 'iPhone / iPad', android: 'Android', android_tv: 'Android TV', windows: 'Windows 64-bit' };
-  function detect(ua = '', native = '') {
+  function detect(ua = '', native = root.PHIM4K_PLATFORM || root.Capacitor?.getPlatform?.() || '') {
     if (native === 'android_tv' || /Phim4KTV|Android TV|GoogleTV|SmartTV|AFT\w/i.test(ua)) return 'android_tv';
     if (native === 'windows' || /Windows/i.test(ua)) return 'windows';
     if (/iPhone|iPad|iPod/i.test(ua) || native === 'ios') return 'ios';

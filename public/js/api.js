@@ -234,17 +234,14 @@ const API = {
   },
 
   async checkDeviceAccess(key, deviceId) {
-    return this.fetchJson(`/api/auth/device-status?key=${encodeURIComponent(key)}&deviceId=${encodeURIComponent(deviceId)}`, {
-      headers: { 'x-app-version': this.getVersion() }
+    return this.fetchJson('/api/auth/device-status', {
+      headers: { 'x-app-version': this.getVersion(), 'x-license-key': key, 'x-device-id': deviceId }
     }, 12000);
   },
 
   async checkUpdate(version = this.getVersion()) {
-    try {
-      const response = await this.fetchWithTimeout(`/api/app/check-update?version=${encodeURIComponent(version)}`, {}, 12000);
-      if (response.ok) return await response.json();
-    } catch (err) {}
-    return { isLatest: true, currentVersion: version, latestVersion: version };
+    const platform = window.Phim4KPlatform?.detect(navigator.userAgent, window.PHIM4K_PLATFORM) || 'web';
+    return this.fetchJson(`/api/app/check-update?version=${encodeURIComponent(version)}&platform=${encodeURIComponent(platform)}`, {}, 12000);
   },
 
   async getAnnouncement() {

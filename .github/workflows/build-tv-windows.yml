@@ -46,7 +46,7 @@ jobs:
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleRelease assembleDebug assembleDebugAndroidTest --no-daemon
+          ./gradlew :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon
       - name: Sign release
         env:
           TV_KEYSTORE: ${{ secrets.PHIM4K_TV_KEYSTORE }}
@@ -71,7 +71,7 @@ jobs:
           target: android-tv
           arch: x86
           disable-animations: true
-          script: cd android && ./gradlew connectedDebugAndroidTest --no-daemon
+          script: cd android && ./gradlew :app:connectedDebugAndroidTest --no-daemon
       - name: QA evidence
         if: always()
         uses: actions/upload-artifact@v4

@@ -1,5 +1,7 @@
 .btn-download-action[aria-disabled="true"] { opacity: .55; cursor: not-allowed; pointer-events: none; }
 .recommended-download { border: 2px solid #ffd43b !important; }
+.gate-overlay { overflow-y: auto; }
+.gate-card { max-height: calc(100dvh - 40px); overflow-y: auto; }
 .tv-mode { font-size: 19px; scroll-behavior: auto; }
 .tv-mode body { padding: 0 4vw; }
 .tv-mode :focus-visible { outline: 4px solid #ffd43b !important; outline-offset: 5px; box-shadow: 0 0 0 7px #101827; }
@@ -11,6 +13,8 @@
 .tv-mode #playerModal { padding: 0; }
 .tv-mode .cinema-player-wrapper.inactive .player-controls { opacity: 1; pointer-events: auto; }
 .tv-mode .download-cards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.tv-mode .download-dialog { max-width: 1100px; }
+.tv-mode .download-sub, .tv-mode .download-card p, .tv-mode .card-meta, .tv-mode .gate-desc { font-size: 18px; line-height: 1.5; }
 @media (min-width: 1000px) {
   .download-cards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .log-line { content-visibility: auto; contain-intrinsic-size: auto 100px; }

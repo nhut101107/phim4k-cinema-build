@@ -14,7 +14,7 @@
     "test:player": "node --test test/player-core.test.js test/player-contract.test.js",
     "test": "node --test test/*.test.js backend-worker/test/*.test.mjs",
     "desktop:build": "npm run ios:prepare && electron-builder --config electron-builder.json --win --x64",
-    "desktop:smoke": "electron desktop/main.cjs --smoke-test",
+    "desktop:smoke": "node scripts/run-desktop-smoke.cjs",
     "tv:sync": "npm run ios:prepare && cap sync android"
   },
   "dependencies": {

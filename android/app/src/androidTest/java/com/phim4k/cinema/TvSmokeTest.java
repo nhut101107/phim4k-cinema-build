@@ -40,6 +40,13 @@ public class TvSmokeTest {
             assertEquals("true", js(activity, "document.documentElement.clientWidth > document.documentElement.clientHeight"));
             // Unavailable downloads must not leave users on a broken relative link.
             assertEquals("true", js(activity, "Phim4KPlatform.safeUrl('/download/apk') === ''"));
+            js(activity, "window.qaVideo=document.createElement('video'); qaVideo.muted=true; qaVideo.playsInline=true; document.body.appendChild(qaVideo); qaVideo.src='/media/qa-original.mp4'; qaVideo.play().catch(()=>{}); true");
+            boolean decoded = false;
+            for (int i = 0; i < 30; i++) {
+                if ("true".equals(js(activity, "qaVideo.currentTime > 0.1 && qaVideo.videoWidth > 0"))) { decoded = true; break; }
+                Thread.sleep(500);
+            }
+            assertTrue("Original video could not be decoded", decoded);
         } finally { activity.runOnUiThread(activity::finish); }
     }
 }

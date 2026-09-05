@@ -32,7 +32,14 @@ else app.whenReady().then(async () => {
   await win.loadURL('phim4k://app/index.html');
   if (smoke) {
     const report = await win.webContents.executeJavaScript(`({ title: document.title, keyGate: !!document.querySelector('#activationGate:not(.hidden)'), nodeExposed: typeof require !== 'undefined', platform: Phim4KPlatform.detect(navigator.userAgent), downloadFunction: typeof refreshPublicDownloads === 'function' })`);
-    report.pass = !failed && report.keyGate && !report.nodeExposed && report.platform === 'windows' && report.downloadFunction;
+    report.videoDecoded = await win.webContents.executeJavaScript(`new Promise(resolve => {
+      const v = document.createElement('video'); v.muted = true; v.playsInline = true; document.body.append(v);
+      const timer = setTimeout(() => resolve(false), 15000);
+      v.addEventListener('timeupdate', () => { if (v.currentTime > 0.1 && v.videoWidth > 0) { clearTimeout(timer); v.pause(); v.remove(); resolve(true); } });
+      v.addEventListener('error', () => { clearTimeout(timer); resolve(false); });
+      v.src = 'phim4k://app/media/qa-original.mp4'; v.play().catch(() => resolve(false));
+    })`, true);
+    report.pass = !failed && report.keyGate && !report.nodeExposed && report.platform === 'windows' && report.downloadFunction && report.videoDecoded;
     fs.mkdirSync(path.join(app.getPath('userData'), 'qa'), { recursive: true });
     fs.writeFileSync(path.join(app.getPath('userData'), 'qa', 'desktop-smoke.json'), JSON.stringify(report, null, 2));
     app.exit(report.pass ? 0 : 1);

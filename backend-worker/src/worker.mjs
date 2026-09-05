@@ -616,8 +616,8 @@ async function requestDeviceAccess(request, env) {
 
 async function deviceAccessStatus(request, env) {
   const url = new URL(request.url);
-  const key = normalizeKey(url.searchParams.get("key"));
-  const deviceId = normalizeId(url.searchParams.get("deviceId"));
+  const key = requestKey(request) || normalizeKey(url.searchParams.get("key"));
+  const deviceId = normalizeId(request.headers.get('x-device-id')) || normalizeId(url.searchParams.get("deviceId"));
   if (!validKey(key) || !deviceId) return textError("Thiếu key hoặc mã thiết bị.", 400, "MISSING_DEVICE_LICENSE_DATA");
   await ensureDeviceAccessTable(env.DB);
   const approval = await queryOne(env.DB, "SELECT status FROM device_access_requests WHERE license_key = ? AND device_id = ?", key, deviceId);
@@ -1268,7 +1268,22 @@ export default {
       if (request.method === "POST" && pathname === "/api/auth/request-device-access") return await requestDeviceAccess(request, env);
       if (request.method === "GET" && pathname === "/api/auth/device-status") return await deviceAccessStatus(request, env);
       if (request.method === "GET" && (pathname === "/api/app/check-update" || pathname === "/api/app/version")) {
-        return json(await getForceUpdate(env.DB, url.searchParams.get("version") || appVersion(request)));
+        const version = url.searchParams.get('version') || appVersion(request);
+        const status = await getForceUpdate(env.DB, version);
+        const ua = request.headers.get('user-agent') || '';
+        const platform = url.searchParams.get('platform') || (/Phim4KTV/.test(ua) ? 'android_tv' : /Android/.test(ua) ? 'android' : /iPhone|iPad/.test(ua) ? 'ios' : /Windows/.test(ua) ? 'windows' : 'web');
+        if (!status.forceUpdate && ['ios', 'android', 'android_tv', 'windows'].includes(platform)) {
+          const release = await queryOne(env.DB, 'SELECT * FROM downloads WHERE platform = ?', platform);
+          if (release && validDownloadUrl(release.url)) {
+            status.latestVersion = release.version;
+            status.isLatest = compareAppVersions(version, release.version) >= 0;
+            status.message = status.isLatest ? 'Bạn đang dùng phiên bản mới nhất.' : `Có bản ${release.version}. Mở Tải ứng dụng để cập nhật.`;
+          } else {
+            status.isLatest = false;
+            status.message = 'Chưa có bản phát hành phù hợp thiết bị này.';
+          }
+        }
+        return json(status);
       }
       if (request.method === "GET" && pathname === "/api/app/announcement") return json(await getAnnouncement(env.DB));
       if (request.method === "POST" && pathname === "/api/telemetry") return await handleTelemetry(request, env);
