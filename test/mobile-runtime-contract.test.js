@@ -34,7 +34,7 @@ test('account version and a verified session do not fall back to stale WebView s
   const auth = read('../public/js/auth.js');
   assert.match(api, /window\.API = API/);
   assert.match(auth, /window\.Auth = Auth/);
-  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.5'/);
+  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.6'/);
   assert.match(auth, /const verifiedSession = \{ \.\.\.res, key, telegramId \}/);
   assert.match(auth, /Auth\.unlockApp\(verifiedSession\)/);
 });
@@ -79,7 +79,7 @@ test('native catalog falls back immediately instead of leaving the UI loading', 
   vm.createContext(sandbox);
   vm.runInContext(read('../public/js/catalog-fallback.js'), sandbox);
   vm.runInContext(`${read('../public/js/api.js')}\nglobalThis.__api = API;`, sandbox);
-  assert.equal(sandbox.window.API.getVersion(), '3.4.5');
+  assert.equal(sandbox.window.API.getVersion(), '3.4.6');
   const home = await sandbox.__api.getHomeFeed();
   const detail = await sandbox.__api.getDetail(home.hero[0].slug);
   assert.ok(home.hero.length > 0);
@@ -110,4 +110,18 @@ test('native home paints its bundled catalogue before waiting for the live feed'
   assert.ok(liveRequestIndex > fallbackIndex, 'live request must happen after the fallback is visible');
   assert.match(app, /if \(silent \|\| renderedBundledCatalog\) return;/);
   assert.match(app, /applyHomeFeed\(data\)/);
+});
+
+test('native movie artwork uses the allowlisted same-origin image relay', () => {
+  const sandbox = {
+    URL,
+    window: { Phim4KRuntime: { apiBaseUrl: 'https://api.example.test' } },
+    console: { warn() {}, log() {} },
+  };
+  vm.createContext(sandbox);
+  const appSource = read('../public/js/app.js').split('// Global Helpers for HTML inline calls')[0];
+  vm.runInContext(`${appSource}\nglobalThis.__app = App;`, sandbox);
+  const proxied = sandbox.__app.resolveImageUrl('https://phimimg.com/uploads/movies/poster.webp');
+  assert.equal(proxied, 'https://api.example.test/api/media/image?url=https%3A%2F%2Fphimimg.com%2Fuploads%2Fmovies%2Fposter.webp');
+  assert.equal(sandbox.__app.resolveImageUrl('/media/poster-fallback.svg'), '/media/poster-fallback.svg');
 });

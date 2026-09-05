@@ -26,11 +26,13 @@ const RATE_LIMITS = Object.freeze({
   default: { limit: 240, windowSeconds: 60 },
 });
 
-// This is deliberately a narrow metadata relay, not an open proxy.  Native
-// WebViews cannot call the catalog directly because that catalog does not send
-// CORS headers.  Only known public metadata routes are allowed here; video
-// streams, arbitrary hosts and arbitrary paths are never forwarded.
+// These are deliberately narrow catalog/media relays, not open proxies.
+// Native WebViews cannot reliably call every catalog asset host directly.
+// Only known public metadata routes and image paths on one exact host are
+// allowed; video streams, arbitrary hosts and arbitrary paths are never
+// forwarded.
 const MOVIE_CATALOG_ORIGIN = "https://phimapi.com";
+const MOVIE_IMAGE_HOSTS = new Set(["phimimg.com"]);
 const MOVIE_CATALOG_CATEGORIES = new Set([
   "phim-moi-cap-nhat", "phim-le", "phim-bo", "hoat-hinh", "tv-shows",
 ]);
@@ -596,6 +598,42 @@ async function handleMovieFallback(request) {
   return textError("Nguồn phim không được proxy bởi backend bản quyền.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
 }
 
+async function handleMovieImage(request) {
+  const requestUrl = new URL(request.url);
+  const rawTarget = String(requestUrl.searchParams.get("url") || "").trim();
+  let target;
+  try {
+    target = new URL(rawTarget);
+  } catch (_error) {
+    return textError("URL anh khong hop le.", 400, "INVALID_IMAGE_URL");
+  }
+
+  const safePath = target.pathname.startsWith("/upload/") || target.pathname.startsWith("/uploads/");
+  if (target.protocol !== "https:" || target.username || target.password || target.port || !MOVIE_IMAGE_HOSTS.has(target.hostname) || !safePath) {
+    return textError("Nguon anh khong duoc phep.", 400, "IMAGE_HOST_NOT_ALLOWED");
+  }
+  target.hash = "";
+
+  const upstream = await fetch(target.href, {
+    headers: { accept: "image/avif,image/webp,image/jpeg,image/png,image/*;q=0.8" },
+    redirect: "manual",
+    cf: { cacheEverything: true, cacheTtl: 86400 },
+  });
+  if (!upstream.ok) return textError("Khong tai duoc anh phim.", 502, "IMAGE_UPSTREAM_ERROR");
+  const contentType = String(upstream.headers.get("content-type") || "").toLowerCase();
+  if (!contentType.startsWith("image/")) return textError("Nguon tra ve khong phai anh.", 502, "INVALID_IMAGE_RESPONSE");
+  const contentLength = Number.parseInt(upstream.headers.get("content-length") || "0", 10) || 0;
+  if (contentLength > 6 * 1024 * 1024) return textError("Anh vuot qua gioi han kich thuoc.", 413, "IMAGE_TOO_LARGE");
+
+  const headers = new Headers(CORS_HEADERS);
+  headers.set("content-type", contentType);
+  headers.set("cache-control", "public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800");
+  headers.set("x-content-type-options", "nosniff");
+  const etag = upstream.headers.get("etag");
+  if (etag) headers.set("etag", etag);
+  return new Response(upstream.body, { status: 200, headers });
+}
+
 function catalogPage(value) {
   const parsed = Number.parseInt(String(value || "1"), 10);
   return Number.isInteger(parsed) && parsed >= 1 && parsed <= 100 ? parsed : 1;
@@ -727,6 +765,9 @@ export default {
       }
       if (request.method === "GET" && pathname === "/api/health") {
         return json({ ready: Boolean(env.DB), service: "phim4k-license-api" });
+      }
+      if (request.method === "GET" && pathname === "/api/media/image") {
+        return handleMovieImage(request);
       }
       if (request.method === "GET" && pathname.startsWith("/api/movies/")) {
         return handleMovieCatalog(request);

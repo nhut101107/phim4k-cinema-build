@@ -146,6 +146,19 @@ const Player = {
       if (session === this.streamSession) this.onStreamReady(resumeTime, autoplay);
     }, { once: true });
 
+    // Capacitor on iOS must prefer AVFoundation's native HLS path. Recent
+    // WKWebView versions may expose enough MSE for hls.js to report support,
+    // but cross-origin segment requests can then fail even though native HLS
+    // can play the same HTTPS playlist directly.
+    if (isHls && this.isNativeRuntime()) {
+      this.usingNativeHls = true;
+      this.populateNativeHlsMenu();
+      this.setQualityButtonLabel('Tự động');
+      this.video.src = streamUrl;
+      this.video.load();
+      return;
+    }
+
     const HlsEngine = window.Hls;
     if (isHls && HlsEngine?.isSupported?.()) {
       const hls = new HlsEngine({

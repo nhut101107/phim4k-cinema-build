@@ -58,6 +58,36 @@ test("app update checks compare version components rather than strings", () => {
   assert.equal(compareAppVersions("3.2", "3.2.0"), 0);
 });
 
+test("image relay accepts only the reviewed movie image host and image responses", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (input, options) => {
+    requests.push({ target: String(input), redirect: options?.redirect });
+    return new Response(new Uint8Array([0xff, 0xd8, 0xff, 0xd9]), {
+      status: 200,
+      headers: { "content-type": "image/jpeg", "content-length": "4", etag: '"fixture"' },
+    });
+  };
+  try {
+    const source = encodeURIComponent("https://phimimg.com/uploads/movies/fixture.jpg");
+    const allowed = await worker.fetch(new Request(`https://example.workers.dev/api/media/image?url=${source}`), {});
+    assert.equal(allowed.status, 200);
+    assert.equal(allowed.headers.get("content-type"), "image/jpeg");
+    assert.equal(allowed.headers.get("access-control-allow-origin"), "*");
+    assert.match(allowed.headers.get("cache-control"), /max-age=86400/);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].target, "https://phimimg.com/uploads/movies/fixture.jpg");
+    assert.equal(requests[0].redirect, "manual");
+
+    const denied = await worker.fetch(new Request("https://example.workers.dev/api/media/image?url=https%3A%2F%2F127.0.0.1%2Fsecret"), {});
+    assert.equal(denied.status, 400);
+    assert.equal((await denied.json()).code, "IMAGE_HOST_NOT_ALLOWED");
+    assert.equal(requests.length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("admin master key is normalized but restricted to its configured Telegram ID", async () => {
   const db = {
     prepare() {

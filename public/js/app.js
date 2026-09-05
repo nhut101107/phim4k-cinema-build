@@ -405,10 +405,24 @@ const App = {
   },
 
   resolveImageUrl(path) {
+    const directUrl = this.resolveDirectImageUrl(path);
+    const relayOrigin = window.Phim4KRuntime?.apiBaseUrl || '';
+    try {
+      const parsed = new URL(directUrl);
+      if (relayOrigin && parsed.protocol === 'https:' && parsed.hostname === 'phimimg.com') {
+        return `${relayOrigin}/api/media/image?url=${encodeURIComponent(parsed.href)}`;
+      }
+    } catch (_error) {}
+    return directUrl;
+  },
+
+  resolveDirectImageUrl(path) {
     const value = String(path || '').trim();
     if (!value) return this.posterFallbackUrl();
+    if (value.startsWith('/media/')) return value;
     if (value.startsWith('//')) return `https:${value}`;
-    if (value.startsWith('https://') || value.startsWith('http://')) return value;
+    if (value.startsWith('https://')) return value;
+    if (value.startsWith('http://')) return `https://${value.slice(7)}`;
     if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return this.posterFallbackUrl();
     return `https://phimimg.com/${value.replace(/^\/+/, '')}`;
   },
@@ -420,18 +434,39 @@ const App = {
   attachPosterFallback(image) {
     if (!image) return;
     image.addEventListener('error', () => {
+      if (image.dataset.posterDirectTried !== '1') {
+        try {
+          const failedUrl = new URL(image.src);
+          const directUrl = failedUrl.pathname === '/api/media/image' ? failedUrl.searchParams.get('url') : '';
+          if (directUrl?.startsWith('https://')) {
+            image.dataset.posterDirectTried = '1';
+            image.src = directUrl;
+            return;
+          }
+        } catch (_error) {}
+      }
       if (image.dataset.posterFallback === '1') return;
       image.dataset.posterFallback = '1';
       image.src = this.posterFallbackUrl();
-    }, { once: true });
+    });
   },
 
   setBackgroundImage(element, source) {
     if (!element) return;
     const primary = this.resolveImageUrl(source);
+    const direct = this.resolveDirectImageUrl(source);
     const preload = new Image();
     preload.onload = () => { element.style.backgroundImage = `url("${primary}")`; };
-    preload.onerror = () => { element.style.backgroundImage = `url("${this.posterFallbackUrl()}")`; };
+    preload.onerror = () => {
+      if (direct !== primary) {
+        const retry = new Image();
+        retry.onload = () => { element.style.backgroundImage = `url("${direct}")`; };
+        retry.onerror = () => { element.style.backgroundImage = `url("${this.posterFallbackUrl()}")`; };
+        retry.src = direct;
+        return;
+      }
+      element.style.backgroundImage = `url("${this.posterFallbackUrl()}")`;
+    };
     preload.src = primary;
   },
 

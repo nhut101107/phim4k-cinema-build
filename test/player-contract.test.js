@@ -21,6 +21,14 @@ test('loads player rules before the shared player and exposes a single fullscree
   assert.doesNotMatch(index, /btnLandscapeFullscreen/);
 });
 
+test('prefers native HLS before hls.js inside the iPhone WebView', () => {
+  const nativeIndex = player.indexOf('if (isHls && this.isNativeRuntime())');
+  const hlsJsIndex = player.indexOf('const HlsEngine = window.Hls');
+  assert.ok(nativeIndex >= 0);
+  assert.ok(hlsJsIndex > nativeIndex);
+  assert.match(player, /this\.usingNativeHls = true/);
+});
+
 test('keeps adaptive quality selected when HLS changes rendition', () => {
   assert.match(player, /qualityMode: 'auto'/);
   assert.match(player, /hls\.currentLevel = -1/);
