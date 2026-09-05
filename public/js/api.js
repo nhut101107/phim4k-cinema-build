@@ -14,7 +14,7 @@ const API = {
   },
 
   getVersion() {
-    return '3.4.3';
+    return '3.4.4';
   },
 
   async fetchWithTimeout(input, options = {}, timeoutMs = 15000) {

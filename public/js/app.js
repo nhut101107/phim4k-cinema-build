@@ -99,7 +99,20 @@ const App = {
     document.getElementById('categoryView').classList.add('hidden');
 
     const container = document.getElementById('dynamicSections');
-    if (!silent) container.innerHTML = `
+    // Native WebViews can take longer than Safari to establish their first
+    // connection. Render the bundled catalogue now, then refresh it in place
+    // when the live Worker response arrives.
+    let renderedBundledCatalog = false;
+    if (!silent && window.Phim4KRuntime?.apiBaseUrl) {
+      try {
+        this.applyHomeFeed(API.getBundledHomeFeed());
+        renderedBundledCatalog = true;
+      } catch (fallbackError) {
+        console.warn('Unable to render bundled home catalogue', fallbackError);
+      }
+    }
+
+    if (!silent && !renderedBundledCatalog) container.innerHTML = `
       <div class="loading-spinner-wrapper">
         <div class="spinner"></div>
         <p>Đang tải kho phim 4K cập nhật mới nhất...</p>
@@ -108,32 +121,10 @@ const App = {
 
     try {
       const data = await API.getHomeFeed();
-      const sections = Array.isArray(data?.sections) ? data.sections : [];
-      const hasMovies = sections.some((section) => Array.isArray(section?.items) && section.items.length > 0);
-      if (!hasMovies) throw new Error('MOVIE_CATALOG_EMPTY');
-      this.homeFeedUpdatedAt = data.updatedAt || new Date().toISOString();
-      this.heroList = data.hero || [];
-      const rawCatalog = this.uniqueMovies([
-        ...this.heroList,
-        ...sections.flatMap((section) => Array.isArray(section?.items) ? section.items : [])
-      ]);
-      this.homeCatalog = this.enrichCatalogFilters(rawCatalog);
-      this.homeSections = this.buildHomeSections(sections);
-      if (this.heroList.length > 0) {
-        if (window.Coverflow) {
-          Coverflow.init(this.heroList);
-        }
-        this.renderHeroBillboard(this.heroList[0]);
-        this.startHeroRotation();
-      }
-
-      if (window.ContinueWatching) {
-        ContinueWatching.render();
-      }
-
-      this.renderHomeCatalog();
+      this.applyHomeFeed(data);
     } catch (err) {
-      if (silent) return;
+      // Do not replace a visible fallback catalogue with a transient error.
+      if (silent || renderedBundledCatalog) return;
       container.innerHTML = `
         <div class="loading-spinner-wrapper">
           <p style="color: #f87171;">❌ Lỗi kết nối máy chủ dữ liệu phim. Vui lòng thử lại sau!</p>
@@ -144,6 +135,33 @@ const App = {
       this.homeFeedLoading = false;
       this.syncPageScrollLock();
     }
+  },
+
+  applyHomeFeed(data) {
+    const sections = Array.isArray(data?.sections) ? data.sections : [];
+    const hasMovies = sections.some((section) => Array.isArray(section?.items) && section.items.length > 0);
+    if (!hasMovies) throw new Error('MOVIE_CATALOG_EMPTY');
+    this.homeFeedUpdatedAt = data.updatedAt || new Date().toISOString();
+    this.heroList = data.hero || [];
+    const rawCatalog = this.uniqueMovies([
+      ...this.heroList,
+      ...sections.flatMap((section) => Array.isArray(section?.items) ? section.items : [])
+    ]);
+    this.homeCatalog = this.enrichCatalogFilters(rawCatalog);
+    this.homeSections = this.buildHomeSections(sections);
+    if (this.heroList.length > 0) {
+      if (window.Coverflow) {
+        Coverflow.init(this.heroList);
+      }
+      this.renderHeroBillboard(this.heroList[0]);
+      this.startHeroRotation();
+    }
+
+    if (window.ContinueWatching) {
+      ContinueWatching.render();
+    }
+
+    this.renderHomeCatalog();
   },
 
   uniqueMovies(items) {

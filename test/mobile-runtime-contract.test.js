@@ -34,7 +34,7 @@ test('account version and a verified session do not fall back to stale WebView s
   const auth = read('../public/js/auth.js');
   assert.match(api, /window\.API = API/);
   assert.match(auth, /window\.Auth = Auth/);
-  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.3'/);
+  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.4'/);
   assert.match(auth, /const verifiedSession = \{ \.\.\.res, key, telegramId \}/);
   assert.match(auth, /Auth\.unlockApp\(verifiedSession\)/);
 });
@@ -79,7 +79,7 @@ test('native catalog falls back immediately instead of leaving the UI loading', 
   vm.createContext(sandbox);
   vm.runInContext(read('../public/js/catalog-fallback.js'), sandbox);
   vm.runInContext(`${read('../public/js/api.js')}\nglobalThis.__api = API;`, sandbox);
-  assert.equal(sandbox.window.API.getVersion(), '3.4.3');
+  assert.equal(sandbox.window.API.getVersion(), '3.4.4');
   const home = await sandbox.__api.getHomeFeed();
   const detail = await sandbox.__api.getDetail(home.hero[0].slug);
   assert.ok(home.hero.length > 0);
@@ -100,4 +100,14 @@ test('home catalog has working genre and country filters with grouped rows', () 
   app.activeHomeFilters = { genre: 'Hoạt Hình', country: 'Nhật Bản' };
   assert.ok(app.moviesMatching().length > 0);
   assert.ok(app.buildHomeSections([]).some((section) => section.id === 'country-china'));
+});
+
+test('native home paints its bundled catalogue before waiting for the live feed', () => {
+  const app = read('../public/js/app.js');
+  const fallbackIndex = app.indexOf('this.applyHomeFeed(API.getBundledHomeFeed())');
+  const liveRequestIndex = app.indexOf('const data = await API.getHomeFeed()');
+  assert.ok(fallbackIndex >= 0, 'native fallback should be rendered');
+  assert.ok(liveRequestIndex > fallbackIndex, 'live request must happen after the fallback is visible');
+  assert.match(app, /if \(silent \|\| renderedBundledCatalog\) return;/);
+  assert.match(app, /applyHomeFeed\(data\)/);
 });
