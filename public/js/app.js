@@ -80,8 +80,10 @@ const App = {
 
   syncPageScrollLock() {
     const gateOpen = !document.getElementById('activationGate')?.classList.contains('hidden');
-    const overlayOpen = Array.from(document.querySelectorAll('.modal-overlay, .player-modal')).some((element) => !element.classList.contains('hidden'));
-    document.body.classList.toggle('locked', Boolean(gateOpen || overlayOpen));
+    // Modal/player overlays are fixed and manage their own scroll. Do not
+    // lock the document for them: iOS WebView may retain that lock after an
+    // overlay closes, making the home feed look frozen.
+    document.body.classList.toggle('activation-locked', Boolean(gateOpen));
   },
 
   // =================================================
@@ -607,7 +609,6 @@ const App = {
   async openMovieDetail(slug) {
     const modal = document.getElementById('movieModal');
     modal.classList.remove('hidden');
-    document.body.classList.add('locked');
 
     // Reset fields while loading
     document.getElementById('detailName').textContent = 'Đang tải thông tin phim...';

@@ -11,13 +11,11 @@ const Admin = {
     }
 
     document.getElementById('adminModal').classList.remove('hidden');
-    document.body.classList.add('locked');
     this.switchTab('keys');
   },
 
   close() {
     document.getElementById('adminModal').classList.add('hidden');
-    document.body.classList.remove('locked');
   },
 
   switchTab(tab) {

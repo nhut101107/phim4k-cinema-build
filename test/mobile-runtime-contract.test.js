@@ -35,6 +35,21 @@ test('movie modal is scrollable and sized for a phone viewport', () => {
   assert.match(styles, /\.movie-detail-dialog \{ width: 100%; max-height: calc\(100dvh - 20px\)/);
 });
 
+test('only the activation screen can lock document scrolling', () => {
+  const index = read('../public/index.html');
+  const styles = read('../public/css/style.css');
+  const app = read('../public/js/app.js');
+  const player = read('../public/js/player.js');
+  const admin = read('../public/js/admin.js');
+
+  assert.match(index, /<body class="activation-locked">/);
+  assert.match(styles, /body\.activation-locked/);
+  assert.doesNotMatch(styles, /body\.locked/);
+  assert.doesNotMatch(app, /classList\.add\('locked'/);
+  assert.doesNotMatch(player, /classList\.add\('locked'/);
+  assert.doesNotMatch(admin, /classList\.add\('locked'/);
+});
+
 test('native catalog falls back immediately instead of leaving the UI loading', async () => {
   const sandbox = {
     AbortController,

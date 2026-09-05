@@ -104,7 +104,7 @@ const Auth = {
       this.heartbeatTimer = null;
     }
 
-    document.body.classList.add('locked');
+    document.body.classList.add('activation-locked');
     document.getElementById('activationGate').classList.remove('hidden');
     document.getElementById('appContainer').classList.add('hidden');
     
@@ -155,7 +155,7 @@ const Auth = {
     }
     localStorage.setItem('phim4k_plan', keyData.isAdmin ? 'SUPER ADMIN' : (keyData.plan || 'VIP PRO'));
 
-    document.body.classList.remove('locked');
+    document.body.classList.remove('activation-locked');
     document.getElementById('activationGate').classList.add('hidden');
     document.getElementById('appContainer').classList.remove('hidden');
 
@@ -423,7 +423,7 @@ function showForceUpdateModal(data) {
     window.Player.close();
   }
 
-  document.body.classList.add('locked');
+  document.body.classList.add('activation-locked');
   document.getElementById('activationGate').classList.add('hidden');
   document.getElementById('appContainer').classList.add('hidden');
   document.getElementById('downloadAppModal').classList.add('hidden');

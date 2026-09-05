@@ -83,7 +83,7 @@ const Player = {
     this.updateNextEpisodeButton();
     this.closeDropdowns();
     this.modal.classList.remove('hidden');
-    document.body.classList.add('locked', 'player-open');
+    document.body.classList.add('player-open');
     this.setAspectRatio('contain', { silent: true });
     this.loadEpisode(episode, { resumeTime: this.getSavedWatchTime(), autoplay: true });
     this.startProgressSaveTimer();
@@ -107,7 +107,7 @@ const Player = {
     clearTimeout(this.inactivityTimer);
     this.wrapper?.classList.remove('inactive');
     this.modal?.classList.add('hidden');
-    document.body.classList.remove('locked', 'player-open');
+    document.body.classList.remove('player-open');
   },
 
   loadEpisode(episode, options = {}) {
