@@ -20,6 +20,8 @@ const App = {
   activeMovieDetail: null,
   activeServerIndex: 0,
   searchDebounceTimer: null,
+  scrollFrame: 0,
+  detailRequestId: 0,
 
   init() {
     this.bindEvents();
@@ -30,13 +32,12 @@ const App = {
   bindEvents() {
     // Navbar scroll effect
     window.addEventListener('scroll', () => {
-      const navbar = document.getElementById('navbar');
-      if (window.scrollY > 30) {
-        navbar.classList.add('scrolled');
-      } else {
-        navbar.classList.remove('scrolled');
-      }
-    });
+      if (this.scrollFrame) return;
+      this.scrollFrame = requestAnimationFrame(() => {
+        document.getElementById('navbar')?.classList.toggle('scrolled', window.scrollY > 30);
+        this.scrollFrame = 0;
+      });
+    }, { passive: true });
 
     // Search Input
     const searchInput = document.getElementById('searchInput');
@@ -532,6 +533,10 @@ const App = {
     } else {
       this.clearHomeFilters();
     }
+    API.trackUsage('filter_applied', {
+      genre: this.activeHomeFilters.genre || 'Tất cả',
+      country: this.activeHomeFilters.country || 'Tất cả'
+    });
     document.getElementById('dynamicSections')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   },
 
@@ -602,10 +607,12 @@ const App = {
     `;
 
     const row = sec.querySelector(section.layout === 'grid' ? '.filtered-movie-grid' : '.movie-row');
+    const fragment = document.createDocumentFragment();
     (section.items || []).forEach(movie => {
       const card = this.createMovieCard(movie);
-      row.appendChild(card);
+      fragment.appendChild(card);
     });
+    row.appendChild(fragment);
 
     return sec;
   },
@@ -761,9 +768,10 @@ const App = {
         return;
       }
 
-      items.forEach(movie => {
-        grid.appendChild(this.createMovieCard(movie));
-      });
+      const fragment = document.createDocumentFragment();
+      items.forEach(movie => fragment.appendChild(this.createMovieCard(movie)));
+      grid.appendChild(fragment);
+      API.trackUsage('category_view', { category: this.getCategoryDisplayName(category), results: items.length });
 
       this.renderPagination(paginationBox, category, page, data.pagination?.totalPages || 50);
     } catch (err) {
@@ -844,7 +852,7 @@ const App = {
 
         const posterUrl = this.resolveImageUrl(movie.poster_url || movie.thumb_url);
         item.innerHTML = `
-          <img class="search-thumb" src="${posterUrl}" alt="${this.escapeHtml(movie.name || 'Poster phim')}" />
+          <img class="search-thumb" src="${posterUrl}" alt="${this.escapeHtml(movie.name || 'Poster phim')}" loading="lazy" decoding="async" width="56" height="82" />
           <div class="search-info">
             <div class="search-title">${this.escapeHtml(movie.name || 'Đang cập nhật')}</div>
             <div class="search-sub">${this.escapeHtml(movie.origin_name || '')} (${this.escapeHtml(movie.year || '2026')})</div>
@@ -885,6 +893,7 @@ const App = {
     try {
       const data = await API.search(query, page);
       const items = data.items || [];
+      API.trackUsage('search', { query, results: items.length });
       countEl.textContent = `(${items.length} phim)`;
       grid.innerHTML = '';
 
@@ -903,6 +912,7 @@ const App = {
   // 4. MOVIE DETAIL MODAL & EPISODES
   // =================================================
   async openMovieDetail(slug) {
+    const requestId = ++this.detailRequestId;
     const modal = document.getElementById('movieModal');
     modal.classList.remove('hidden');
     const detailBody = modal.querySelector('.detail-body');
@@ -921,10 +931,13 @@ const App = {
 
     try {
       const data = await API.getDetail(slug);
+      if (requestId !== this.detailRequestId) return;
       this.activeMovieDetail = data;
       this.activeServerIndex = 0;
       this.renderDetailModalContent(data);
+      API.trackUsage('movie_open', { movie: data.movie?.name || slug });
     } catch (err) {
+      if (requestId !== this.detailRequestId) return;
       document.getElementById('detailName').textContent = 'Không thể tải chi tiết phim';
       document.getElementById('detailContent').textContent = 'Đã có lỗi xảy ra hoặc phim này không tồn tại trên hệ thống.';
     }
@@ -1059,9 +1072,10 @@ const App = {
             container.innerHTML = '<p style="color: #9ca3af; text-align: center; grid-column: 1/-1; padding: 40px;">Không tìm thấy phim phù hợp.</p>';
             return;
           }
-          items.forEach(m => {
-            container.appendChild(this.createMovieCard(m));
-          });
+          const fragment = document.createDocumentFragment();
+          items.forEach(m => fragment.appendChild(this.createMovieCard(m)));
+          container.appendChild(fragment);
+          API.trackUsage('search', { query: val, results: items.length });
         }
       } catch (err) {}
     }, 350);

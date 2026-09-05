@@ -814,7 +814,8 @@
   flex-wrap: wrap;
 }
 
-.log-actions-bar input {
+.log-actions-bar input,
+.log-actions-bar select {
   min-width: 150px;
   max-width: 190px;
   padding: 7px 9px;
@@ -823,6 +824,28 @@
   background: #0f172a;
   color: #e2e8f0;
 }
+
+.log-actions-bar select { min-height: 34px; }
+
+.log-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 0 14px;
+}
+
+.log-summary-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 14px;
+  border: 1px solid rgba(56, 189, 248, 0.18);
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.92), rgba(8, 13, 24, 0.96));
+}
+
+.log-summary-grid span { color: #f8fafc; font-size: 22px; font-weight: 800; }
+.log-summary-grid small { color: #94a3b8; font-size: 11px; }
 
 .cyber-terminal {
   background: #090d16;
@@ -861,6 +884,14 @@
   letter-spacing: 0.5px;
 }
 
+.log-live-state {
+  margin-left: auto;
+  color: #34d399;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .6px;
+}
+
 .terminal-body {
   padding: 16px;
   max-height: 420px;
@@ -886,7 +917,7 @@
   align-items: baseline;
   gap: 8px;
   flex-wrap: wrap;
-  padding: 3px 0;
+  padding: 9px 2px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.03);
 }
 
@@ -908,6 +939,7 @@
 .log-tag-ban { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); }
 .log-tag-ddos { background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.4); }
 .log-tag-auth { background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); }
+.log-tag-user { background: rgba(16, 185, 129, 0.18); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.36); }
 .log-tag-info { background: rgba(100, 116, 139, 0.2); color: #94a3b8; }
 
 .log-action {
@@ -1639,6 +1671,56 @@
 
   .admin-tabs-nav::-webkit-scrollbar { display: none; }
 
+  .log-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  #adminTabLogs .table-header-row {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  #adminTabLogs .table-header-row h3 {
+    margin: 0;
+    font-size: 19px;
+    line-height: 1.35;
+    padding-right: 72px;
+  }
+
+  .log-actions-bar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+  }
+
+  .log-actions-bar input,
+  .log-actions-bar select {
+    width: 100%;
+    max-width: none;
+    min-height: 44px;
+  }
+
+  .log-actions-bar input,
+  .log-actions-bar select { grid-column: 1 / -1; }
+
+  .log-actions-bar button { min-height: 44px; }
+
+  .terminal-body {
+    max-height: min(52dvh, 520px);
+    padding: 12px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .terminal-body .log-line {
+    gap: 6px;
+    padding: 11px 9px;
+    border: 1px solid rgba(148, 163, 184, .1);
+    border-radius: 9px;
+    background: rgba(15, 23, 42, .58);
+  }
+
+  .log-time { flex-basis: 100%; }
+  .log-text { flex-basis: 100%; }
+
   .admin-tab-btn {
     flex: 0 0 auto;
     min-height: 44px;
@@ -1677,4 +1759,3 @@
     overflow-y: auto;
   }
 }
-

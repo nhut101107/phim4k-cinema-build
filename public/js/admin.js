@@ -2,6 +2,12 @@
 
 const Admin = {
   currentTab: 'keys',
+  logAccountFilter: '',
+  logTypeFilter: 'ALL',
+  logCursor: null,
+  loadedLogs: [],
+  logRefreshTimer: null,
+  logLoading: false,
 
   async open() {
     const configuredAdminTelegram = '5992662564';
@@ -15,11 +21,13 @@ const Admin = {
   },
 
   close() {
+    this.stopLogAutoRefresh();
     document.getElementById('adminModal').classList.add('hidden');
   },
 
   switchTab(tab) {
     this.currentTab = tab;
+    this.stopLogAutoRefresh();
 
     // Tabs navigation buttons
     ['keys', 'users', 'downloads', 'content', 'logs'].forEach(t => {
@@ -36,7 +44,11 @@ const Admin = {
     if (tab === 'users') this.loadUsers();
     if (tab === 'downloads') this.loadDownloadsConfig();
     if (tab === 'content') this.loadContentStatus();
-    if (tab === 'logs') this.loadLogs();
+    if (tab === 'logs') {
+      const loading = this.loadLogs();
+      this.startLogAutoRefresh();
+      return loading;
+    }
   },
 
   generateRandomKey() {
@@ -639,6 +651,7 @@ const Admin = {
   applyLogFilter() {
     const filter = document.getElementById('logAccountFilter');
     this.logAccountFilter = filter ? filter.value.trim() : '';
+    this.logTypeFilter = document.getElementById('logTypeFilter')?.value || 'ALL';
     this.loadLogs();
   },
 
@@ -646,30 +659,68 @@ const Admin = {
     this.logAccountFilter = '';
     const filter = document.getElementById('logAccountFilter');
     if (filter) filter.value = '';
+    const type = document.getElementById('logTypeFilter');
+    if (type) type.value = 'ALL';
+    this.logTypeFilter = 'ALL';
     this.loadLogs();
+  },
+
+  startLogAutoRefresh() {
+    this.stopLogAutoRefresh();
+    this.logRefreshTimer = window.setInterval(() => {
+      if (this.currentTab === 'logs' && !document.hidden) this.loadLogs();
+    }, 20000);
+  },
+
+  stopLogAutoRefresh() {
+    if (this.logRefreshTimer) window.clearInterval(this.logRefreshTimer);
+    this.logRefreshTimer = null;
   },
 
   // ====================================================
   // 3. LIVE AUDIT LOGS (CYBER CONSOLE)
   // ====================================================
-  async loadLogs() {
+  async loadLogs({ append = false } = {}) {
     const container = document.getElementById('terminalLogsBody');
-    container.innerHTML = '<div class="log-line">Đang tải nhật ký bảo mật...</div>';
+    if (!container) return;
+    if (this.logLoading) return;
+    this.logLoading = true;
+    const more = document.getElementById('logsLoadMoreBtn');
+    if (more) more.disabled = true;
+    if (!append) container.innerHTML = '<div class="log-line log-dim">Đang tải nhật ký người dùng…</div>';
     const filter = this.logAccountFilter || document.getElementById('logAccountFilter')?.value.trim() || '';
-    const query = filter ? `?telegramId=${encodeURIComponent(filter)}&limit=300` : '?limit=300';
+    const type = this.logTypeFilter || document.getElementById('logTypeFilter')?.value || 'ALL';
+    const query = new URLSearchParams({ limit: '100', type });
+    if (filter) query.set('telegramId', filter);
+    if (append && this.logCursor) query.set('before', String(this.logCursor));
+    const liveState = document.getElementById('logLiveState');
+    if (liveState) liveState.textContent = '● ĐANG ĐỒNG BỘ';
 
     try {
-      const res = await fetch(`/api/admin/logs${query}`, {
+      const res = await fetch(`/api/admin/logs?${query.toString()}`, {
         headers: this.getAdminHeaders()
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const data = await res.json();
-      this.renderLogs(data.logs || []);
+      const incoming = data.logs || [];
+      this.loadedLogs = append ? [...this.loadedLogs, ...incoming] : incoming;
+      this.logCursor = data.nextCursor || null;
+      this.renderLogs(this.loadedLogs);
+      if (more) more.classList.toggle('hidden', !data.hasMore);
+      if (liveState) liveState.textContent = '● LIVE';
     } catch (err) {
-      container.innerHTML = '<div class="log-line log-err">Lỗi tải nhật ký hệ thống!</div>';
+      if (!append) container.innerHTML = `<div class="log-line log-err">Không tải được nhật ký: ${err.message}</div>`;
+      if (liveState) liveState.textContent = '● MẤT KẾT NỐI';
+    } finally {
+      this.logLoading = false;
+      if (more) more.disabled = false;
     }
+  },
+
+  loadMoreLogs() {
+    if (this.logCursor) return this.loadLogs({ append: true });
   },
 
   // ====================================================
@@ -720,6 +771,7 @@ const Admin = {
       alertEl.textContent = `✓ ${data.message}`;
       alertEl.className = 'gate-message success';
       alertEl.classList.remove('hidden');
+      window.API?.clearMovieCache?.();
       if (window.App) await App.loadHomeFeed({ silent: true });
       await this.loadContentStatus();
     } catch (err) {
@@ -740,20 +792,41 @@ const Admin = {
 
     if (logs.length === 0) {
       container.innerHTML = '<div class="log-line log-dim">[System] Nhật ký hệ thống trống.</div>';
+      ['logLoadedCount', 'logViewerCount', 'logUserCount', 'logErrorCount'].forEach((id) => {
+        const element = document.getElementById(id);
+        if (element) element.textContent = '0';
+      });
       return;
     }
+
+    const actionNames = {
+      usage_app_open: 'Mở ứng dụng', usage_tab_view: 'Chuyển tab', usage_category_view: 'Mở danh mục',
+      usage_filter_applied: 'Dùng bộ lọc', usage_search: 'Tìm kiếm', usage_movie_open: 'Mở phim',
+      usage_episode_open: 'Chọn tập', usage_playback_start: 'Bắt đầu xem', usage_playback_ready: 'Luồng sẵn sàng',
+      usage_playback_stop: 'Dừng xem', usage_playback_complete: 'Xem hết tập', usage_playback_error: 'Lỗi phát', usage_server_change: 'Đổi server',
+      license_activated: 'Kích hoạt key', device_access_requested: 'Yêu cầu duyệt thiết bị',
+      device_access_approved: 'Duyệt thiết bị', device_access_rejected: 'Từ chối thiết bị',
+      user_banned: 'Ban người dùng', user_unbanned: 'Mở ban người dùng'
+    };
+    const contextLabels = {
+      movie: 'Phim', episode: 'Tập', tab: 'Tab', category: 'Danh mục', genre: 'Thể loại',
+      country: 'Quốc gia', query: 'Từ khóa', results: 'Kết quả', server: 'Server', quality: 'Chất lượng',
+      seconds: 'Vị trí', duration: 'Thời lượng', error: 'Lỗi', entry: 'Cách vào', version: 'Phiên bản'
+    };
 
     logs.forEach(l => {
       const line = document.createElement('div');
       line.className = 'log-line';
 
-      const time = new Date(l.timestamp).toLocaleTimeString('vi-VN');
+      const time = new Date(l.timestamp).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'medium' });
       
       let typeClass = 'log-tag-info';
       if (l.type === 'ADMIN') typeClass = 'log-tag-admin';
       if (l.type === 'BAN') typeClass = 'log-tag-ban';
       if (l.type === 'DDOS') typeClass = 'log-tag-ddos';
       if (l.type === 'AUTH') typeClass = 'log-tag-auth';
+      if (l.type === 'USER') typeClass = 'log-tag-user';
+      if (l.type === 'SECURITY') typeClass = 'log-tag-ddos';
 
       const append = (className, value) => {
         const span = document.createElement('span');
@@ -763,14 +836,23 @@ const Admin = {
       };
       append('log-time', time);
       append(`log-tag ${typeClass}`, `[${l.type || 'INFO'}]`);
-      append('log-action', `${l.action || 'EVENT'}:`);
-      append('log-text', l.details || 'Không có chi tiết');
+      append('log-action', `${actionNames[l.action] || l.action || 'Sự kiện'}:`);
+      const context = l.context && typeof l.context === 'object' ? l.context : {};
+      const details = Object.entries(context)
+        .filter(([key]) => key !== 'device')
+        .map(([key, value]) => `${contextLabels[key] || key}: ${value}`)
+        .join(' · ');
+      append('log-text', details || l.details || 'Không có chi tiết');
       if (l.account?.telegramId) append('log-account', `TG:${l.account.telegramId}`);
       if (l.account?.deviceHash) append('log-account', `DEV:${l.account.deviceHash}`);
-      append('log-ip', l.account?.ip || l.ip || '');
 
       container.appendChild(line);
     });
+
+    document.getElementById('logLoadedCount').textContent = String(logs.length);
+    document.getElementById('logViewerCount').textContent = String(logs.filter((log) => log.type === 'USER').length);
+    document.getElementById('logUserCount').textContent = String(new Set(logs.map((log) => log.account?.telegramId).filter(Boolean)).size);
+    document.getElementById('logErrorCount').textContent = String(logs.filter((log) => log.action === 'usage_playback_error').length);
   },
 
   async clearLogs() {

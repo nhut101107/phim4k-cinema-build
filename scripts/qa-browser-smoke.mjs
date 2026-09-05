@@ -12,6 +12,7 @@ const homeScreenshotPath = resolve(projectRoot, 'data', 'qa', 'phim4k-home-smoke
 const playerScreenshotPath = resolve(projectRoot, 'data', 'qa', 'phim4k-player-smoke.png');
 const scheduleScreenshotPath = resolve(projectRoot, 'data', 'qa', 'phim4k-schedule-smoke.png');
 const filterScreenshotPath = resolve(projectRoot, 'data', 'qa', 'phim4k-filter-smoke.png');
+const adminLogsScreenshotPath = resolve(projectRoot, 'data', 'qa', 'phim4k-admin-logs-smoke.png');
 const mimeTypes = new Map([
   ['.css', 'text/css; charset=utf-8'],
   ['.html', 'text/html; charset=utf-8'],
@@ -201,6 +202,10 @@ try {
   process.stderr.write('[qa] loading iPhone web bundle\n');
   await waitFor('document.readyState === "complete"', 'Document did not finish loading');
   await waitFor("Boolean(window.App && window.Auth && typeof Player === 'object')", 'App modules were not initialized');
+  // This run uses fixture licenses, so suppress only outbound usage writes.
+  // The telemetry endpoint's authentication and sanitization are covered by
+  // the Worker integration test with a server-side fixture database.
+  await evaluate('window.API.trackUsage = () => {}');
 
   process.stderr.write('[qa] checking key-only device approval unlock\n');
   const deviceApprovalState = await evaluate(`(async () => {
@@ -379,8 +384,9 @@ try {
   await evaluate('Player.close()');
 
   process.stderr.write('[qa] checking admin tabs, device request, and close controls\n');
-  const adminCloseState = await evaluate(`(() => {
+  const adminCloseState = await evaluate(`(async () => {
     const originalFetch = window.fetch;
+    window.__qaOriginalFetch = originalFetch;
     window.fetch = (url, options) => {
       const path = String(url);
       if (path.includes('/api/admin/device-access-requests')) {
@@ -392,10 +398,22 @@ try {
       if (path.includes('/api/admin/downloads')) {
         return Promise.resolve(new Response(JSON.stringify({ downloads: {} }), { status: 200, headers: { 'content-type': 'application/json' } }));
       }
+      if (path.includes('/api/admin/logs')) {
+        return Promise.resolve(new Response(JSON.stringify({ logs: [{
+          id: 91, timestamp: new Date().toISOString(), action: 'usage_movie_open', type: 'USER',
+          details: '', context: { movie: 'Phim QA', episode: 'Tập 1', device: 'device••••qa' },
+          account: { telegramId: '5992662564', deviceHash: 'device••••qa' }
+        }], hasMore: true, nextCursor: 91 }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      }
       return originalFetch(url, options);
     };
     window.Auth.activeKeyData = { isAdmin: true, telegramId: '5992662564', key: 'P4K-QA-LOCAL', active: true };
     window.Admin.open();
+    await window.Admin.switchTab('logs');
+    const logPanelVisible = !document.getElementById('adminTabLogs').classList.contains('hidden');
+    const userLogRendered = document.getElementById('terminalLogsBody').textContent.includes('Phim QA');
+    const viewerCount = document.getElementById('logViewerCount').textContent;
+    const loadMoreVisible = !document.getElementById('logsLoadMoreBtn').classList.contains('hidden');
     window.Admin.switchTab('downloads');
     const downloads = document.getElementById('adminTabDownloads');
     const logs = document.getElementById('adminTabLogs');
@@ -404,20 +422,25 @@ try {
       && downloads.getBoundingClientRect().height > 0;
     const updateButton = downloads.querySelector('button[type="submit"]');
     const updateButtonVisible = Boolean(updateButton && updateButton.getBoundingClientRect().height >= 40);
+    const logsHiddenAfterSwitchDownloads = logs.classList.contains('hidden');
+    await window.Admin.switchTab('logs');
     const requestButton = document.getElementById('btnRequestDeviceAccess');
     const button = document.querySelector('#adminModal .modal-close-btn');
     const rect = button.getBoundingClientRect();
     const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
     const hittable = Boolean(hit?.closest('#adminModal .modal-close-btn'));
-    button.click();
-    window.fetch = originalFetch;
+    document.getElementById('adminTabLogs').scrollIntoView({ block: 'start' });
     return {
       width: rect.width,
       height: rect.height,
       hittable,
       downloadsVisible,
-      logsHidden: logs.classList.contains('hidden'),
+      logsHidden: logsHiddenAfterSwitchDownloads,
       updateButtonVisible,
+      logPanelVisible,
+      userLogRendered,
+      viewerCount,
+      loadMoreVisible,
       requestButtonAvailable: Boolean(
         requestButton
         && requestButton.textContent.includes('Báo Admin')
@@ -425,11 +448,18 @@ try {
       ),
     };
   })()`);
+  const adminLogsScreenshot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+  writeFileSync(adminLogsScreenshotPath, Buffer.from(adminLogsScreenshot.data, 'base64'));
+  await evaluate(`(() => {
+    document.querySelector('#adminModal .modal-close-btn').click();
+    window.fetch = window.__qaOriginalFetch;
+    delete window.__qaOriginalFetch;
+  })()`);
   await waitFor("document.getElementById('adminModal').classList.contains('hidden')", 'Admin close button did not work');
 
   const relevantResponses = await evaluate('true');
   void relevantResponses;
-  const checksPassed = homeState.version === '3.4.10'
+  const checksPassed = homeState.version === '3.4.11'
     && deviceApprovalState.unlocked
     && deviceApprovalState.deviceOnly
     && deviceApprovalState.telegramEmpty
@@ -473,6 +503,10 @@ try {
     && adminCloseState.logsHidden
     && adminCloseState.updateButtonVisible
     && adminCloseState.requestButtonAvailable
+    && adminCloseState.logPanelVisible
+    && adminCloseState.userLogRendered
+    && adminCloseState.viewerCount === '1'
+    && adminCloseState.loadMoreVisible
     && exceptions.length === 0
     && consoleErrors.length === 0
     && failedRequests.length === 0
@@ -499,6 +533,7 @@ try {
     playerScreenshot: playerScreenshotPath,
     scheduleScreenshot: scheduleScreenshotPath,
     filterScreenshot: filterScreenshotPath,
+    adminLogsScreenshot: adminLogsScreenshotPath,
   };
   if (!checksPassed) process.exitCode = 1;
 } catch (error) {

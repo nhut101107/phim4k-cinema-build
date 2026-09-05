@@ -34,7 +34,7 @@ test('account version and a verified session do not fall back to stale WebView s
   const auth = read('../public/js/auth.js');
   assert.match(api, /window\.API = API/);
   assert.match(auth, /window\.Auth = Auth/);
-  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.10'/);
+  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.11'/);
   assert.match(auth, /const verifiedSession = \{ \.\.\.res, key, telegramId \}/);
   assert.match(auth, /Auth\.unlockApp\(verifiedSession\)/);
 });
@@ -79,7 +79,7 @@ test('native catalog falls back immediately instead of leaving the UI loading', 
   vm.createContext(sandbox);
   vm.runInContext(read('../public/js/catalog-fallback.js'), sandbox);
   vm.runInContext(`${read('../public/js/api.js')}\nglobalThis.__api = API;`, sandbox);
-  assert.equal(sandbox.window.API.getVersion(), '3.4.10');
+  assert.equal(sandbox.window.API.getVersion(), '3.4.11');
   const home = await sandbox.__api.getHomeFeed();
   const detail = await sandbox.__api.getDetail(home.hero[0].slug);
   assert.ok(home.hero.length > 0);
@@ -199,4 +199,37 @@ test('native movie artwork uses the allowlisted same-origin image relay', () => 
   const proxied = sandbox.__app.resolveImageUrl('https://phimimg.com/uploads/movies/poster.webp');
   assert.equal(proxied, 'https://api.example.test/api/media/image?url=https%3A%2F%2Fphimimg.com%2Fuploads%2Fmovies%2Fposter.webp');
   assert.equal(sandbox.__app.resolveImageUrl('/media/poster-fallback.svg'), '/media/poster-fallback.svg');
+});
+
+test('user activity is batched without stream URLs and admin logs support user filters and pagination', () => {
+  const api = read('../public/js/api.js');
+  const app = read('../public/js/app.js');
+  const player = read('../public/js/player.js');
+  const admin = read('../public/js/admin.js');
+  const index = read('../public/index.html');
+  const worker = read('../backend-worker/src/worker.mjs');
+  assert.match(api, /usageQueue/);
+  assert.match(api, /\/api\/telemetry/);
+  assert.match(api, /JSON\.stringify\(\{ events \}\)/);
+  assert.doesNotMatch(player, /trackUsage\([^\n]*activeStreamUrl/);
+  assert.match(app, /trackUsage\('movie_open'/);
+  assert.match(player, /trackUsage\('playback_error'/);
+  assert.match(worker, /TELEMETRY_ACTIONS/);
+  assert.match(worker, /normalizeTelemetryEvents/);
+  assert.match(index, /id="logTypeFilter"/);
+  assert.match(index, /id="logsLoadMoreBtn"/);
+  assert.match(admin, /startLogAutoRefresh/);
+  assert.match(admin, /before/);
+});
+
+test('mobile performance avoids repeated requests and expensive fixed blur repaints', () => {
+  const api = read('../public/js/api.js');
+  const app = read('../public/js/app.js');
+  const styles = read('../public/css/style.css');
+  assert.match(api, /cachedMovieRequest/);
+  assert.match(api, /cached\?\.promise/);
+  assert.match(app, /requestAnimationFrame/);
+  assert.match(app, /createDocumentFragment/);
+  assert.match(styles, /WKWebView scrolls more consistently/);
+  assert.match(styles, /prefers-reduced-motion/);
 });

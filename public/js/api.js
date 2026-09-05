@@ -1,6 +1,12 @@
 ﻿// API Client with automatic Telegram ID, License Key & Direct Client-Side Standalone Fallback
 
 const API = {
+  movieCache: new Map(),
+  usageQueue: [],
+  usageFlushTimer: null,
+  lastUsageFingerprint: '',
+  lastUsageAt: 0,
+
   getKey() {
     return localStorage.getItem('phim4k_key') || '';
   },
@@ -14,7 +20,73 @@ const API = {
   },
 
   getVersion() {
-    return '3.4.10';
+    return '3.4.11';
+  },
+
+  async cachedMovieRequest(endpoint, ttlMs = 60000) {
+    const cached = this.movieCache.get(endpoint);
+    if (cached?.data && cached.expiresAt > Date.now()) return cached.data;
+    if (cached?.promise) return cached.promise;
+    const promise = this.request(endpoint)
+      .then((data) => {
+        this.movieCache.set(endpoint, { data, expiresAt: Date.now() + ttlMs });
+        return data;
+      })
+      .catch((error) => {
+        this.movieCache.delete(endpoint);
+        throw error;
+      });
+    this.movieCache.set(endpoint, { promise, expiresAt: Date.now() + ttlMs });
+    return promise;
+  },
+
+  clearMovieCache() {
+    this.movieCache.clear();
+  },
+
+  trackUsage(action, context = {}) {
+    if (!this.getKey() || !this.getDeviceId()) return;
+    const safeAction = String(action || '').trim().toLowerCase();
+    if (!safeAction) return;
+    const safeContext = Object.fromEntries(Object.entries(context)
+      .filter(([, value]) => typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value)))
+      .map(([key, value]) => [key, typeof value === 'string' ? value.slice(0, 160) : value]));
+    const fingerprint = `${safeAction}:${JSON.stringify(safeContext)}`;
+    const timestamp = Date.now();
+    if (fingerprint === this.lastUsageFingerprint && timestamp - this.lastUsageAt < 2000) return;
+    this.lastUsageFingerprint = fingerprint;
+    this.lastUsageAt = timestamp;
+    this.usageQueue.push({ action: safeAction, context: safeContext });
+    if (this.usageQueue.length >= 10) {
+      void this.flushUsage();
+      return;
+    }
+    window.clearTimeout(this.usageFlushTimer);
+    this.usageFlushTimer = window.setTimeout(() => void this.flushUsage(), 1200);
+  },
+
+  async flushUsage({ keepalive = false } = {}) {
+    window.clearTimeout(this.usageFlushTimer);
+    this.usageFlushTimer = null;
+    if (!this.usageQueue.length || !this.getKey() || !this.getDeviceId()) return;
+    const events = this.usageQueue.splice(0, 20);
+    try {
+      const response = await fetch('/api/telemetry', {
+        method: 'POST',
+        keepalive,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-license-key': this.getKey(),
+          'x-telegram-id': this.getTelegramId(),
+          'x-device-id': this.getDeviceId(),
+          'x-app-version': this.getVersion()
+        },
+        body: JSON.stringify({ events })
+      });
+      if (!response.ok && response.status >= 500) this.usageQueue.unshift(...events.slice(-10));
+    } catch (_error) {
+      this.usageQueue.unshift(...events.slice(-10));
+    }
   },
 
   async fetchWithTimeout(input, options = {}, timeoutMs = 15000) {
@@ -158,7 +230,7 @@ const API = {
   // Movies: Direct standalone fallback to live public movie API
   async getHomeFeed() {
     try {
-      return await this.request('/api/movies/home');
+      return await this.cachedMovieRequest('/api/movies/home', 90000);
     } catch (err) {
       // Capacitor cannot use the catalog directly because it has no CORS
       // permission.  Do not leave the screen spinning while a rate-limited
@@ -205,7 +277,7 @@ const API = {
 
   async getCategory(category, page = 1) {
     try {
-      return await this.request(`/api/movies/category/${category}?page=${page}`);
+      return await this.cachedMovieRequest(`/api/movies/category/${category}?page=${page}`, 60000);
     } catch (err) {
       if (window.Phim4KRuntime?.apiBaseUrl) {
         return { title: category, items: this.getBundledHomeFeed().sections.flatMap((section) => section.items), pagination: { currentPage: 1, totalPages: 1 } };
@@ -232,12 +304,12 @@ const API = {
     const query = new URLSearchParams({ page: String(page) });
     if (genre) query.set('genre', genre);
     if (country) query.set('country', country);
-    return this.request(`/api/movies/filter?${query.toString()}`);
+    return this.cachedMovieRequest(`/api/movies/filter?${query.toString()}`, 60000);
   },
 
   async search(query, page = 1) {
     try {
-      return await this.request(`/api/movies/search?q=${encodeURIComponent(query)}&page=${page}`);
+      return await this.cachedMovieRequest(`/api/movies/search?q=${encodeURIComponent(query)}&page=${page}`, 30000);
     } catch (err) {
       if (window.Phim4KRuntime?.apiBaseUrl) {
         const term = String(query || '').toLocaleLowerCase();
@@ -262,7 +334,7 @@ const API = {
 
   async getDetail(slug) {
     try {
-      return await this.request(`/api/movies/detail/${slug}`);
+      return await this.cachedMovieRequest(`/api/movies/detail/${slug}`, 300000);
     } catch (err) {
       if (window.Phim4KRuntime?.apiBaseUrl) {
         const movie = this.getBundledMovie(slug);
@@ -283,3 +355,11 @@ const API = {
 // an iOS WKWebView. Account and other later-loaded scripts therefore use this
 // explicit, public reference rather than falling back to a stale version.
 window.API = API;
+if (typeof window.addEventListener === 'function') {
+  window.addEventListener('pagehide', () => void API.flushUsage({ keepalive: true }));
+}
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') void API.flushUsage({ keepalive: true });
+  });
+}

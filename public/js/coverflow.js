@@ -319,6 +319,8 @@ function switchTab(tabId) {
     window.App?.renderSchedule?.();
   }
 
+  window.API?.trackUsage?.('tab_view', { tab: tabId });
+
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -339,7 +341,7 @@ function renderAccountTab() {
   if (planEl) planEl.textContent = isSuperAdmin ? '👑 SUPER ADMIN' : plan;
   if (keyEl) keyEl.textContent = key;
   const versionEl = document.getElementById('accAppVersion');
-  if (versionEl) versionEl.textContent = `v${window.API?.getVersion?.() || '3.4.10'}`;
+  if (versionEl) versionEl.textContent = `v${window.API?.getVersion?.() || '3.4.11'}`;
 
   if (adminBtn) {
     adminBtn.classList.toggle('hidden', !isSuperAdmin);

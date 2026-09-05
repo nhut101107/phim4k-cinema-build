@@ -24,6 +24,7 @@ const Player = {
   usingNativeHls: false,
   failedServerIndexes: new Set(),
   mediaRecoveryCount: 0,
+  playbackStartLogged: false,
 
   init() {
     if (this.video) return;
@@ -32,7 +33,14 @@ const Player = {
     this.wrapper = document.getElementById('playerWrapper');
     if (!this.video || !this.modal || !this.wrapper) return;
 
-    this.video.addEventListener('play', () => { this.updatePlayBtn(true); this.resetInactivityTimer(); });
+    this.video.addEventListener('play', () => {
+      this.updatePlayBtn(true);
+      this.resetInactivityTimer();
+      if (!this.playbackStartLogged) {
+        this.playbackStartLogged = true;
+        API.trackUsage('playback_start', this.usageContext());
+      }
+    });
     this.video.addEventListener('pause', () => this.updatePlayBtn(false));
     this.video.addEventListener('timeupdate', () => this.onTimeUpdate());
     this.video.addEventListener('progress', () => this.onProgress());
@@ -77,6 +85,8 @@ const Player = {
     this.allServers = Array.isArray(allServers) ? allServers : [];
     this.currentServerIndex = Number.isInteger(serverIndex) ? serverIndex : 0;
     this.failedServerIndexes.clear();
+    this.playbackStartLogged = false;
+    API.trackUsage('episode_open', this.usageContext(movie, episode));
 
     document.getElementById('playerMovieTitle').textContent = movie.name || 'Phim';
     document.getElementById('playerEpisodeTitle').textContent = episode.name || `Tập ${this.currentEpIndex + 1}`;
@@ -93,6 +103,13 @@ const Player = {
 
   close() {
     this.saveProgressNow();
+    if (Number(this.video?.currentTime) > 1) {
+      API.trackUsage('playback_stop', {
+        ...this.usageContext(),
+        seconds: this.video.currentTime,
+        duration: Number.isFinite(this.video.duration) ? this.video.duration : 0
+      });
+    }
     void this.exitCinemaFullscreen();
     this.streamSession += 1;
     this.activeStreamUrl = '';
@@ -220,7 +237,20 @@ const Player = {
     }
     this.updateCurrentResolution();
     this.showBuffering(false);
+    API.trackUsage('playback_ready', {
+      ...this.usageContext(),
+      duration: Number.isFinite(this.video.duration) ? this.video.duration : 0,
+      quality: this.usingNativeHls ? 'Tự động iOS' : this.qualityMode
+    });
     if (autoplay) this.video.play().catch(() => this.showAlert('Chạm nút Phát để bắt đầu xem.'));
+  },
+
+  usageContext(movie = this.currentMovie, episode = this.currentEpisode) {
+    return {
+      movie: movie?.name || movie?.slug || 'Không rõ',
+      episode: episode?.name || episode?.filename || `Tập ${this.currentEpIndex + 1}`,
+      server: this.allServers[this.currentServerIndex]?.server_name || `Server ${this.currentServerIndex + 1}`
+    };
   },
 
   destroyHls() {
@@ -288,6 +318,7 @@ const Player = {
     this.updateNextEpisodeButton();
     this.closeDropdowns();
     this.showAlert(`${automatic ? 'Tự chuyển' : 'Đã đổi'}: ${targetServer.server_name || `Server ${newServerIndex + 1}`}`);
+    API.trackUsage('server_change', { ...this.usageContext(), entry: automatic ? 'automatic' : 'manual' });
     this.loadEpisode(match.episode, { resumeTime, autoplay });
   },
 
@@ -301,6 +332,7 @@ const Player = {
     }
     this.showBuffering(false);
     this.showAlert('Tất cả server hiện có đều không phản hồi. Vui lòng thử lại sau.');
+    API.trackUsage('playback_error', { ...this.usageContext(), error: 'Tất cả server không phản hồi' });
   },
 
   togglePlayPause() {
@@ -477,6 +509,10 @@ const Player = {
   },
 
   onEnded() {
+    API.trackUsage('playback_complete', {
+      ...this.usageContext(),
+      duration: Number.isFinite(this.video?.duration) ? this.video.duration : 0
+    });
     if (this.currentEpIndex < this.episodesList.length - 1) {
       this.showAlert('Tập phim đã kết thúc. Chuyển tập sau trong 3 giây…');
       window.setTimeout(() => { if (this.video?.ended) this.playNextEpisode(); }, 3000);

@@ -332,7 +332,7 @@
           </div>
           <div class="acc-detail-item">
             <span>Phiên bản ứng dụng:</span>
-            <span id="accAppVersion">v3.4.10</span>
+            <span id="accAppVersion">v3.4.11</span>
           </div>
         </div>
 
@@ -814,9 +814,17 @@
       <div id="adminTabLogs" class="admin-tab-content hidden">
         <div class="admin-section-box">
           <div class="table-header-row">
-            <h3>📜 Nhật Ký Hoạt Động & Bảo Mật Hệ Thống (Live Audit Logs)</h3>
+            <h3>📊 Hoạt Động Người Dùng & Nhật Ký Hệ Thống</h3>
             <div class="log-actions-bar">
               <input id="logAccountFilter" type="text" inputmode="numeric" placeholder="Lọc Telegram ID" aria-label="Lọc nhật ký theo Telegram ID" />
+              <select id="logTypeFilter" aria-label="Lọc loại nhật ký" onchange="Admin.applyLogFilter()">
+                <option value="ALL">Tất cả hoạt động</option>
+                <option value="USER">Người dùng xem phim</option>
+                <option value="AUTH">Đăng nhập & thiết bị</option>
+                <option value="ADMIN">Thao tác quản trị</option>
+                <option value="BAN">Ban người dùng</option>
+                <option value="SECURITY">Bảo mật</option>
+              </select>
               <button class="btn-action-mini btn-time" onclick="Admin.applyLogFilter()">Lọc</button>
               <button class="btn-action-mini" onclick="Admin.clearLogFilter()">Bỏ lọc</button>
               <button class="btn-refresh-keys" onclick="Admin.loadLogs()">🔄 Làm mới</button>
@@ -824,8 +832,14 @@
             </div>
           </div>
           <p class="admin-desc" style="margin-bottom: 12px;">
-            Ghi nhận toàn bộ thao tác đăng nhập Admin, kích hoạt key, thay đổi thiết bị, chặn DDoS và các lệnh Ban tài khoản.
+            Theo dõi theo từng người dùng: mở app, tab đã xem, tìm kiếm, bộ lọc, phim/tập đã mở, trạng thái phát, đổi server và lỗi phát. Dữ liệu nhạy cảm, URL video và key đầy đủ không được ghi lại.
           </p>
+          <div class="log-summary-grid" aria-label="Tổng quan nhật ký đang tải">
+            <div><span id="logLoadedCount">0</span><small>Sự kiện đã tải</small></div>
+            <div><span id="logViewerCount">0</span><small>Hoạt động xem</small></div>
+            <div><span id="logUserCount">0</span><small>Người dùng</small></div>
+            <div><span id="logErrorCount">0</span><small>Lỗi phát</small></div>
+          </div>
           
           <!-- Terminal / Cyber Log Console -->
           <div class="cyber-terminal" id="terminalLogsContainer">
@@ -833,12 +847,14 @@
               <span class="terminal-dot red"></span>
               <span class="terminal-dot yellow"></span>
               <span class="terminal-dot green"></span>
-              <span class="terminal-title">system_audit.log — Phim4K Security Engine</span>
+              <span class="terminal-title">activity.log — tự làm mới mỗi 20 giây</span>
+              <span id="logLiveState" class="log-live-state">● LIVE</span>
             </div>
             <div class="terminal-body" id="terminalLogsBody">
               <div class="log-line">Đang tải dữ liệu nhật ký hoạt động...</div>
             </div>
           </div>
+          <button id="logsLoadMoreBtn" class="catalog-load-more-btn hidden" type="button" onclick="Admin.loadMoreLogs()">Tải thêm nhật ký</button>
         </div>
       </div>
 

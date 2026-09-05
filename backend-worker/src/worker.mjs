@@ -19,6 +19,15 @@ const LICENSE_PATTERN = /^[A-Z0-9][A-Z0-9-]{3,63}$/;
 const MASTER_KEY_MIN_LENGTH = 12;
 const MAX_JSON_BODY_BYTES = 16 * 1024;
 const ADMIN_KEY_HASH_SETTING = "admin_key_hmac_v1";
+const TELEMETRY_ACTIONS = new Set([
+  "app_open", "tab_view", "category_view", "filter_applied", "search",
+  "movie_open", "episode_open", "playback_start", "playback_ready",
+  "playback_stop", "playback_complete", "playback_error", "server_change",
+]);
+const TELEMETRY_FIELDS = new Set([
+  "tab", "category", "genre", "country", "query", "results", "movie",
+  "episode", "server", "quality", "seconds", "duration", "error", "entry",
+]);
 const RATE_LIMITS = Object.freeze({
   authActivate: { limit: 20, windowSeconds: 60 },
   authStatus: { limit: 120, windowSeconds: 60 },
@@ -83,6 +92,40 @@ function validMasterKey(value) {
 
 function validTelegramId(value) {
   return /^\d{5,20}$/.test(value);
+}
+
+function cleanTelemetryValue(value, maxLength = 160) {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.round(value * 10) / 10;
+  if (typeof value !== "string") return undefined;
+  const clean = value.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, maxLength);
+  if (!clean || /(?:https?:\/\/|m3u8|cookie|token|authorization)/i.test(clean)) return undefined;
+  return clean;
+}
+
+export function normalizeTelemetryEvents(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 20).flatMap((item) => {
+    const action = String(item?.action || "").trim().toLowerCase();
+    if (!TELEMETRY_ACTIONS.has(action)) return [];
+    const context = {};
+    const source = item?.context && typeof item.context === "object" ? item.context : {};
+    for (const [key, fieldValue] of Object.entries(source)) {
+      if (!TELEMETRY_FIELDS.has(key)) continue;
+      const clean = cleanTelemetryValue(fieldValue);
+      if (clean !== undefined) context[key] = clean;
+    }
+    return [{ action: `usage_${action}`, context }];
+  });
+}
+
+export function auditTypeForAction(action) {
+  const value = String(action || "");
+  if (value.startsWith("usage_")) return "USER";
+  if (value === "license_activated" || value.startsWith("device_access_")) return "AUTH";
+  if (value.startsWith("user_")) return "BAN";
+  if (value.startsWith("key_") || value.startsWith("admin_")) return "ADMIN";
+  if (value.includes("rate") || value.includes("blocked")) return "SECURITY";
+  return "SYSTEM";
 }
 
 function isExpired(expiresAt) {
@@ -288,6 +331,55 @@ async function logEvent(db, action, { actorTelegramId = "", targetKey = "", targ
   } catch (_error) {
     // Audit logging must not turn an otherwise valid authorization result into a failure.
   }
+}
+
+async function verifyTelemetryViewer(request, env) {
+  const key = requestKey(request);
+  const telegramId = requestTelegram(request);
+  const deviceId = normalizeId(request.headers.get("x-device-id"));
+  if (!key || !deviceId) return { error: textError("Thiếu phiên người dùng hợp lệ.", 401, "VIEWER_SESSION_REQUIRED") };
+
+  if (await verifyMasterKey(key, env, env.DB)) {
+    if (!await verifyAdminIdentity(key, telegramId, env, env.DB)) {
+      return { error: textError("Phiên quản trị không hợp lệ.", 403, "ADMIN_TELEGRAM_REQUIRED") };
+    }
+    return { telegramId, deviceId, isAdmin: true };
+  }
+  if (!validKey(key)) return { error: textError("Key không hợp lệ.", 401, "INVALID_KEY_FORMAT") };
+  const record = await queryOne(env.DB, "SELECT * FROM license_keys WHERE license_key = ?", key);
+  if (!record || !record.active || isExpired(record.expires_at)) {
+    return { error: textError("Phiên người dùng đã hết hiệu lực.", 403, "VIEWER_SESSION_INACTIVE") };
+  }
+  if (!record.device_id || record.device_id !== deviceId) {
+    return { error: textError("Thiết bị không khớp với phiên đã kích hoạt.", 403, "DEVICE_MISMATCH") };
+  }
+  const boundTelegram = normalizeId(record.activated_telegram_id || record.assigned_telegram_id);
+  if (boundTelegram && boundTelegram !== telegramId) {
+    return { error: textError("Telegram ID không khớp với phiên đã kích hoạt.", 403, "TELEGRAM_MISMATCH") };
+  }
+  if (boundTelegram) {
+    const ban = await queryOne(env.DB, "SELECT reason FROM bans WHERE telegram_id = ?", boundTelegram);
+    if (ban) return { error: textError("Tài khoản đã bị khóa.", 403, "USER_BANNED") };
+  }
+  return { telegramId: boundTelegram, deviceId, isAdmin: false };
+}
+
+async function handleTelemetry(request, env) {
+  const identity = await verifyTelemetryViewer(request, env);
+  if (identity.error) return identity.error;
+  const body = await parseBody(request);
+  const events = normalizeTelemetryEvents(body.events);
+  if (!events.length) return textError("Không có hoạt động hợp lệ để ghi.", 400, "INVALID_TELEMETRY");
+  const device = maskedValue(identity.deviceId, 6);
+  for (const event of events) {
+    const detail = JSON.stringify({ ...event.context, device, version: appVersion(request) });
+    await logEvent(env.DB, event.action, {
+      actorTelegramId: identity.telegramId,
+      targetTelegramId: identity.telegramId,
+      detail,
+    });
+  }
+  return json({ success: true, accepted: events.length }, 202);
 }
 
 function dbUnavailable(env) {
@@ -629,22 +721,55 @@ async function handleLogs(request, env) {
     return json({ success: true, message: "Đã xóa nhật ký." });
   }
   const url = new URL(request.url);
-  const limit = Math.min(Math.max(Number.parseInt(url.searchParams.get("limit") || "200", 10) || 200, 1), 500);
+  const limit = Math.min(Math.max(Number.parseInt(url.searchParams.get("limit") || "100", 10) || 100, 1), 200);
   const telegramId = normalizeId(url.searchParams.get("telegramId"));
-  const statement = telegramId
-    ? env.DB.prepare("SELECT * FROM audit_logs WHERE actor_telegram_id = ? OR target_telegram_id = ? ORDER BY id DESC LIMIT ?").bind(telegramId, telegramId, limit)
-    : env.DB.prepare("SELECT * FROM audit_logs ORDER BY id DESC LIMIT ?").bind(limit);
+  const cursor = Math.max(Number.parseInt(url.searchParams.get("before") || "0", 10) || 0, 0);
+  const requestedType = String(url.searchParams.get("type") || "ALL").trim().toUpperCase();
+  const type = new Set(["ALL", "USER", "AUTH", "ADMIN", "BAN", "SECURITY", "SYSTEM"]).has(requestedType) ? requestedType : "ALL";
+  const clauses = [];
+  const values = [];
+  if (telegramId) {
+    clauses.push("(actor_telegram_id = ? OR target_telegram_id = ?)");
+    values.push(telegramId, telegramId);
+  }
+  if (cursor) {
+    clauses.push("id < ?");
+    values.push(cursor);
+  }
+  const typeSql = {
+    USER: "action LIKE 'usage_%'",
+    AUTH: "(action = 'license_activated' OR action LIKE 'device_access_%')",
+    ADMIN: "(action LIKE 'key_%' OR action LIKE 'admin_%')",
+    BAN: "action LIKE 'user_%'",
+    SECURITY: "(action LIKE '%rate%' OR action LIKE '%blocked%')",
+    SYSTEM: "(action NOT LIKE 'usage_%' AND action <> 'license_activated' AND action NOT LIKE 'device_access_%' AND action NOT LIKE 'key_%' AND action NOT LIKE 'admin_%' AND action NOT LIKE 'user_%' AND action NOT LIKE '%rate%' AND action NOT LIKE '%blocked%')",
+  }[type];
+  if (typeSql) clauses.push(typeSql);
+  const where = clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
+  const statement = env.DB.prepare(`SELECT * FROM audit_logs${where} ORDER BY id DESC LIMIT ?`).bind(...values, limit + 1);
   const result = await statement.all();
-  return json({ logs: (result.results || []).map((item) => ({
-    id: item.id,
-    timestamp: item.created_at,
-    createdAt: item.created_at,
-    action: item.action,
-    actorTelegramId: item.actor_telegram_id || "",
-    targetKey: item.target_key || "",
-    telegramId: item.target_telegram_id || "",
-    detail: item.detail || "",
-  })) });
+  const rows = result.results || [];
+  const hasMore = rows.length > limit;
+  const page = rows.slice(0, limit);
+  return json({ logs: page.map((item) => {
+    let context = {};
+    try { context = JSON.parse(item.detail || "{}"); } catch (_error) {}
+    const actorTelegramId = item.actor_telegram_id || item.target_telegram_id || "";
+    return {
+      id: item.id,
+      timestamp: item.created_at,
+      createdAt: item.created_at,
+      action: item.action,
+      type: auditTypeForAction(item.action),
+      details: item.detail || "",
+      context: context && typeof context === "object" ? context : {},
+      actorTelegramId,
+      targetKey: item.target_key ? maskedValue(item.target_key) : "",
+      telegramId: item.target_telegram_id || "",
+      detail: item.detail || "",
+      account: { telegramId: actorTelegramId, deviceHash: context?.device || "" },
+    };
+  }), hasMore, nextCursor: hasMore ? page.at(-1)?.id || null : null, type });
 }
 
 async function rotateMasterKey(request, env) {
@@ -936,6 +1061,7 @@ export default {
       if (request.method === "GET" && (pathname === "/api/app/check-update" || pathname === "/api/app/version")) {
         return json(await getForceUpdate(env.DB, url.searchParams.get("version") || appVersion(request)));
       }
+      if (request.method === "POST" && pathname === "/api/telemetry") return handleTelemetry(request, env);
       if ((request.method === "GET" || request.method === "POST") && pathname === "/api/app/downloads") return handleDownloads(request, env);
       if (request.method === "GET" && pathname === "/api/admin/keys") return listKeys(request, env);
       if (request.method === "GET" && pathname === "/api/admin/device-access-requests") return listDeviceAccessRequests(request, env);

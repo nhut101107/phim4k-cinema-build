@@ -229,6 +229,9 @@ const Auth = {
       window.App.loadHomeFeed();
     }
     window.renderAccountTab?.();
+    window.API?.trackUsage?.('app_open', {
+      entry: keyData.deviceOnly ? 'device-approved' : (keyData.isAdmin ? 'admin' : 'telegram')
+    });
   },
 
   // Real-time Heartbeat: checks key status & expiry every 30 seconds

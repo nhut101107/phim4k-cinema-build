@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker, { compareAppVersions, createRateLimiter, json } from "../src/worker.mjs";
+import worker, { auditTypeForAction, compareAppVersions, createRateLimiter, json, normalizeTelemetryEvents } from "../src/worker.mjs";
 
 test("health reports an unconfigured database without exposing settings", async () => {
   const response = await worker.fetch(new Request("https://example.workers.dev/api/health"), {});
@@ -225,4 +225,61 @@ test("edge rate-limit denial returns 429 before the backend is used", async () =
   assert.equal(response.status, 429);
   assert.equal(response.headers.get("retry-after"), "60");
   assert.equal((await response.json()).code, "RATE_LIMITED");
+});
+
+test("viewer telemetry accepts only allowlisted fields and never stores stream URLs or secrets", async () => {
+  const events = normalizeTelemetryEvents([
+    { action: "movie_open", context: { movie: "Phim mẫu", token: "secret", source: "https://media.example/video.m3u8" } },
+    { action: "playback_error", context: { error: "Không phát được", episode: "Tập 2" } },
+    { action: "not_allowed", context: { movie: "Bỏ qua" } },
+  ]);
+  assert.equal(events.length, 2);
+  assert.deepEqual(events[0], { action: "usage_movie_open", context: { movie: "Phim mẫu" } });
+  assert.equal(auditTypeForAction(events[0].action), "USER");
+  assert.equal(auditTypeForAction("license_activated"), "AUTH");
+
+  const inserted = [];
+  const license = {
+    license_key: "P4K-USER-TEST", active: 1, expires_at: null,
+    activated_telegram_id: "123456789", assigned_telegram_id: null, device_id: "device-user-1",
+  };
+  const db = {
+    prepare(sql) {
+      return {
+        bind(...values) {
+          return {
+            async first() {
+              if (sql.includes("FROM app_settings")) return null;
+              if (sql.includes("FROM license_keys")) return license;
+              if (sql.includes("FROM bans")) return null;
+              return null;
+            },
+            async run() {
+              if (sql.startsWith("INSERT INTO audit_logs")) inserted.push(values);
+              return { success: true };
+            },
+            async all() { return { results: [] }; },
+          };
+        },
+      };
+    },
+  };
+  const response = await worker.fetch(new Request("https://example.workers.dev/api/telemetry", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json", "x-license-key": "P4K-USER-TEST",
+      "x-telegram-id": "123456789", "x-device-id": "device-user-1", "x-app-version": "3.4.11",
+      "cf-connecting-ip": "203.0.113.88",
+    },
+    body: JSON.stringify({ events: [
+      { action: "movie_open", context: { movie: "Phim mẫu", token: "secret", source: "https://media.example/video.m3u8" } },
+      { action: "playback_error", context: { error: "Không phát được", episode: "Tập 2" } },
+    ] }),
+  }), { DB: db });
+  assert.equal(response.status, 202);
+  assert.equal((await response.json()).accepted, 2);
+  assert.equal(inserted.length, 2);
+  assert.equal(inserted[0][1], "usage_movie_open");
+  assert.equal(inserted[0][2], "123456789");
+  assert.doesNotMatch(inserted[0][5], /https?:|m3u8|secret|P4K-USER-TEST/i);
 });

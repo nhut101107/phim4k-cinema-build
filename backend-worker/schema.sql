@@ -59,3 +59,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   target_telegram_id TEXT,
   detail TEXT
 );
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(id DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs(actor_telegram_id, id DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_target ON audit_logs(target_telegram_id, id DESC);
