@@ -33,7 +33,8 @@ test('account version and a verified session do not fall back to stale WebView s
   const account = read('../public/js/coverflow.js');
   const auth = read('../public/js/auth.js');
   assert.match(api, /window\.API = API/);
-  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.2'/);
+  assert.match(auth, /window\.Auth = Auth/);
+  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.3'/);
   assert.match(auth, /const verifiedSession = \{ \.\.\.res, key, telegramId \}/);
   assert.match(auth, /Auth\.unlockApp\(verifiedSession\)/);
 });
@@ -78,7 +79,7 @@ test('native catalog falls back immediately instead of leaving the UI loading', 
   vm.createContext(sandbox);
   vm.runInContext(read('../public/js/catalog-fallback.js'), sandbox);
   vm.runInContext(`${read('../public/js/api.js')}\nglobalThis.__api = API;`, sandbox);
-  assert.equal(sandbox.window.API.getVersion(), '3.4.2');
+  assert.equal(sandbox.window.API.getVersion(), '3.4.3');
   const home = await sandbox.__api.getHomeFeed();
   const detail = await sandbox.__api.getDetail(home.hero[0].slug);
   assert.ok(home.hero.length > 0);

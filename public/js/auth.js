@@ -248,6 +248,11 @@ const Auth = {
   }
 };
 
+// WKWebView does not expose a top-level `const` as `window.Auth`.  Admin and
+// account modules intentionally use the Window reference because they load in
+// separate script files, so expose the already-created session object here.
+window.Auth = Auth;
+
 // Form submit event
 async function handleActivation(e) {
   e.preventDefault();
