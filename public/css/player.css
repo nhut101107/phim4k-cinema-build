@@ -43,6 +43,26 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Portrait playback is a real video stage, not a full-height box that leaves
+   the picture stranded in the middle of a black screen. */
+@media (orientation: portrait) {
+  .cinema-player-wrapper:not(.cinema-fullscreen) .video-element {
+    position: absolute;
+    top: max(62px, calc(env(safe-area-inset-top) + 54px));
+    right: 0;
+    left: 0;
+    width: 100%;
+    height: min(56.25vw, calc(100dvh - 224px));
+    margin: 0;
+    object-position: center top;
+  }
+
+  .player-modal-overlay .cinema-player-wrapper.aspect-contain:not(.inactive) .video-element {
+    height: min(56.25vw, calc(100dvh - 224px));
+    margin-bottom: 0;
+  }
+}
+
 /* While controls are visible, create a small real safe strip below the video.
    This protects native captions without wasting the former 12vh black band. */
 .cinema-player-wrapper.aspect-contain:not(.inactive) .video-element {
@@ -189,6 +209,7 @@ video::cue {
 .badge-real-res.res-2k { color: #67e8f9; border-color: rgba(103, 232, 249, .68); background: rgba(8, 145, 178, .25); }
 .badge-real-res.res-fhd { color: #6ee7b7; border-color: rgba(110, 231, 183, .68); background: rgba(5, 150, 105, .25); }
 .badge-real-res.res-hd { color: #bfdbfe; border-color: rgba(147, 197, 253, .62); background: rgba(37, 99, 235, .24); }
+.badge-real-res.res-auto { color: #c4b5fd; border-color: rgba(196, 181, 253, .62); background: rgba(109, 40, 217, .28); }
 .player-noads-pill { color: #86efac; border-color: rgba(74, 222, 128, .45); background: rgba(22, 163, 74, .18); }
 
 .btn-close-player {

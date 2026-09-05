@@ -20,6 +20,7 @@ const Player = {
   streamSession: 0,
   activeStreamUrl: '',
   qualityOptions: [],
+  qualityMode: 'auto',
   usingNativeHls: false,
   failedServerIndexes: new Set(),
   mediaRecoveryCount: 0,
@@ -130,6 +131,7 @@ const Player = {
     this.activeStreamUrl = streamUrl;
     this.mediaRecoveryCount = 0;
     this.qualityOptions = [];
+    this.qualityMode = 'auto';
     this.usingNativeHls = false;
     this.destroyHls();
     this.closeDropdowns();
@@ -157,6 +159,8 @@ const Player = {
       hls.attachMedia(this.video);
       hls.on(HlsEngine.Events.MANIFEST_PARSED, () => {
         if (session !== this.streamSession || hls !== this.hls) return;
+        // A rendition change is telemetry, never a request to lock playback.
+        hls.currentLevel = -1;
         this.qualityOptions = PlayerCore.uniqueQualityOptions(hls.levels);
         this.populateQualityMenu(this.qualityOptions);
         this.setAvailableResolution(this.qualityOptions);
@@ -166,6 +170,12 @@ const Player = {
         const level = hls.levels[data.level];
         if (!level) return;
         const option = PlayerCore.qualityOption(level, data.level);
+        if (this.qualityMode === 'auto') {
+          this.setQualityButtonLabel('Tự động');
+          this.setResolutionBadge(option.width, option.height, 'Tự động');
+          this.updateQualityMenuSelection(-1);
+          return;
+        }
         this.setQualityButtonLabel(option.label);
         this.setResolutionBadge(option.width, option.height);
         this.updateQualityMenuSelection(data.level);
@@ -185,6 +195,7 @@ const Player = {
 
     this.usingNativeHls = isHls;
     if (isHls) this.populateNativeHlsMenu();
+    if (isHls) this.setQualityButtonLabel('Tự động');
     this.video.src = streamUrl;
     this.video.load();
   },
@@ -392,6 +403,7 @@ const Player = {
       document.getElementById('qualityMenu')?.classList.add('hidden');
       return;
     }
+    this.qualityMode = levelIndex === -1 ? 'auto' : 'manual';
     this.hls.currentLevel = levelIndex;
     const option = levelIndex === -1 ? null : this.qualityOptions.find((item) => item.levelIndex === levelIndex);
     this.setQualityButtonLabel(option?.label || 'Tự động');
@@ -411,12 +423,21 @@ const Player = {
   },
 
   setAvailableResolution(options) {
+    if (this.qualityMode === 'auto') {
+      this.setResolutionBadge(0, 0, 'Tự động');
+      return;
+    }
     const best = options[0];
     if (best) this.setResolutionBadge(best.width, best.height, `Tối đa ${best.label}`);
   },
 
   updateCurrentResolution() {
-    if (this.video?.videoHeight || this.video?.videoWidth) this.setResolutionBadge(this.video.videoWidth, this.video.videoHeight);
+    if (!(this.video?.videoHeight || this.video?.videoWidth)) return;
+    if (this.qualityMode === 'auto' || this.usingNativeHls) {
+      this.setResolutionBadge(this.video.videoWidth, this.video.videoHeight, 'Tự động');
+      return;
+    }
+    this.setResolutionBadge(this.video.videoWidth, this.video.videoHeight);
   },
 
   setResolutionBadge(width, height, overrideLabel = '') {
@@ -426,6 +447,7 @@ const Player = {
     const numericWidth = Number(width) || 0;
     badge.textContent = overrideLabel || (numericHeight ? `${numericHeight}p` : 'Đang xác minh');
     badge.className = 'badge-real-res';
+    if (overrideLabel === 'Tự động') badge.classList.add('res-auto');
     if (numericHeight >= 2160 || numericWidth >= 3840) badge.classList.add('res-4k');
     else if (numericHeight >= 1440 || numericWidth >= 2560) badge.classList.add('res-2k');
     else if (numericHeight >= 1080 || numericWidth >= 1920) badge.classList.add('res-fhd');
