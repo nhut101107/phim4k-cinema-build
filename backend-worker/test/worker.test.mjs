@@ -23,6 +23,35 @@ test("JSON responses include CORS and no-store headers", async () => {
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
 });
 
+test("movie metadata relay works without D1 and never accepts an arbitrary upstream", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (input) => {
+    const target = String(input);
+    requests.push(target);
+    return new Response(JSON.stringify({ items: [{ name: "Fixture", slug: "fixture" }] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+  try {
+    const home = await worker.fetch(new Request("https://example.workers.dev/api/movies/home"), {});
+    assert.equal(home.status, 200);
+    const payload = await home.json();
+    assert.equal(payload.hero[0].slug, "fixture");
+    assert.equal(payload.sections.length, 4);
+    assert.equal(home.headers.get("access-control-allow-origin"), "*");
+    assert.equal(requests.length, 1);
+    assert.ok(requests.every((target) => target.startsWith("https://phimapi.com/")));
+
+    const invalid = await worker.fetch(new Request("https://example.workers.dev/api/movies/category/not-allowed"), {});
+    assert.equal(invalid.status, 400);
+    assert.equal(requests.length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("app update checks compare version components rather than strings", () => {
   assert.equal(compareAppVersions("3.10.0", "3.2.0"), 1);
   assert.equal(compareAppVersions("3.1.9", "3.2.0"), -1);

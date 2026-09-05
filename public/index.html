@@ -347,17 +347,18 @@
           </div>
           <div class="acc-detail-item">
             <span>Phiên bản ứng dụng:</span>
-            <span>v3.1.1 VIP Master</span>
+            <span id="accAppVersion">v3.3.0</span>
           </div>
         </div>
 
         <div class="account-actions">
-          <button id="accAdminBtn" class="btn-primary" onclick="openAdminPanel()">
+          <button id="accAdminBtn" class="btn-primary hidden" onclick="openAdminPanel()">
             ⚙️ MỞ PANEL QUẢN TRỊ ADMIN
           </button>
           <button class="btn-secondary" onclick="checkAppUpdate(true)">
             🔄 Kiểm Tra Cập Nhật Bản Mới
           </button>
+          <p id="accUpdateStatus" class="gate-message hidden" role="status"></p>
           <button class="btn-secondary" style="color: #f87171;" onclick="promptChangeAccount()">
             🚪 Đăng Xuất / Đổi Tài Khoản
           </button>
@@ -1126,6 +1127,7 @@
   <!-- Scripts -->
   <script src="/js/mobile-config.js"></script>
   <script src="/js/runtime-config.js"></script>
+  <script src="/js/catalog-fallback.js"></script>
   <script src="/js/api.js"></script>
   <script src="/js/auth.js"></script>
   <script src="/js/admin.js"></script>

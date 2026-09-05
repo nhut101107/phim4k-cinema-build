@@ -44,11 +44,13 @@ const Auth = {
     const savedTeleId = localStorage.getItem('phim4k_telegram_id') || getPersistentCookie('phim4k_telegram_id');
     const deviceId = this.getDeviceId();
 
-    // Pre-fill Telegram ID if known
     const teleInput = document.getElementById('telegramInput');
-    if (teleInput && savedTeleId) {
-      teleInput.value = savedTeleId;
-    }
+    const keyInput = document.getElementById('keyInput');
+    // Never disclose a cached identity in the activation gate before the
+    // server has verified the saved session.  This also clears legacy builds
+    // that accidentally left an administrator's local values visible.
+    if (teleInput) teleInput.value = '';
+    if (keyInput) keyInput.value = '';
 
     if (!savedKey || !savedTeleId) {
       this.triggerLock();
@@ -63,7 +65,7 @@ const Auth = {
       }
       if (res.active) {
         // Automatically unlock without requiring re-entry
-        this.unlockApp(res);
+        this.unlockApp({ ...res, key: savedKey, telegramId: savedTeleId });
         this.startHeartbeat();
       } else if (res.code === 'KEY_EXPIRED') {
         // Only require new key when expired! Pre-fill Telegram ID
@@ -76,6 +78,7 @@ const Auth = {
         }
         this.triggerLock(`⚠️ Gói License Key của bạn đã hết hạn! Vui lòng nhập mã Key mới để tiếp tục xem phim.`);
       } else {
+        this.clearStoredSession();
         this.triggerLock(res.reason || 'Thông tin bản quyền không còn hợp lệ');
       }
     } catch (err) {
@@ -118,6 +121,15 @@ const Auth = {
     }
   },
 
+  clearStoredSession() {
+    this.activeKeyData = null;
+    localStorage.removeItem('phim4k_key');
+    localStorage.removeItem('phim4k_telegram_id');
+    localStorage.removeItem('phim4k_plan');
+    deletePersistentCookie('phim4k_key');
+    deletePersistentCookie('phim4k_telegram_id');
+  },
+
   formatExpiry(expiresAt) {
     if (!expiresAt) return 'Vĩnh viễn';
     const expiry = new Date(expiresAt);
@@ -141,6 +153,7 @@ const Auth = {
       localStorage.setItem('phim4k_telegram_id', keyData.telegramId);
       setPersistentCookie('phim4k_telegram_id', keyData.telegramId, 365);
     }
+    localStorage.setItem('phim4k_plan', keyData.isAdmin ? 'SUPER ADMIN' : (keyData.plan || 'VIP PRO'));
 
     document.body.classList.remove('locked');
     document.getElementById('activationGate').classList.add('hidden');
@@ -171,7 +184,9 @@ const Auth = {
     }
     const footerBadge = document.getElementById('footerKeyBadge');
     if (footerBadge) {
-      footerBadge.textContent = `${keyData.key} (${keyData.plan || 'VIP'})`;
+      const rawKey = String(keyData.key || '');
+      const maskedKey = rawKey ? `${rawKey.slice(0, 4)}••••${rawKey.slice(-4)}` : 'Chưa có key';
+      footerBadge.textContent = `${maskedKey} (${keyData.plan || 'VIP'})`;
     }
     const footerExpiry = document.getElementById('footerExpiryBadge');
     if (footerExpiry) footerExpiry.textContent = expiryLabel;
@@ -183,6 +198,7 @@ const Auth = {
     if (window.App && window.App.loadHomeFeed) {
       window.App.loadHomeFeed();
     }
+    window.renderAccountTab?.();
   },
 
   // Real-time Heartbeat: checks key status & expiry every 30 seconds
@@ -221,10 +237,7 @@ const Auth = {
             this.triggerLock(`⚠️ Gói License Key của bạn đã hết hạn! Vui lòng nhập mã Key mới để gia hạn.`);
             alert(`⚠️ THÔNG BÁO:\nHạn sử dụng License Key của bạn đã kết thúc! Vui lòng nhập key mới để tiếp tục.`);
           } else {
-            localStorage.removeItem('phim4k_key');
-            localStorage.removeItem('phim4k_telegram_id');
-            deletePersistentCookie('phim4k_key');
-            deletePersistentCookie('phim4k_telegram_id');
+            this.clearStoredSession();
             this.triggerLock(`⚠️ ${res.reason || 'Khóa kích hoạt không còn hiệu lực.'}`);
           }
         }
@@ -298,7 +311,8 @@ function openLicenseModal() {
 
   document.getElementById('licTelegram').textContent = d.telegramId || localStorage.getItem('phim4k_telegram_id') || '-';
   document.getElementById('licPlan').textContent = d.plan || '-';
-  document.getElementById('licKey').textContent = d.key || '-';
+  const rawKey = String(d.key || '');
+  document.getElementById('licKey').textContent = rawKey ? `${rawKey.slice(0, 4)}••••${rawKey.slice(-4)}` : '-';
   
   if (d.expiresAt) {
     const date = new Date(d.expiresAt);
@@ -333,10 +347,7 @@ function closeLicenseModal(e) {
 
 function logoutKey() {
   if (confirm('Bạn có chắc chắn muốn đăng xuất tài khoản và gỡ key khỏi thiết bị này không?')) {
-    localStorage.removeItem('phim4k_key');
-    localStorage.removeItem('phim4k_telegram_id');
-    deletePersistentCookie('phim4k_key');
-    deletePersistentCookie('phim4k_telegram_id');
+    Auth.clearStoredSession();
     hideLicenseModal();
     Auth.triggerLock('Vui lòng nhập Telegram ID và License Key để đăng nhập');
   }
@@ -437,14 +448,16 @@ function showForceUpdateModal(data) {
   modal.classList.remove('hidden');
 }
 
-async function checkAppUpdate() {
+async function checkAppUpdate(showAccountResult = false) {
   const icon = document.getElementById('checkUpdateIcon');
   const text = document.getElementById('checkUpdateText');
   const box = document.getElementById('updateCheckResultBox');
+  const accountBox = document.getElementById('accUpdateStatus');
 
   if (icon) icon.textContent = '⏳';
   if (text) text.textContent = 'Đang kiểm tra...';
   if (box) box.classList.add('hidden');
+  if (accountBox) accountBox.classList.add('hidden');
 
   try {
     const res = await API.checkUpdate(API.getVersion());
@@ -462,6 +475,11 @@ async function checkAppUpdate() {
       box.className = res.isLatest ? 'gate-message success' : 'gate-message error';
       box.classList.remove('hidden');
     }
+    if (showAccountResult && accountBox) {
+      accountBox.textContent = res.message || 'Da kiem tra phien ban.';
+      accountBox.className = res.isLatest ? 'gate-message success' : 'gate-message error';
+      accountBox.classList.remove('hidden');
+    }
   } catch (err) {
     if (icon) icon.textContent = '🔄';
     if (text) text.textContent = 'Kiểm Tra Phiên Bản Mới Nhất';
@@ -469,6 +487,11 @@ async function checkAppUpdate() {
       box.textContent = '❌ Không thể kết nối đến máy chủ kiểm tra cập nhật!';
       box.className = 'gate-message error';
       box.classList.remove('hidden');
+    }
+    if (showAccountResult && accountBox) {
+      accountBox.textContent = 'Khong the ket noi may chu kiem tra cap nhat.';
+      accountBox.className = 'gate-message error';
+      accountBox.classList.remove('hidden');
     }
   }
 }

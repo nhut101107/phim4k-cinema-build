@@ -26,6 +26,15 @@ const RATE_LIMITS = Object.freeze({
   default: { limit: 240, windowSeconds: 60 },
 });
 
+// This is deliberately a narrow metadata relay, not an open proxy.  Native
+// WebViews cannot call the catalog directly because that catalog does not send
+// CORS headers.  Only known public metadata routes are allowed here; video
+// streams, arbitrary hosts and arbitrary paths are never forwarded.
+const MOVIE_CATALOG_ORIGIN = "https://phimapi.com";
+const MOVIE_CATALOG_CATEGORIES = new Set([
+  "phim-moi-cap-nhat", "phim-le", "phim-bo", "hoat-hinh", "tv-shows",
+]);
+
 const now = () => new Date().toISOString();
 
 export function json(payload, status = 200, extraHeaders = {}) {
@@ -587,6 +596,116 @@ async function handleMovieFallback(request) {
   return textError("Nguồn phim không được proxy bởi backend bản quyền.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
 }
 
+function catalogPage(value) {
+  const parsed = Number.parseInt(String(value || "1"), 10);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 100 ? parsed : 1;
+}
+
+function catalogSlug(value) {
+  const slug = String(value || "").trim().toLowerCase();
+  return /^[a-z0-9][a-z0-9-]{0,159}$/.test(slug) ? slug : "";
+}
+
+function catalogItems(data) {
+  return Array.isArray(data?.items) ? data.items : (Array.isArray(data?.data?.items) ? data.data.items : []);
+}
+
+async function fetchCatalogJson(path) {
+  const cache = typeof caches !== "undefined" ? caches.default : null;
+  const cacheKey = new Request(`https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/__catalog_cache${path}`);
+  if (cache) {
+    try {
+      const cached = await cache.match(cacheKey);
+      if (cached) return await cached.json();
+    } catch (_error) {
+      // A cache miss must never prevent the catalog from loading.
+    }
+  }
+  const response = await fetch(`${MOVIE_CATALOG_ORIGIN}${path}`, {
+    headers: { accept: "application/json" },
+    cf: { cacheEverything: true, cacheTtl: 120 },
+  });
+  if (!response.ok) throw new Error(`catalog HTTP ${response.status}`);
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) throw new Error("catalog returned non-JSON data");
+  const payload = await response.json();
+  if (cache) {
+    try {
+      await cache.put(cacheKey, new Response(JSON.stringify(payload), {
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": "public, max-age=1200, s-maxage=1200",
+        },
+      }));
+    } catch (_error) {
+      // Cache is an optimization only; the successful upstream response stays valid.
+    }
+  }
+  return payload;
+}
+
+async function handleMovieCatalog(request) {
+  const url = new URL(request.url);
+  const { pathname } = url;
+
+  if (pathname === "/api/movies/home") {
+    // One upstream request avoids the catalog's rate limit during app startup.
+    const latest = await fetchCatalogJson("/danh-sach/phim-moi-cap-nhat?page=1");
+    const latestItems = catalogItems(latest);
+    const movies = latestItems.filter((item) => item?.type === "single").slice(0, 16);
+    const series = latestItems.filter((item) => item?.type === "series").slice(0, 16);
+    const animation = latestItems.filter((item) => item?.type === "hoathinh").slice(0, 16);
+    return json({
+      updatedAt: now(),
+      hero: latestItems.slice(0, 8),
+      sections: [
+        { id: "latest", title: "Phim moi cap nhat", items: latestItems.slice(0, 18) },
+        { id: "movies", title: "Phim le", items: movies.length ? movies : latestItems.slice(0, 16) },
+        { id: "series", title: "Phim bo", items: series.length ? series : latestItems.slice(8, 24) },
+        { id: "animation", title: "Hoat hinh", items: animation.length ? animation : latestItems.slice(16, 32) },
+      ],
+    }, 200, { "cache-control": "public, max-age=120, s-maxage=120" });
+  }
+
+  const categoryMatch = pathname.match(/^\/api\/movies\/category\/([a-z0-9-]+)$/);
+  if (categoryMatch) {
+    const category = categoryMatch[1];
+    if (!MOVIE_CATALOG_CATEGORIES.has(category)) return textError("Danh muc phim khong hop le.", 400, "INVALID_CATEGORY");
+    const page = catalogPage(url.searchParams.get("page"));
+    const target = category === "phim-moi-cap-nhat"
+      ? `/danh-sach/phim-moi-cap-nhat?page=${page}`
+      : `/v1/api/danh-sach/${category}?page=${page}&limit=24`;
+    const data = await fetchCatalogJson(target);
+    return json({
+      title: category,
+      items: catalogItems(data),
+      pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1 },
+    }, 200, { "cache-control": "public, max-age=120, s-maxage=120" });
+  }
+
+  if (pathname === "/api/movies/search") {
+    const query = String(url.searchParams.get("q") || "").trim().slice(0, 100);
+    if (!query) return textError("Thieu tu khoa tim kiem.", 400, "MISSING_QUERY");
+    const page = catalogPage(url.searchParams.get("page"));
+    const data = await fetchCatalogJson(`/v1/api/tim-kiem?keyword=${encodeURIComponent(query)}&page=${page}&limit=24`);
+    return json({
+      query,
+      items: catalogItems(data),
+      pagination: data.data?.params?.pagination || { currentPage: page, totalPages: 1 },
+    }, 200, { "cache-control": "public, max-age=120, s-maxage=120" });
+  }
+
+  const detailMatch = pathname.match(/^\/api\/movies\/detail\/([^/]+)$/);
+  if (detailMatch) {
+    const slug = catalogSlug(detailMatch[1]);
+    if (!slug) return textError("Ma phim khong hop le.", 400, "INVALID_MOVIE_SLUG");
+    const data = await fetchCatalogJson(`/phim/${slug}`);
+    return json(data, 200, { "cache-control": "public, max-age=120, s-maxage=120" });
+  }
+
+  return textError("Khong tim thay du lieu phim.", 404, "MOVIE_NOT_FOUND");
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
@@ -608,6 +727,9 @@ export default {
       }
       if (request.method === "GET" && pathname === "/api/health") {
         return json({ ready: Boolean(env.DB), service: "phim4k-license-api" });
+      }
+      if (request.method === "GET" && pathname.startsWith("/api/movies/")) {
+        return handleMovieCatalog(request);
       }
       const missing = dbUnavailable(env);
       if (missing) return missing;
@@ -637,7 +759,7 @@ export default {
       if (request.method === "POST" && pathname === "/api/admin/unban-user") return setBan(request, env, false);
       if ((request.method === "GET" || request.method === "DELETE") && pathname === "/api/admin/logs") return handleLogs(request, env);
       if (request.method === "POST" && pathname === "/api/admin/set-force-update") return handleForceUpdate(request, env);
-      if (pathname.startsWith("/api/movies/") || pathname === "/api/stream/proxy" || pathname === "/api/admin/content-status" || pathname === "/api/admin/refresh-movies") return handleMovieFallback(request);
+      if (pathname === "/api/stream/proxy" || pathname === "/api/admin/content-status" || pathname === "/api/admin/refresh-movies") return handleMovieFallback(request);
       return textError("Không tìm thấy endpoint.", 404, "NOT_FOUND");
     } catch (error) {
       return textError("Backend gặp lỗi nội bộ.", 500, "INTERNAL_ERROR");

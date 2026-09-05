@@ -328,10 +328,12 @@ function switchTab(tabId) {
 }
 
 function renderAccountTab() {
-  const teleId = localStorage.getItem('phim4k_telegram_id') || 'Chưa đăng nhập';
-  const plan = localStorage.getItem('phim4k_plan') || 'Chưa kích hoạt';
-  const key = localStorage.getItem('phim4k_key') || 'Chưa có key';
-  const isSuperAdmin = Boolean(window.Auth?.activeKeyData?.isAdmin);
+  const session = window.Auth?.activeKeyData;
+  const isAuthenticated = Boolean(session?.active !== false && session?.telegramId && session?.key);
+  const teleId = isAuthenticated ? String(session.telegramId) : 'Chưa đăng nhập';
+  const plan = isAuthenticated ? (session.isAdmin ? 'SUPER ADMIN' : (session.plan || 'VIP')) : 'Chưa kích hoạt';
+  const key = isAuthenticated ? `${String(session.key).slice(0, 4)}••••${String(session.key).slice(-4)}` : 'Chưa có key';
+  const isSuperAdmin = Boolean(isAuthenticated && session.isAdmin);
 
   const teleEl = document.getElementById('accTelegramId');
   const planEl = document.getElementById('accPlan');
@@ -341,6 +343,8 @@ function renderAccountTab() {
   if (teleEl) teleEl.textContent = teleId;
   if (planEl) planEl.textContent = isSuperAdmin ? '👑 SUPER ADMIN' : plan;
   if (keyEl) keyEl.textContent = key;
+  const versionEl = document.getElementById('accAppVersion');
+  if (versionEl) versionEl.textContent = `v${window.API?.getVersion?.() || '3.3.0'}`;
 
   if (adminBtn) {
     adminBtn.classList.toggle('hidden', !isSuperAdmin);

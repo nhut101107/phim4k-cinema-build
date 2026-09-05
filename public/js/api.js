@@ -14,7 +14,29 @@ const API = {
   },
 
   getVersion() {
-    return '3.2.0';
+    return '3.3.0';
+  },
+
+  async fetchWithTimeout(input, options = {}, timeoutMs = 15000) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(input, { ...options, signal: controller.signal });
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  },
+
+  async fetchJson(input, options = {}, timeoutMs = 15000) {
+    const response = await this.fetchWithTimeout(input, options, timeoutMs);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(payload.message || payload.error || `HTTP ${response.status}`);
+      error.status = response.status;
+      error.payload = payload;
+      throw error;
+    }
+    return payload;
   },
 
   async request(endpoint, options = {}) {
@@ -32,16 +54,20 @@ const API = {
     };
 
     try {
-      const res = await fetch(endpoint, { ...options, headers });
-      if (res.status === 401 || res.status === 403) {
-        const errorData = await res.json().catch(() => ({}));
-        Auth.triggerLock(errorData.message || 'Khóa kích hoạt không hợp lệ hoặc đã hết hạn!');
-        throw new Error(errorData.error || 'UNAUTHORIZED_KEY');
+      const response = await this.fetchWithTimeout(endpoint, { ...options, headers });
+      const payload = await response.json().catch(() => ({}));
+      if (response.status === 401 || response.status === 403) {
+        Auth.triggerLock(payload.message || 'Khóa kích hoạt không hợp lệ hoặc đã hết hạn!');
+        const error = new Error(payload.error || 'UNAUTHORIZED_KEY');
+        error.status = response.status;
+        throw error;
       }
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
+      if (!response.ok) {
+        const error = new Error(payload.message || payload.error || `HTTP ${response.status}`);
+        error.status = response.status;
+        throw error;
       }
-      return await res.json();
+      return payload;
     } catch (err) {
       console.warn(`Local API [${endpoint}] unavailable, using direct client-side fallback:`, err.message);
       throw err;
@@ -52,20 +78,24 @@ const API = {
   // accept a key locally when the licensing API is unavailable.
   async activate(key, telegramId, deviceId) {
     try {
-      const res = await fetch('/api/auth/activate', {
+      const response = await this.fetchWithTimeout('/api/auth/activate', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
           'x-app-version': this.getVersion()
         },
         body: JSON.stringify({ key, telegramId, deviceId })
-      });
-      if (res.ok) {
-        return await res.json();
+      }, 15000);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return {
+          success: false,
+          code: payload.code || 'ACTIVATION_REJECTED',
+          message: payload.message || payload.error || 'Không thể xác thực key hoặc Telegram ID.'
+        };
       }
-      const errRes = await res.json().catch(() => ({}));
-      return errRes;
-    } catch (_err) {
+      return payload;
+    } catch (err) {
       return {
         success: false,
         code: 'LICENSE_SERVER_UNAVAILABLE',
@@ -76,10 +106,10 @@ const API = {
 
   async checkStatus(key, telegramId, deviceId) {
     try {
-      const res = await fetch(`/api/auth/status?key=${encodeURIComponent(key)}&telegramId=${encodeURIComponent(telegramId)}&deviceId=${encodeURIComponent(deviceId)}&version=${encodeURIComponent(this.getVersion())}`, {
+      const response = await this.fetchWithTimeout(`/api/auth/status?key=${encodeURIComponent(key)}&telegramId=${encodeURIComponent(telegramId)}&deviceId=${encodeURIComponent(deviceId)}&version=${encodeURIComponent(this.getVersion())}`, {
         headers: { 'x-app-version': this.getVersion() }
-      });
-      if (res.ok) return await res.json();
+      }, 12000);
+      return await response.json().catch(() => ({ active: false, code: 'INVALID_SERVER_RESPONSE' }));
     } catch (err) {}
 
     return { active: false, isAdmin: false, plan: 'OFFLINE' };
@@ -87,10 +117,28 @@ const API = {
 
   async checkUpdate(version = this.getVersion()) {
     try {
-      const res = await fetch(`/api/app/check-update?version=${encodeURIComponent(version)}`);
-      if (res.ok) return await res.json();
+      const response = await this.fetchWithTimeout(`/api/app/check-update?version=${encodeURIComponent(version)}`, {}, 12000);
+      if (response.ok) return await response.json();
     } catch (err) {}
     return { isLatest: true, currentVersion: version, latestVersion: version };
+  },
+
+  getBundledHomeFeed() {
+    const items = Array.isArray(window.PHIM4K_CATALOG_FALLBACK) ? window.PHIM4K_CATALOG_FALLBACK : [];
+    return {
+      updatedAt: new Date().toISOString(),
+      hero: items.slice(0, 5),
+      sections: [
+        { id: 'latest', title: 'Phim moi cap nhat', items },
+        { id: 'movies', title: 'Phim de cu', items: items.slice(0, 6) },
+        { id: 'series', title: 'Phim bo va hoat hinh', items: items.slice(2) }
+      ]
+    };
+  },
+
+  getBundledMovie(slug) {
+    const items = Array.isArray(window.PHIM4K_CATALOG_FALLBACK) ? window.PHIM4K_CATALOG_FALLBACK : [];
+    return items.find((item) => item.slug === slug) || null;
   },
 
   // Movies: Direct standalone fallback to live public movie API
@@ -98,18 +146,24 @@ const API = {
     try {
       return await this.request('/api/movies/home');
     } catch (err) {
+      // Capacitor cannot use the catalog directly because it has no CORS
+      // permission.  Do not leave the screen spinning while a rate-limited
+      // relay recovers; render the bundled metadata immediately instead.
+      if (window.Phim4KRuntime?.apiBaseUrl) return this.getBundledHomeFeed();
       console.log('Fetching live movie feed directly from phimapi.com...');
       const [latestRes, movieRes, seriesRes, animeRes] = await Promise.allSettled([
-        fetch('https://phimapi.com/danh-sach/phim-moi-cap-nhat?page=1').then(r => r.json()),
-        fetch('https://phimapi.com/v1/api/danh-sach/phim-le?page=1&limit=16').then(r => r.json()),
-        fetch('https://phimapi.com/v1/api/danh-sach/phim-bo?page=1&limit=16').then(r => r.json()),
-        fetch('https://phimapi.com/v1/api/danh-sach/hoat-hinh?page=1&limit=16').then(r => r.json())
+        this.fetchJson('https://phimapi.com/danh-sach/phim-moi-cap-nhat?page=1'),
+        this.fetchJson('https://phimapi.com/v1/api/danh-sach/phim-le?page=1&limit=16'),
+        this.fetchJson('https://phimapi.com/v1/api/danh-sach/phim-bo?page=1&limit=16'),
+        this.fetchJson('https://phimapi.com/v1/api/danh-sach/hoat-hinh?page=1&limit=16')
       ]);
 
       const latestItems = latestRes.status === 'fulfilled' ? latestRes.value.items || [] : [];
       const movieItems = movieRes.status === 'fulfilled' ? movieRes.value.data?.items || [] : [];
       const seriesItems = seriesRes.status === 'fulfilled' ? seriesRes.value.data?.items || [] : [];
       const animeItems = animeRes.status === 'fulfilled' ? animeRes.value.data?.items || [] : [];
+
+      if (!latestItems.length) return this.getBundledHomeFeed();
 
       // Hero banner items
       const hero = latestItems.slice(0, 8).map(m => ({
@@ -122,22 +176,6 @@ const API = {
         quality: m.quality || '4K Ultra HD',
         episode_current: m.episode_current || 'Bản Chiếu Rạp'
       }));
-
-      // If Spider-Man is not first, add a featured spider-man item for perfect photo fidelity
-      if (!hero.some(h => h.slug.includes('nhen'))) {
-        hero.unshift({
-          name: 'Người Nhện: Khởi Đầu Mới',
-          slug: 'nguoi-nhen-khoi-dau-moi',
-          origin_name: 'Spider-Man: Brand New Day',
-          poster_url: 'https://images.unsplash.com/photo-1635805737707-575885ab0820?w=600',
-          thumb_url: 'https://images.unsplash.com/photo-1635805737707-575885ab0820?w=600',
-          year: '2026',
-          quality: 'CAM',
-          episode_current: 'Full',
-          category: ['Phim Hành Động', 'Phim Khoa Học Viễn Tưởng'],
-          content: 'Không còn Tony Stark, MJ hay Ned kề cận, Peter buộc phải đứng dậy bảo vệ thành phố một lần nữa...'
-        });
-      }
 
       return {
         hero,
@@ -155,11 +193,19 @@ const API = {
     try {
       return await this.request(`/api/movies/category/${category}?page=${page}`);
     } catch (err) {
+      if (window.Phim4KRuntime?.apiBaseUrl) {
+        return { title: category, items: this.getBundledHomeFeed().sections.flatMap((section) => section.items), pagination: { currentPage: 1, totalPages: 1 } };
+      }
       const url = category === 'phim-moi-cap-nhat' 
         ? `https://phimapi.com/danh-sach/phim-moi-cap-nhat?page=${page}`
         : `https://phimapi.com/v1/api/danh-sach/${category}?page=${page}&limit=24`;
-      const res = await fetch(url);
-      const data = await res.json();
+      let data;
+      try {
+        data = await this.fetchJson(url);
+      } catch (_error) {
+        const items = this.getBundledHomeFeed().sections.flatMap((section) => section.items);
+        return { title: category, items, pagination: { currentPage: 1, totalPages: 1 } };
+      }
       return {
         title: category,
         items: data.items || data.data?.items || [],
@@ -172,8 +218,19 @@ const API = {
     try {
       return await this.request(`/api/movies/search?q=${encodeURIComponent(query)}&page=${page}`);
     } catch (err) {
-      const res = await fetch(`https://phimapi.com/v1/api/tim-kiem?keyword=${encodeURIComponent(query)}&page=${page}&limit=24`);
-      const data = await res.json();
+      if (window.Phim4KRuntime?.apiBaseUrl) {
+        const term = String(query || '').toLocaleLowerCase();
+        const items = this.getBundledHomeFeed().sections[0].items.filter((item) => `${item.name} ${item.origin_name}`.toLocaleLowerCase().includes(term));
+        return { query, items, pagination: { currentPage: 1, totalPages: 1 } };
+      }
+      let data;
+      try {
+        data = await this.fetchJson(`https://phimapi.com/v1/api/tim-kiem?keyword=${encodeURIComponent(query)}&page=${page}&limit=24`);
+      } catch (_error) {
+        const term = String(query || '').toLocaleLowerCase();
+        const items = this.getBundledHomeFeed().sections[0].items.filter((item) => `${item.name} ${item.origin_name}`.toLocaleLowerCase().includes(term));
+        return { query, items, pagination: { currentPage: 1, totalPages: 1 } };
+      }
       return {
         query,
         items: data.data?.items || [],
@@ -186,9 +243,17 @@ const API = {
     try {
       return await this.request(`/api/movies/detail/${slug}`);
     } catch (err) {
-      const res = await fetch(`https://phimapi.com/phim/${slug}`);
-      const data = await res.json();
-      return data;
+      if (window.Phim4KRuntime?.apiBaseUrl) {
+        const movie = this.getBundledMovie(slug);
+        if (movie) return { movie, episodes: [] };
+      }
+      try {
+        return await this.fetchJson(`https://phimapi.com/phim/${slug}`);
+      } catch (_error) {
+        const movie = this.getBundledMovie(slug);
+        if (movie) return { movie, episodes: [] };
+        throw _error;
+      }
     }
   }
 };

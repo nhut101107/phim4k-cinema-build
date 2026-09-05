@@ -92,6 +92,9 @@ const App = {
 
     try {
       const data = await API.getHomeFeed();
+      const sections = Array.isArray(data?.sections) ? data.sections : [];
+      const hasMovies = sections.some((section) => Array.isArray(section?.items) && section.items.length > 0);
+      if (!hasMovies) throw new Error('MOVIE_CATALOG_EMPTY');
       this.homeFeedUpdatedAt = data.updatedAt || new Date().toISOString();
       this.heroList = data.hero || [];
       if (this.heroList.length > 0) {
@@ -107,7 +110,7 @@ const App = {
       }
 
       container.innerHTML = '';
-      (data.sections || []).forEach(sec => {
+      sections.forEach(sec => {
         const secEl = this.createSectionElement(sec);
         container.appendChild(secEl);
       });

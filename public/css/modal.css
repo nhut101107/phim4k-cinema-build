@@ -28,7 +28,7 @@
   overflow: hidden;
   box-shadow: 0 30px 60px rgba(0, 0, 0, 0.8);
   animation: slideUpModal 0.25s ease-out;
-  max-height: 90vh;
+  max-height: calc(100dvh - 32px);
   display: flex;
   flex-direction: column;
 }
@@ -64,13 +64,13 @@
 
 /* Movie Detail Modal */
 .movie-detail-dialog {
-  width: 95%;
+  width: min(95%, 1160px);
   max-width: 1160px;
 }
 
 .detail-header {
   position: relative;
-  height: 290px;
+  height: clamp(190px, 29vw, 290px);
   overflow: hidden;
   background: #111827;
 }
@@ -124,6 +124,9 @@
 .detail-body {
   padding: 0 40px 40px;
   overflow-y: auto;
+  min-height: 0;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .detail-main {
@@ -405,9 +408,18 @@
 }
 
 @media (max-width: 640px) {
-  .detail-main { flex-direction: column; align-items: center; text-align: center; }
-  .detail-poster-col { width: 140px; }
-  .detail-badges { justify-content: center; }
+  .modal-overlay { align-items: flex-start; padding: 10px; }
+  .movie-detail-dialog { width: 100%; max-height: calc(100dvh - 20px); border-radius: 18px; }
+  .modal-close-btn { top: 10px; right: 10px; width: 34px; height: 34px; }
+  .detail-header { height: 180px; }
+  .detail-quick-play { left: 20px; bottom: 18px; }
+  .detail-body { padding: 0 18px 28px; }
+  .detail-main { flex-direction: row; align-items: flex-end; text-align: left; gap: 16px; margin-top: -46px; margin-bottom: 24px; }
+  .detail-poster-col { width: 112px; }
+  .detail-title { font-size: 22px; }
+  .detail-origin { font-size: 13px; margin-bottom: 9px; }
+  .detail-badges { justify-content: flex-start; gap: 5px; }
+  .detail-synopsis { font-size: 13px; }
   .detail-meta-grid { grid-template-columns: 1fr; }
 }
 
@@ -1335,7 +1347,6 @@
   border-color: rgba(239, 68, 68, 0.4) !important;
   background: rgba(239, 68, 68, 0.04) !important;
 }
-
 
 
 
