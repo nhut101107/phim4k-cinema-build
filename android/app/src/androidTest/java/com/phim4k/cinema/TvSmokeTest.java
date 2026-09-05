@@ -47,13 +47,16 @@ public class TvSmokeTest {
                 Thread.sleep(500);
             }
             assertTrue("Original video could not be decoded", decoded);
-            js(activity, "Capacitor.registerPlugin('ReleaseDownloads').status().then(r=>window.qaDownloadState=r.status).catch(()=>window.qaDownloadState='error'); true");
+            js(activity, "Phim4KNativeDownloads.status().then(r=>window.qaDownloadState=r.status).catch(e=>window.qaDownloadState='error: '+e.message); true");
             boolean downloadBridge = false;
             for (int i = 0; i < 20; i++) {
                 if ("true".equals(js(activity, "window.qaDownloadState === 'missing'"))) { downloadBridge = true; break; }
                 Thread.sleep(250);
             }
-            assertTrue("Native downloader bridge unavailable", downloadBridge);
+            assertTrue("Native downloader bridge unavailable: " + js(activity, "window.qaDownloadState || 'no response'"), downloadBridge);
+            js(activity, "Capacitor.Plugins.ReleaseDownloads.install().then(()=>window.qaInstallGuard='unsafe').catch(()=>window.qaInstallGuard='blocked'); true");
+            for (int i = 0; i < 20 && !"\"blocked\"".equals(js(activity, "window.qaInstallGuard")); i++) Thread.sleep(250);
+            assertEquals("\"blocked\"", js(activity, "window.qaInstallGuard"));
         } finally { activity.runOnUiThread(activity::finish); }
     }
 }

@@ -5,7 +5,7 @@ const fs = require('node:fs');
 test('TV downloader shows completion and requires explicit installation click', async () => {
   let installs = 0;
   const plugin = { start: async () => ({ status: 'complete' }), install: async () => { installs++; return { needsPermission: true }; } };
-  const window = { Capacitor: { getPlatform: () => 'android', registerPlugin: () => plugin } };
+  const window = { Capacitor: { getPlatform: () => 'android', Plugins: { ReleaseDownloads: plugin } } };
   const context = { window, navigator: { userAgent: 'Android Phim4KTV' }, setTimeout };
   vm.runInNewContext(fs.readFileSync('public/js/native-downloads.js', 'utf8'), context);
   const button = { removeAttribute() {}, textContent: '' };
@@ -16,6 +16,20 @@ test('TV downloader shows completion and requires explicit installation click', 
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(installs, 1);
   assert.match(button.textContent, /Cho phép cài đặt/);
+});
+
+test('unbundled Android bridge exposes status without registerPlugin', async () => {
+  const window = { Capacitor: { getPlatform: () => 'android', Plugins: { ReleaseDownloads: { status: async () => ({ status: 'missing' }) } } } };
+  vm.runInNewContext(fs.readFileSync('public/js/native-downloads.js', 'utf8'), { window, navigator: { userAgent: 'Phim4KTV' }, setTimeout });
+  assert.equal((await window.Phim4KNativeDownloads.status()).status, 'missing');
+});
+
+test('absent native plugin produces a visible error rather than an unhandled rejection', async () => {
+  const window = { Capacitor: { getPlatform: () => 'android' } };
+  vm.runInNewContext(fs.readFileSync('public/js/native-downloads.js', 'utf8'), { window, navigator: { userAgent: 'Phim4KTV' }, setTimeout });
+  const button = { removeAttribute() {}, textContent: '' };
+  await window.Phim4KNativeDownloads.open(button, 'https://example.com/a.apk');
+  assert.match(button.textContent, /Chưa kết nối/);
 });
 test('TV downloader makes failure visible and allows a retry', async () => {
   const window = { Capacitor: { getPlatform: () => 'android', registerPlugin: () => ({ start: async () => { throw new Error('Không có mạng'); } }) } };

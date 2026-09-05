@@ -1,11 +1,18 @@
 (() => {
   let native;
+  const plugin = () => {
+    // The unbundled Android bridge exports Plugins, not registerPlugin.
+    native ||= window.Capacitor?.Plugins?.ReleaseDownloads
+      || window.Capacitor?.registerPlugin?.('ReleaseDownloads');
+    if (!native) throw new Error('Chưa kết nối được bộ tải APK. Hãy mở lại ứng dụng.');
+    return native;
+  };
   const jobs = new Map();
   window.Phim4KNativeDownloads = {
     supported() { return /Phim4KTV/.test(navigator.userAgent) && window.Capacitor?.getPlatform?.() === 'android'; },
+    async status() { return plugin().status(); },
     async open(button, url) {
       if (jobs.has(url)) return;
-      native ||= window.Capacitor.registerPlugin('ReleaseDownloads');
       let installing = false;
       const install = async () => {
         if (installing) return;
@@ -20,6 +27,7 @@
       button.removeAttribute('href');
       button.textContent = 'Bắt đầu tải APK…';
       try {
+        plugin();
         let state = await native.start({ url });
         for (let attempt = 0; attempt < 180; attempt++) {
           if (state.status === 'complete') { button.textContent = 'Đã tải xong · Bấm kiểm tra và cài đặt'; button.onclick = e => { e.preventDefault(); void install(); }; return; }
