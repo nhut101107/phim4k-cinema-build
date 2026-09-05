@@ -116,8 +116,9 @@
   cursor: pointer;
   touch-action: manipulation;
 }
-.player-center-toggle svg { width: 32px; height: 32px; }
-.cinema-player-wrapper.inactive .player-center-toggle { opacity: 0; visibility: hidden; pointer-events: none; }
+.player-center-toggle svg { width: 32px; height: 32px; pointer-events: none; }
+.cinema-player-wrapper.inactive .player-center-toggle { opacity: 0; }
+.cinema-player-wrapper .player-center-toggle:focus-visible { opacity: 1; outline: 2px solid #facc15; }
 @media (orientation: portrait) {
   .cinema-player-wrapper:not(.cinema-fullscreen) .player-center-toggle {
     top: calc(max(62px, calc(env(safe-area-inset-top) + 54px)) + min(28.125vw, calc((100dvh - 224px) / 2)));
@@ -370,7 +371,7 @@ video::cue {
 .ctrl-btn-text:hover, .btn-player-server:hover { background: rgba(255, 255, 255, .23); }
 .volume-container { display: flex; align-items: center; gap: 2px; }
 .volume-slider { width: 72px; accent-color: #e50914; }
-.time-display { color: #e5e7eb; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.time-display { display: block; margin: 0 0 6px; color: #e5e7eb; font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 .dropdown-control { position: relative; }
 .ctrl-dropdown {
@@ -419,7 +420,7 @@ video::cue {
   .controls-row { gap: 4px; }
   .controls-left, .controls-right { gap: 2px; }
   .ctrl-btn { width: 38px; height: 38px; }
-  .volume-slider, .time-display { display: none; }
+  .volume-slider { display: none; }
   #btnAspectFit { padding-inline: 8px; }
   .ctrl-btn-text, .btn-player-server { min-height: 32px; font-size: 11px; }
 }
@@ -442,5 +443,5 @@ video::cue {
   .ctrl-btn { width: 34px; height: 34px; }
   .ctrl-btn svg { width: 20px; height: 20px; }
   .ctrl-btn-text { min-height: 30px; padding: 4px 8px; }
-  .volume-slider, .time-display { display: none; }
+  .volume-slider { display: none; }
 }

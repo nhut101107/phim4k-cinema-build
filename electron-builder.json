@@ -1,8 +1,8 @@
 {
   "appId": "com.phim4k.cinema.desktop",
   "productName": "Phim4K Cinema",
-  "extraMetadata": { "main": "desktop/main.cjs", "version": "3.4.16", "dependencies": {} },
-  "directories": { "output": "builds/windows-3.4.16" },
+  "extraMetadata": { "main": "desktop/main.cjs", "version": "3.4.17", "dependencies": {} },
+  "directories": { "output": "builds/windows-3.4.17" },
   "files": ["desktop/**", "public/**", "!public/standalone.html", "package.json"],
   "asar": true,
   "electronFuses": {

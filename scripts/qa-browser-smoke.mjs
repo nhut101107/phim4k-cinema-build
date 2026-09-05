@@ -155,8 +155,11 @@ socket.addEventListener('message', (event) => {
   }
   if (message.method === 'Network.loadingFailed') {
     const url = requestUrls.get(message.params.requestId) || '';
-    if (releasingFixture && message.params.canceled && message.params.errorText === 'net::ERR_ABORTED' && url === `http://127.0.0.1:${webPort}/media/qa-seek.mp4`) {
-      expectedMediaCancellations.push({url,reason:'intentional range seek/player close/audio element disposal'}); return;
+    // The local seek fixture is deliberately paused, sought and unloaded. CDP
+    // may deliver its cancellation after teardown; actual decode/seek/resume
+    // assertions remain mandatory. Never exempt production URLs or HTTP errors.
+    if (message.params.canceled && message.params.errorText === 'net::ERR_ABORTED' && url === `http://127.0.0.1:${webPort}/media/qa-seek.mp4`) {
+      expectedMediaCancellations.push({url,duringAction:releasingFixture,reason:'local seek fixture lifecycle; decode/seek/resume asserted separately'}); return;
     }
     if (/127\.0\.0\.1|phim4k-license-api|phimimg\.com/.test(url)) failedRequests.push({ url, error: message.params.errorText });
   }
@@ -428,8 +431,19 @@ try {
   await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await delay(300);
   playerInteractionState.outsideDoesNotPause = await evaluate('!Player.video.paused');
-  await evaluate("Player.resetInactivityTimer(); document.getElementById('btnCenterPlayPause').click()");
+  await delay(400);
+  await evaluate('Player.resetInactivityTimer()');
+  await evaluate(`Player.onSurfaceTap({detail:1,clientX:Player.video.getBoundingClientRect().left+10,timeStamp:performance.now()})`);
+  const centerTarget = await evaluate(`(() => { const r=document.getElementById('btnCenterPlayPause').getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2}; })()`);
+  await evaluate("Player.wrapper.classList.add('inactive')");
+  releasingFixture = true; // Pausing may cancel the in-flight preload range; playback is asserted below.
+  await send('Input.dispatchTouchEvent', {type:'touchStart',touchPoints:[centerTarget]});
+  await send('Input.dispatchTouchEvent', {type:'touchEnd',touchPoints:[]});
+  await delay(400);
   playerInteractionState.centerPauses = await evaluate('Player.video.paused');
+  playerInteractionState.clockVisible = await evaluate(`(() => { const el=document.querySelector('.time-display'), r=el.getBoundingClientRect(), p=document.getElementById('progressContainer').getBoundingClientRect(); return getComputedStyle(el).display!=='none' && r.height>0 && r.top>=p.bottom && r.bottom<innerHeight && document.getElementById('durationTime').textContent!=='00:00'; })()`);
+  if (!playerInteractionState.clockVisible) throw new Error('Landscape playback time missing below seek bar');
+  if (await evaluate("Player.wrapper.classList.contains('inactive') || !Player.video.paused")) throw new Error('Delayed surface tap hid explicit pause controls');
   await evaluate("document.getElementById('btnPlayPause').click()");
   await waitFor('!Player.video.paused', 'Bottom play control failed');
   playerInteractionState.bottomResumes = true;
@@ -605,7 +619,7 @@ try {
   await send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
   const windowsDownloads = await evaluate(`(async () => {
     const saved = API.fetchJson;
-    API.fetchJson = async () => ({ windows: { url: 'https://example.com/app.exe', version: '3.4.16' }, android_tv: { url: 'https://example.com/tv.apk', version: '3.4.16' } });
+    API.fetchJson = async () => ({ windows: { url: 'https://example.com/app.exe', version: '3.4.17' }, android_tv: { url: 'https://example.com/tv.apk', version: '3.4.17' } });
     window.PHIM4K_PLATFORM = 'windows';
     openDownloadModal(); await refreshPublicDownloads();
     const enabled = document.getElementById('btnDownloadExe').getAttribute('aria-disabled') === 'false';
@@ -631,7 +645,7 @@ try {
   const backClosed = await evaluate("Phim4KTV.back() && document.getElementById('downloadAppModal').classList.contains('hidden')");
   if (!windowsDownloads.enabled || !windowsDownloads.missingDisabled || !windowsDownloads.unsafe || !tvState.active || !tvState.focusedInModal || tvState.horizontalOverflow || !backClosed) throw new Error('Windows/TV downloads or remote smoke failed: ' + JSON.stringify({ windowsDownloads, tvState, backClosed }));
   console.log('[qa] Windows downloads and TV focus/back passed');
-  const checksPassed = homeState.version === '3.4.16'
+  const checksPassed = homeState.version === '3.4.17'
     && deviceApprovalState.unlocked
     && deviceApprovalState.deviceOnly
     && deviceApprovalState.telegramEmpty

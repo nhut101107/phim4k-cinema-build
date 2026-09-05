@@ -414,6 +414,9 @@ const Player = {
 
   togglePlayPause() {
     if (!this.video) return;
+    // A previous surface tap must not hide controls after an explicit pause.
+    this.clearSurfaceTap();
+    this.resetInactivityTimer();
     if (this.video.paused) this.video.play().catch(() => this.showAlert('Không thể phát luồng này.'));
     else this.video.pause();
   },
@@ -715,6 +718,7 @@ const Player = {
 
   clearSurfaceTap() {
     clearTimeout(this.surfaceTapTimer);
+    this.surfaceTapTimer = null;
     this.lastSurfaceTap = null;
   },
 

@@ -5,7 +5,7 @@ const crypto = require('node:crypto');
 const yauzl = require('yauzl');
 const crc32 = require('buffer-crc32');
 const plist = require('bplist-parser');
-const root = path.resolve(__dirname, '..', 'builds', 'Phim4K-3.4.16');
+const root = path.resolve(__dirname, '..', 'builds', 'Phim4K-3.4.17');
 function archive(file, inspect) {
   return new Promise((resolve, reject) => yauzl.open(file, { lazyEntries: true }, (error, zip) => {
     if (error) return reject(error);
@@ -33,8 +33,8 @@ function archive(file, inspect) {
   }));
 }
 (async () => {
-  const report = { version: '3.4.16', source: process.env.RELEASE_SOURCE || require('node:child_process').execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), checkedAt: new Date().toISOString(), files: [] };
-  for (const name of ['Phim4K-iOS-3.4.16-unsigned.ipa', 'Phim4K-Android-TV-3.4.16.apk', 'Phim4K-Windows-3.4.16-x64.exe']) {
+  const report = { version: '3.4.17', source: process.env.RELEASE_SOURCE || require('node:child_process').execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), checkedAt: new Date().toISOString(), files: [] };
+  for (const name of ['Phim4K-iOS-3.4.17-unsigned.ipa', 'Phim4K-Android-TV-3.4.17.apk', 'Phim4K-Windows-3.4.17-x64.exe']) {
     const file = path.join(root, name);
     const data = fs.readFileSync(file);
     const item = { name, bytes: data.length, sha256: crypto.createHash('sha256').update(data).digest('hex') };
@@ -47,7 +47,7 @@ function archive(file, inspect) {
         if (entry.endsWith('/js/audio-enhancer.js')) audio = bytes.toString().includes('createDynamicsCompressor');
         if (entry === 'Payload/App.app/Info.plist') {
           const info = plist.parseBuffer(bytes)[0];
-          if (info.CFBundleIdentifier !== 'com.phim4k.cinema' || info.CFBundleShortVersionString !== '3.4.16' || String(info.CFBundleVersion) !== '16') throw new Error('Incorrect IPA identity/version');
+          if (info.CFBundleIdentifier !== 'com.phim4k.cinema' || info.CFBundleShortVersionString !== '3.4.17' || String(info.CFBundleVersion) !== '17') throw new Error('Incorrect IPA identity/version');
           item.bundleId = info.CFBundleIdentifier; item.build = info.CFBundleVersion;
         }
       });
@@ -60,7 +60,7 @@ function archive(file, inspect) {
     } else if (data.toString('ascii', 0, 2) !== 'MZ') throw new Error('Not a Windows executable');
     report.files.push(item);
   }
-  const evidence = path.resolve(__dirname, '..', 'data', 'qa', 'release-3.4.16');
+  const evidence = path.resolve(__dirname, '..', 'data', 'qa', 'release-3.4.17');
   fs.mkdirSync(evidence, { recursive: true });
   fs.writeFileSync(path.join(evidence, 'SHA256SUMS.txt'), report.files.map(f => `${f.sha256}  ${f.name}`).join('\n') + '\n');
   fs.writeFileSync(path.join(evidence, 'verification.json'), JSON.stringify(report, null, 2));

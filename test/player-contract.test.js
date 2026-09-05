@@ -8,6 +8,18 @@ const player = fs.readFileSync(path.join(root, 'public/js/player.js'), 'utf8');
 const index = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'public/css/player.css'), 'utf8');
 
+test('playback clock stays below seek bar and is not hidden on mobile', () => {
+  assert.ok(index.indexOf('id="progressContainer"') < index.indexOf('id="currentTime"'));
+  assert.ok(index.indexOf('id="currentTime"') < index.indexOf('class="controls-row"'));
+  assert.doesNotMatch(css, /\.time-display\s*\{[^}]*display:\s*none/);
+  assert.equal((index.match(/id="currentTime"/g) || []).length, 1);
+});
+
+test('explicit pause cancels pending surface gestures', () => {
+  assert.match(player, /togglePlayPause\(\)\s*\{[\s\S]*?this\.clearSurfaceTap\(\);\s*this\.resetInactivityTimer\(\)/);
+  assert.match(css, /\.player-center-toggle svg\s*\{[^}]*pointer-events:\s*none/);
+});
+
 test('uses one native fullscreen path and never rotates the web player with CSS', () => {
   assert.match(player, /ScreenOrientation/);
   assert.match(player, /StatusBar/);
