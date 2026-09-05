@@ -2,6 +2,7 @@ const { app, BrowserWindow, protocol, net, session, shell, dialog } = require('e
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const fs = require('node:fs');
+const { Readable } = require('node:stream');
 const { resolveAsset, allowedExternal } = require('./policy.cjs');
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'phim4k', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
@@ -11,6 +12,21 @@ else app.whenReady().then(async () => {
   protocol.handle('phim4k', request => {
     const asset = resolveAsset(root, request.url);
     if (!asset) return new Response('Not found', { status: 404 });
+    if (path.extname(asset) === '.mp4') {
+      const size = fs.statSync(asset).size;
+      const raw = request.headers.get('range');
+      const parts = /^bytes=(\d*)-(\d*)$/.exec(raw || '');
+      let start = 0, end = size - 1;
+      if (raw) {
+        if (!parts || (!parts[1] && !parts[2])) return new Response(null, {status:416,headers:{'content-range':`bytes */${size}`}});
+        start = parts[1] ? Number(parts[1]) : Math.max(0,size-Number(parts[2]));
+        end = parts[1] && parts[2] ? Math.min(size-1,Number(parts[2])) : size-1;
+        if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end || start >= size) return new Response(null, {status:416,headers:{'content-range':`bytes */${size}`}});
+      }
+      const headers = {'content-type':'video/mp4','accept-ranges':'bytes','content-length':String(end-start+1)};
+      if (raw) headers['content-range'] = `bytes ${start}-${end}/${size}`;
+      return new Response(request.method === 'HEAD' ? null : Readable.toWeb(fs.createReadStream(asset,{start,end})), {status:raw ? 206 : 200,headers});
+    }
     return net.fetch(pathToFileURL(asset).href);
   });
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
@@ -37,7 +53,7 @@ else app.whenReady().then(async () => {
       const timer = setTimeout(() => resolve(false), 15000);
       v.addEventListener('timeupdate', () => { if (v.currentTime > 0.1 && v.videoWidth > 0) { clearTimeout(timer); resolve(true); } });
       v.addEventListener('error', () => { clearTimeout(timer); resolve(false); });
-      Player.open({name:'Original QA',slug:'qa-desktop'}, {name:'QA',link_embed:'phim4k://app/media/qa-original.mp4'});
+      Player.open({name:'Original QA',slug:'qa-desktop'}, {name:'QA',link_embed:'phim4k://app/media/qa-seek.mp4'});
     })`, true);
     report.playerInteraction = await win.webContents.executeJavaScript(`(() => {
       const v=Player.video, r=v.getBoundingClientRect();
@@ -46,7 +62,16 @@ else app.whenReady().then(async () => {
       Player.resetInactivityTimer(); document.getElementById('btnCenterPlayPause').click();
       return {fill,outsideDoesNotPause,centerPauses:v.paused};
     })()`);
-    report.pass = !failed && report.keyGate && !report.nodeExposed && report.platform === 'windows' && report.downloadFunction && report.videoDecoded && Object.values(report.playerInteraction).every(Boolean);
+    report.seek = await win.webContents.executeJavaScript(`(async () => {
+      const v=Player.video, r=v.getBoundingClientRect(); v.currentTime=12;
+      await new Promise(resolve=>setTimeout(resolve,250));
+      const start=v.currentTime;
+      const tap=x=>Player.onSurfaceTap({detail:1,clientX:r.left+r.width*x,timeStamp:performance.now()});
+      tap(.8); tap(.8); await new Promise(resolve=>setTimeout(resolve,150));
+      const right=v.currentTime; tap(.2); tap(.2); await new Promise(resolve=>setTimeout(resolve,150));
+      return {right:Math.abs(right-start-10)<.5,left:Math.abs(right-v.currentTime-10)<.5,stillPaused:v.paused,timings:[start,right,v.currentTime]};
+    })()`);
+    report.pass = !failed && report.keyGate && !report.nodeExposed && report.platform === 'windows' && report.downloadFunction && report.videoDecoded && Object.values(report.playerInteraction).every(Boolean) && Object.values(report.seek).every(Boolean);
     fs.mkdirSync(path.join(app.getPath('userData'), 'qa'), { recursive: true });
     fs.writeFileSync(path.join(app.getPath('userData'), 'qa', 'desktop-smoke.json'), JSON.stringify(report, null, 2));
     app.exit(report.pass ? 0 : 1);

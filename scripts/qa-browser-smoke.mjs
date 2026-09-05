@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { createReadStream, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createReadStream, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -62,7 +62,17 @@ const staticServer = createServer((request, response) => {
     response.writeHead(404).end('Not found');
     return;
   }
+  const size = statSync(target).size;
+  const range = /^bytes=(\d+)-(\d*)$/.exec(request.headers.range || '');
+  if (range) {
+    const start = Number(range[1]), end = range[2] ? Math.min(size-1,Number(range[2])) : size-1;
+    if (start > end || start >= size) { response.writeHead(416,{'content-range':`bytes */${size}`}).end(); return; }
+    response.writeHead(206, {'content-type':mimeTypes.get(extname(target)) || 'application/octet-stream','accept-ranges':'bytes','content-range':`bytes ${start}-${end}/${size}`,'content-length':end-start+1});
+    createReadStream(target,{start,end}).pipe(response); return;
+  }
   response.writeHead(200, {
+    'content-length': size,
+    'accept-ranges': 'bytes',
     'content-type': mimeTypes.get(extname(target)) || 'application/octet-stream',
     'cache-control': 'no-store',
   });
@@ -114,6 +124,8 @@ const exceptions = [];
 const consoleErrors = [];
 const requestUrls = new Map();
 const failedRequests = [];
+const expectedMediaCancellations = [];
+let releasingFixture = false;
 const badResponses = [];
 
 socket.addEventListener('message', (event) => {
@@ -143,6 +155,9 @@ socket.addEventListener('message', (event) => {
   }
   if (message.method === 'Network.loadingFailed') {
     const url = requestUrls.get(message.params.requestId) || '';
+    if (releasingFixture && message.params.canceled && message.params.errorText === 'net::ERR_ABORTED' && url === `http://127.0.0.1:${webPort}/media/qa-seek.mp4`) {
+      expectedMediaCancellations.push({url,reason:'intentional range seek/player close/audio element disposal'}); return;
+    }
     if (/127\.0\.0\.1|phim4k-license-api|phimimg\.com/.test(url)) failedRequests.push({ url, error: message.params.errorText });
   }
   if (message.method === 'Network.responseReceived') {
@@ -213,6 +228,8 @@ try {
   // The telemetry endpoint's authentication and sanitization are covered by
   // the Worker integration test with a server-side fixture database.
   await evaluate('window.API.trackUsage = () => {}');
+  // Use an original local trailer fixture, never a substitute in production.
+  await evaluate(`(() => { const original = API.getDetail.bind(API); API.getDetail = async (...args) => { const data = await original(...args); return {...data, movie: {...data.movie, trailer_url: location.origin + '/media/qa-original.mp4'}}; }; })()`);
 
   process.stderr.write('[qa] checking key-only device approval unlock\n');
   const deviceApprovalState = await evaluate(`(async () => {
@@ -347,6 +364,8 @@ try {
   await waitFor('document.querySelectorAll("#episodesList .ep-btn").length > 0', 'Movie detail did not load episodes');
   await waitFor('document.getElementById("detailPoster").complete && document.getElementById("detailPoster").naturalWidth > 0', 'Detail poster did not load');
   await waitFor("getComputedStyle(document.getElementById('detailBackdrop')).backgroundImage !== 'none'", 'Detail backdrop did not load');
+  await waitFor("document.querySelector('#detailTrailerMedia video')?.videoWidth > 0", 'Original trailer did not decode');
+  const trailerState = await evaluate("({ decoded: document.querySelector('#detailTrailerMedia video').videoWidth > 0, muted: document.querySelector('#detailTrailerMedia video').muted })");
   const detailState = await evaluate(`(() => ({
     title: document.getElementById('detailName').textContent,
     episodes: document.querySelectorAll('#episodesList .ep-btn').length,
@@ -366,6 +385,8 @@ try {
     return { width: rect.width, height: rect.height, hittable };
   })()`);
   await waitFor("document.getElementById('movieModal').classList.contains('hidden')", 'Movie detail close button did not work');
+  trailerState.stoppedOnClose = await evaluate("!document.querySelector('#detailTrailerMedia video, #detailTrailerMedia iframe')");
+  if (!trailerState.stoppedOnClose || !trailerState.muted) throw new Error('Trailer lifecycle regression');
   await evaluate("window.App.openMovieDetail('tuyet-the-chien-hon')");
   await waitFor('document.querySelectorAll("#episodesList .ep-btn").length > 0', 'Movie detail did not reopen');
 
@@ -395,7 +416,7 @@ try {
   await evaluate(`(() => {
     localStorage.removeItem('phim4k-player-fit');
     Player.video.muted = true; Player.video.loop = true;
-    Player.open({ name: 'Original QA', slug: 'qa-touch' }, { name: 'QA', link_embed: location.origin + '/media/qa-original.mp4' });
+    Player.open({ name: 'Original QA', slug: 'qa-touch' }, { name: 'QA', link_embed: location.origin + '/media/qa-seek.mp4' });
     return Player.enterCinemaFullscreen();
   })()`);
   await waitFor('!Player.video.paused && Player.video.currentTime > 0.1', 'Original QA video did not play');
@@ -412,15 +433,45 @@ try {
   await evaluate("document.getElementById('btnPlayPause').click()");
   await waitFor('!Player.video.paused', 'Bottom play control failed');
   playerInteractionState.bottomResumes = true;
+  releasingFixture = true; // Browser cancels old byte ranges when seeking this local fixture.
+  await evaluate('Player.video.currentTime = 12');
+  await delay(150);
+  const beforeSeek = await evaluate('Player.video.currentTime');
+  for (let i=0;i<2;i++) {
+    await send('Input.dispatchTouchEvent', {type:'touchStart',touchPoints:[{x:690,y:145}]});
+    await send('Input.dispatchTouchEvent', {type:'touchEnd',touchPoints:[]});
+    await delay(70);
+  }
+  const afterSeek = await evaluate('Player.video.currentTime');
+  playerInteractionState.doubleRight = afterSeek-beforeSeek > 9.7 && afterSeek-beforeSeek < 11.2;
+  for (let i=0;i<2;i++) {
+    await send('Input.dispatchTouchEvent', {type:'touchStart',touchPoints:[{x:170,y:145}]});
+    await send('Input.dispatchTouchEvent', {type:'touchEnd',touchPoints:[]});
+    await delay(70);
+  }
+  const afterBack = await evaluate('Player.video.currentTime');
+  playerInteractionState.doubleLeft = afterSeek-afterBack > 9 && afterSeek-afterBack < 10.4;
+  if (!playerInteractionState.doubleRight || !playerInteractionState.doubleLeft || await evaluate('Player.video.paused')) throw new Error('Real double tap seek failed: '+JSON.stringify({beforeSeek,afterSeek,afterBack}));
+  await send('Runtime.evaluate', {expression:"Player.toggleAudioMode()",awaitPromise:true,userGesture:true});
+  playerInteractionState.audioEnabled = await evaluate("document.getElementById('btnAudioMode').textContent === 'Rõ thoại'");
+  if (!playerInteractionState.audioEnabled) throw new Error('Audio enhancement did not enable for local fixture');
   await evaluate('Player.toggleAspectRatio()');
   await send('Emulation.setDeviceMetricsOverride', { width: 852, height: 393, screenWidth: 852, screenHeight: 393, deviceScaleFactor: 1, mobile: true });
   await delay(100);
   playerInteractionState.fitPreferenceSurvivesResize = await evaluate("Player.aspectMode === 'contain' && getComputedStyle(Player.video).objectFit === 'contain'");
+  await evaluate('Player.resetInactivityTimer(); Player.updateSubtitleSafeArea()');
+  playerInteractionState.subtitleClear = await evaluate("Player.video.getBoundingClientRect().bottom <= document.getElementById('playerControls').getBoundingClientRect().top - 8");
+  if (!playerInteractionState.subtitleClear) throw new Error('Fit mode subtitle strip overlaps controls');
   await evaluate("Player.toggleAspectRatio(); Player.resetInactivityTimer()");
   const fillScreenshot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
   writeFileSync(resolve(projectRoot, 'data/qa/phim4k-player-fill.png'), Buffer.from(fillScreenshot.data, 'base64'));
   if (!playerInteractionState.fill || Math.abs(playerInteractionState.width - playerInteractionState.viewportWidth) > 1 || Math.abs(playerInteractionState.height - playerInteractionState.viewportHeight) > 1 || !playerInteractionState.outsideDoesNotPause || !playerInteractionState.centerPauses || !playerInteractionState.fitPreferenceSurvivesResize) throw new Error('Player interaction/fullscreen regression: ' + JSON.stringify(playerInteractionState));
+  releasingFixture = true;
   await evaluate("Player.close(); Player.video.loop = false; localStorage.removeItem('phim4k-player-fit')");
+  await evaluate("Player.video.muted=true; Player.open({name:'QA reload',slug:'qa-reload'}, {name:'QA',link_embed:location.origin+'/media/qa-original.mp4'})");
+  await waitFor('!Player.video.paused && Player.video.currentTime > .1','Video did not recover after audio graph disposal');
+  await evaluate('Player.close()');
+  releasingFixture = false;
   await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, screenWidth: 390, screenHeight: 844, deviceScaleFactor: 3, mobile: true });
 
   process.stderr.write('[qa] checking admin tabs, device request, and close controls\n');
@@ -554,7 +605,7 @@ try {
   await send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
   const windowsDownloads = await evaluate(`(async () => {
     const saved = API.fetchJson;
-    API.fetchJson = async () => ({ windows: { url: 'https://example.com/app.exe', version: '3.4.15' }, android_tv: { url: 'https://example.com/tv.apk', version: '3.4.15' } });
+    API.fetchJson = async () => ({ windows: { url: 'https://example.com/app.exe', version: '3.4.16' }, android_tv: { url: 'https://example.com/tv.apk', version: '3.4.16' } });
     window.PHIM4K_PLATFORM = 'windows';
     openDownloadModal(); await refreshPublicDownloads();
     const enabled = document.getElementById('btnDownloadExe').getAttribute('aria-disabled') === 'false';
@@ -580,7 +631,7 @@ try {
   const backClosed = await evaluate("Phim4KTV.back() && document.getElementById('downloadAppModal').classList.contains('hidden')");
   if (!windowsDownloads.enabled || !windowsDownloads.missingDisabled || !windowsDownloads.unsafe || !tvState.active || !tvState.focusedInModal || tvState.horizontalOverflow || !backClosed) throw new Error('Windows/TV downloads or remote smoke failed: ' + JSON.stringify({ windowsDownloads, tvState, backClosed }));
   console.log('[qa] Windows downloads and TV focus/back passed');
-  const checksPassed = homeState.version === '3.4.15'
+  const checksPassed = homeState.version === '3.4.16'
     && deviceApprovalState.unlocked
     && deviceApprovalState.deviceOnly
     && deviceApprovalState.telegramEmpty
@@ -645,6 +696,8 @@ try {
     passed: checksPassed,
     deviceApproval: deviceApprovalState,
     playerInteraction: playerInteractionState,
+    trailer: trailerState,
+    expectedMediaCancellations,
     home: homeState,
     scroll: scrollState,
     filter: filterState,

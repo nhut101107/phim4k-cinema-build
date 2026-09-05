@@ -14,7 +14,17 @@ function fixture() {
 test('video surface toggles controls without changing playback', () => {
   const p = fixture(); p.toggleControls(); assert.equal(p.wrapper.classList.contains('inactive'),true); assert.equal(p.video.paused,false);
   p.toggleControls(); assert.equal(p.wrapper.classList.contains('inactive'),false); assert.equal(p.video.paused,false);
-  assert.match(fs.readFileSync('public/js/player.js','utf8'), /this\.video\.addEventListener\('click', \(\) => this\.toggleControls\(\)\)/);
+  assert.match(fs.readFileSync('public/js/player.js','utf8'), /onVideo\('click', event => this\.onSurfaceTap\(event\)\)/);
+});
+
+test('double taps seek only on the same side within the gesture window', () => {
+  const { doubleTapSeek } = require('../public/js/player-core');
+  assert.equal(doubleTapSeek({x:.8,time:100},{x:.81,time:250}),10);
+  assert.equal(doubleTapSeek({x:.1,time:100},{x:.12,time:400}),-10);
+  assert.equal(doubleTapSeek({x:.1,time:100},{x:.8,time:250}),0);
+  assert.equal(doubleTapSeek({x:.5,time:100},{x:.5,time:250}),0);
+  assert.equal(doubleTapSeek({x:.8,time:100},{x:.8,time:421}),0);
+  assert.equal(doubleTapSeek(null,{x:.8,time:250}),0);
 });
 test('landscape defaults to cover but explicit fit preference survives resize/fullscreen', () => {
   const p = fixture(); p.showAlert = () => {}; p.applyPreferredAspect(); assert.equal(p.aspectMode,'cover');

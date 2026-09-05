@@ -1,3 +1,9 @@
+.detail-trailer { margin-bottom: 20px; padding: 12px; border: 1px solid #344155; border-radius: 14px; background: #111827; }
+.detail-trailer-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.detail-trailer button { min-height: 44px; padding: 8px 12px; background: #253149; color: white; border-radius: 8px; border: 0; }
+#detailTrailerStatus { color: #b7c3d5; font-size: 14px; margin: 10px 0; }
+#detailTrailerMedia iframe, #detailTrailerMedia video { display: block; width: 100%; aspect-ratio: 16/9; border: 0; background: black; }
+#detailTrailerMedia a { display: block; padding: 12px 0; color: #9dd8ff; }
 /* One player layout for browser and Capacitor. The iPhone orientation is changed
    by the native plugin; CSS never rotates the video surface. */
 .player-modal-overlay {
@@ -416,6 +422,13 @@ video::cue {
   .volume-slider, .time-display { display: none; }
   #btnAspectFit { padding-inline: 8px; }
   .ctrl-btn-text, .btn-player-server { min-height: 32px; font-size: 11px; }
+}
+
+@media (max-width: 560px) and (orientation: portrait) {
+  .controls-row { flex-wrap: wrap; row-gap: 8px; }
+  .controls-left, .controls-right { width: 100%; justify-content: space-between; }
+  .controls-right .ctrl-btn-text { padding-inline: 8px; }
+  .cinema-player-wrapper { --subtitle-safe-area: 108px; }
 }
 
 @media (orientation: landscape) and (max-height: 540px) {

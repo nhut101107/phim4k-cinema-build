@@ -990,6 +990,8 @@ const App = {
     const detailBody = modal.querySelector('.detail-body');
     if (detailBody) detailBody.scrollTop = 0;
 
+    window.Phim4KTrailer?.stop();
+    document.getElementById('detailTrailer')?.classList.add('hidden');
     // Reset fields while loading
     document.getElementById('detailName').textContent = 'Đang tải thông tin phim...';
     document.getElementById('detailOriginName').textContent = '';
@@ -1029,6 +1031,7 @@ const App = {
     detailPoster.src = posterUrl;
     this.attachPosterFallback(detailPoster);
     this.setBackgroundImage(document.getElementById('detailBackdrop'), thumbUrl);
+    window.Phim4KTrailer?.mount(movie);
 
     // Badges
     const badgesBox = document.getElementById('detailBadges');
@@ -1184,6 +1187,8 @@ function infoHeroMovie() {
 }
 
 function hideMovieModal() {
+  window.Phim4KTrailer?.stop();
+  App.detailRequestId++;
   document.getElementById('movieModal').classList.add('hidden');
   App.syncPageScrollLock();
 }

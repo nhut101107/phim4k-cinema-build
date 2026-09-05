@@ -34,8 +34,10 @@ const Player = {
     this.modal = document.getElementById('playerModal');
     this.wrapper = document.getElementById('playerWrapper');
     if (!this.video || !this.modal || !this.wrapper) return;
+    this.videoBindings = [];
+    const onVideo = (type, listener, options) => { this.videoBindings.push({type,listener,options}); this.video.addEventListener(type,listener,options); };
 
-    this.video.addEventListener('play', () => {
+    onVideo('play', () => {
       if (!this.activePlayStartedAt) this.activePlayStartedAt = performance.now();
       this.updatePlayBtn(true);
       this.resetInactivityTimer();
@@ -44,18 +46,20 @@ const Player = {
         API.trackUsage('playback_start', this.usageContext());
       }
     });
-    this.video.addEventListener('pause', () => {
+    onVideo('pause', () => {
       this.captureWatchedTime();
       this.updatePlayBtn(false);
     });
-    this.video.addEventListener('timeupdate', () => this.onTimeUpdate());
-    this.video.addEventListener('progress', () => this.onProgress());
-    this.video.addEventListener('waiting', () => this.showBuffering(true, 'Đang đệm dữ liệu…'));
-    this.video.addEventListener('playing', () => this.showBuffering(false));
-    this.video.addEventListener('ended', () => this.onEnded());
-    this.video.addEventListener('error', () => this.onNativeVideoError());
-    this.video.addEventListener('resize', () => this.updateCurrentResolution());
-    this.video.addEventListener('click', () => this.toggleControls());
+    onVideo('timeupdate', () => this.onTimeUpdate());
+    onVideo('progress', () => this.onProgress());
+    onVideo('waiting', () => this.showBuffering(true, 'Đang đệm dữ liệu…'));
+    onVideo('playing', () => this.showBuffering(false));
+    onVideo('ended', () => this.onEnded());
+    onVideo('error', () => this.onNativeVideoError());
+    onVideo('resize', () => this.updateCurrentResolution());
+    onVideo('click', event => this.onSurfaceTap(event));
+    onVideo('pointerdown', event => { this.tapStart = { x: event.clientX, y: event.clientY }; this.tapDragged = false; }, { passive: true });
+    onVideo('pointerup', event => { this.tapDragged = this.tapStart && Math.hypot(event.clientX - this.tapStart.x, event.clientY - this.tapStart.y) > 30; }, { passive: true });
 
     this.wrapper.addEventListener('pointermove', event => {
       if (event.pointerType === 'mouse') this.resetInactivityTimer();
@@ -88,6 +92,8 @@ const Player = {
   },
 
   open(movie, episode, episodesList = [], epIndex = 0, allServers = [], serverIndex = 0) {
+    window.Phim4KTrailer?.stop();
+    this.clearSurfaceTap();
     if (!this.video) this.init();
     if (!this.video || !movie || !episode) return;
     this.currentMovie = movie;
@@ -116,6 +122,7 @@ const Player = {
   },
 
   close() {
+    this.clearSurfaceTap();
     this.saveProgressNow();
     this.captureWatchedTime();
     if (Number(this.video?.currentTime) > 1) {
@@ -131,6 +138,7 @@ const Player = {
     this.activeStreamUrl = '';
     this.closeDropdowns();
     this.destroyHls();
+    this.releaseAudioVideo();
     if (this.video) {
       this.video.pause();
       this.video.removeAttribute('src');
@@ -157,6 +165,7 @@ const Player = {
   },
 
   loadStream(streamUrl, options = {}) {
+    this.releaseAudioVideo();
     const session = ++this.streamSession;
     const resumeTime = Number(options.resumeTime) || 0;
     const autoplay = options.autoplay !== false;
@@ -292,6 +301,7 @@ const Player = {
     const fitMode = this.aspectMode === 'contain';
     this.wrapper.classList.toggle('aspect-contain', fitMode);
     this.wrapper.classList.toggle('aspect-cover', !fitMode);
+    window.requestAnimationFrame?.(() => this.updateSubtitleSafeArea());
     const button = document.getElementById('btnAspectFit');
     if (button) {
       button.textContent = fitMode ? 'Vừa khung' : 'Lấp đầy';
@@ -311,6 +321,11 @@ const Player = {
   toggleAspectRatio() {
     this.setAspectRatio(this.aspectMode === 'contain' ? 'cover' : 'contain');
     try { localStorage.setItem('phim4k-player-fit', this.aspectMode); } catch (_) {}
+  },
+
+  updateSubtitleSafeArea() {
+    const controls = document.getElementById('playerControls');
+    if (controls && this.wrapper) this.wrapper.style.setProperty('--subtitle-safe-area', `${Math.ceil(controls.getBoundingClientRect().height) + 12}px`);
   },
 
   renderInPlayerServerMenu() {
@@ -370,6 +385,31 @@ const Player = {
     this.showBuffering(false);
     this.showAlert('Tất cả server hiện có đều không phản hồi. Vui lòng thử lại sau.');
     API.trackUsage('playback_error', { ...this.usageContext(), error: 'Tất cả server không phản hồi' });
+  },
+
+  releaseAudioVideo() {
+    if (!window.Phim4KAudio?.release(this.video)) return;
+    const old = this.video;
+    const next = old.cloneNode(false);
+    next.removeAttribute('src'); next.muted = old.muted; next.volume = old.volume; next.playbackRate = old.playbackRate;
+    old.pause(); old.removeAttribute('src'); old.load(); old.replaceWith(next);
+    this.video = next;
+    this.videoBindings.forEach(({type,listener,options}) => next.addEventListener(type,listener,options));
+    const button = document.getElementById('btnAudioMode');
+    if (button) { button.textContent = 'Âm gốc'; button.setAttribute('aria-pressed','false'); }
+  },
+
+  async toggleAudioMode() {
+    const button = document.getElementById('btnAudioMode');
+    if (this.audioBusy) return;
+    this.audioBusy = true;
+    try {
+      const enabled = await window.Phim4KAudio.toggle(this.video);
+      button.textContent = enabled ? 'Rõ thoại' : 'Âm gốc';
+      button.setAttribute('aria-pressed',String(enabled));
+      this.showAlert(enabled ? 'Rõ thoại: cân động học nhẹ, không tăng âm lượng quá mức.' : 'Đã về âm thanh gốc.');
+    } catch (error) { this.showAlert(error.message || 'Không thể đổi âm thanh.'); }
+    finally { this.audioBusy = false; }
   },
 
   togglePlayPause() {
@@ -671,6 +711,29 @@ const Player = {
 
   closeDropdowns() {
     ['playerServerMenu', 'speedMenu', 'qualityMenu'].forEach((id) => document.getElementById(id)?.classList.add('hidden'));
+  },
+
+  clearSurfaceTap() {
+    clearTimeout(this.surfaceTapTimer);
+    this.lastSurfaceTap = null;
+  },
+
+  onSurfaceTap(event) {
+    if (this.tapDragged) { this.tapDragged = false; this.clearSurfaceTap(); return; }
+    // Programmatic/accessibility activation still only toggles the controls.
+    if (!event.detail) { this.clearSurfaceTap(); this.toggleControls(); return; }
+    const rect = this.video.getBoundingClientRect();
+    if (!rect.width) return;
+    const tap = { x: (event.clientX - rect.left) / rect.width, time: event.timeStamp };
+    const seek = PlayerCore.doubleTapSeek(this.lastSurfaceTap, tap);
+    clearTimeout(this.surfaceTapTimer);
+    if (seek) {
+      this.lastSurfaceTap = null;
+      this.seekRelative(seek);
+    } else {
+      this.lastSurfaceTap = tap;
+      this.surfaceTapTimer = window.setTimeout(() => { this.lastSurfaceTap = null; this.toggleControls(); }, 320);
+    }
   },
 
   toggleControls() {

@@ -70,5 +70,11 @@
     return Math.max(0, Math.min(time, Math.max(0, total - 0.5)));
   }
 
-  return { findEquivalentEpisode, uniqueQualityOptions, clampResumeTime, qualityOption };
+  function doubleTapSeek(first, next) {
+    if (!first || !next || next.time - first.time < 0 || next.time - first.time > 320) return 0;
+    const zone = x => x < 0.4 ? -1 : x > 0.6 ? 1 : 0;
+    const direction = zone(next.x);
+    return direction && direction === zone(first.x) && Math.abs(next.x - first.x) < 0.2 ? direction * 10 : 0;
+  }
+  return { findEquivalentEpisode, uniqueQualityOptions, clampResumeTime, qualityOption, doubleTapSeek };
 });

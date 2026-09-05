@@ -343,7 +343,7 @@
           </div>
           <div class="acc-detail-item">
             <span>Phiên bản ứng dụng:</span>
-            <span id="accAppVersion">v3.4.15</span>
+            <span id="accAppVersion">v3.4.16</span>
           </div>
         </div>
 
@@ -404,6 +404,11 @@
       </div>
 
       <div class="detail-body">
+        <section id="detailTrailer" class="detail-trailer hidden" aria-label="Trailer phim">
+          <div class="detail-trailer-heading"><strong>Trailer xem trước</strong><button id="detailTrailerSkip" type="button" onclick="Phim4KTrailer.stop(); document.getElementById('detailTrailer').classList.add('hidden')">Bỏ qua trailer</button></div>
+          <p id="detailTrailerStatus" role="status"></p>
+          <div id="detailTrailerMedia"></div>
+        </section>
         <div class="detail-main">
           <div class="detail-poster-col">
             <img id="detailPoster" src="" alt="Poster" class="detail-poster" />
@@ -523,6 +528,7 @@
 
           <!-- Right Controls: Aspect Ratio/Sub Safe, Speed, Quality, Fullscreen -->
           <div class="controls-right">
+            <button id="btnAudioMode" class="ctrl-btn-text" type="button" onclick="Player.toggleAudioMode()" aria-pressed="false" title="Rõ thoại chỉ dùng với nguồn hỗ trợ; nguồn khác giữ âm gốc">Âm gốc</button>
             <!-- Subtitle-Safe Aspect Ratio Toggle Button -->
             <button id="btnAspectFit" class="ctrl-btn-text" onclick="toggleAspectRatio()" title="Tỷ lệ màn hình (Không bị che Sub)">
               📺 Giữ Sub Gốc
@@ -989,7 +995,7 @@
 
             <div class="download-link-row">
               <label>Android TV — link APK HTTPS<input id="adminDownloadTvInput" type="url" placeholder="https://.../Phim4K-TV.apk" /></label>
-              <label>Phiên bản TV<input id="adminVersionTvInput" type="text" placeholder="3.4.15" /></label>
+              <label>Phiên bản TV<input id="adminVersionTvInput" type="text" placeholder="3.4.16" /></label>
             </div>
             <div id="adminDownloadsAlert" class="gate-message hidden" style="margin-top: 12px;"></div>
 
@@ -1225,6 +1231,8 @@
   <script src="/js/auth.js"></script>
   <script src="/js/admin.js"></script>
   <script src="/js/player-core.js"></script>
+  <script src="/js/trailer.js"></script>
+  <script src="/js/audio-enhancer.js"></script>
   <script src="/js/player.js"></script>
   <script src="/js/coverflow.js"></script>
   <script src="/js/app.js"></script>
