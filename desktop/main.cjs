@@ -33,13 +33,20 @@ else app.whenReady().then(async () => {
   if (smoke) {
     const report = await win.webContents.executeJavaScript(`({ title: document.title, keyGate: !!document.querySelector('#activationGate:not(.hidden)'), nodeExposed: typeof require !== 'undefined', platform: Phim4KPlatform.detect(navigator.userAgent), downloadFunction: typeof refreshPublicDownloads === 'function' })`);
     report.videoDecoded = await win.webContents.executeJavaScript(`new Promise(resolve => {
-      const v = document.createElement('video'); v.muted = true; v.playsInline = true; document.body.append(v);
+      const v = Player.video; v.muted = true; v.loop = true;
       const timer = setTimeout(() => resolve(false), 15000);
-      v.addEventListener('timeupdate', () => { if (v.currentTime > 0.1 && v.videoWidth > 0) { clearTimeout(timer); v.pause(); v.remove(); resolve(true); } });
+      v.addEventListener('timeupdate', () => { if (v.currentTime > 0.1 && v.videoWidth > 0) { clearTimeout(timer); resolve(true); } });
       v.addEventListener('error', () => { clearTimeout(timer); resolve(false); });
-      v.src = 'phim4k://app/media/qa-original.mp4'; v.play().catch(() => resolve(false));
+      Player.open({name:'Original QA',slug:'qa-desktop'}, {name:'QA',link_embed:'phim4k://app/media/qa-original.mp4'});
     })`, true);
-    report.pass = !failed && report.keyGate && !report.nodeExposed && report.platform === 'windows' && report.downloadFunction && report.videoDecoded;
+    report.playerInteraction = await win.webContents.executeJavaScript(`(() => {
+      const v=Player.video, r=v.getBoundingClientRect();
+      const fill=getComputedStyle(v).objectFit==='cover' && r.width===innerWidth && r.height===innerHeight;
+      v.click(); const outsideDoesNotPause=!v.paused;
+      Player.resetInactivityTimer(); document.getElementById('btnCenterPlayPause').click();
+      return {fill,outsideDoesNotPause,centerPauses:v.paused};
+    })()`);
+    report.pass = !failed && report.keyGate && !report.nodeExposed && report.platform === 'windows' && report.downloadFunction && report.videoDecoded && Object.values(report.playerInteraction).every(Boolean);
     fs.mkdirSync(path.join(app.getPath('userData'), 'qa'), { recursive: true });
     fs.writeFileSync(path.join(app.getPath('userData'), 'qa', 'desktop-smoke.json'), JSON.stringify(report, null, 2));
     app.exit(report.pass ? 0 : 1);

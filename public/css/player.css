@@ -76,6 +76,48 @@
   margin-bottom: 0;
 }
 
+/* Only controls respect safe-area insets; the picture reaches every edge. */
+.player-modal-overlay.cinema-fullscreen {
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  padding: 0;
+  border-radius: 0;
+}
+.cinema-player-wrapper.cinema-fullscreen.aspect-cover .video-element {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  object-fit: cover;
+  object-position: center;
+}
+.player-center-toggle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 36;
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.35);
+  border-radius: 50%;
+  background: rgba(0,0,0,.45);
+  color: #fff;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.player-center-toggle svg { width: 32px; height: 32px; }
+.cinema-player-wrapper.inactive .player-center-toggle { opacity: 0; visibility: hidden; pointer-events: none; }
+@media (orientation: portrait) {
+  .cinema-player-wrapper:not(.cinema-fullscreen) .player-center-toggle {
+    top: calc(max(62px, calc(env(safe-area-inset-top) + 54px)) + min(28.125vw, calc((100dvh - 224px) / 2)));
+  }
+}
+
 video::cue {
   color: #fff !important;
   background: rgba(0, 0, 0, .78) !important;

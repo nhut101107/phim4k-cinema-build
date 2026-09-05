@@ -55,10 +55,16 @@ const Player = {
     this.video.addEventListener('ended', () => this.onEnded());
     this.video.addEventListener('error', () => this.onNativeVideoError());
     this.video.addEventListener('resize', () => this.updateCurrentResolution());
-    this.video.addEventListener('click', () => this.togglePlayPause());
+    this.video.addEventListener('click', () => this.toggleControls());
 
-    ['mousemove', 'pointermove', 'pointerdown', 'touchstart'].forEach((eventName) => {
-      this.wrapper.addEventListener(eventName, () => this.resetInactivityTimer(), { passive: true });
+    this.wrapper.addEventListener('pointermove', event => {
+      if (event.pointerType === 'mouse') this.resetInactivityTimer();
+    }, { passive: true });
+    this.wrapper.addEventListener('pointerdown', event => {
+      if (event.target.closest('button, input, .player-controls')) this.resetInactivityTimer();
+    }, { passive: true });
+    window.addEventListener('resize', () => {
+      if (!this.modal.classList.contains('hidden')) this.applyPreferredAspect();
     });
     const progressContainer = document.getElementById('progressContainer');
     if (progressContainer) {
@@ -103,7 +109,7 @@ const Player = {
     this.closeDropdowns();
     this.modal.classList.remove('hidden');
     document.body.classList.add('player-open');
-    this.setAspectRatio('contain', { silent: true });
+    this.applyPreferredAspect();
     this.loadEpisode(episode, { resumeTime: this.getSavedWatchTime(), autoplay: true });
     this.startProgressSaveTimer();
     this.resetInactivityTimer();
@@ -287,11 +293,25 @@ const Player = {
     this.wrapper.classList.toggle('aspect-contain', fitMode);
     this.wrapper.classList.toggle('aspect-cover', !fitMode);
     const button = document.getElementById('btnAspectFit');
-    if (button) button.textContent = fitMode ? 'Giữ Sub' : 'Lấp đầy';
+    if (button) {
+      button.textContent = fitMode ? 'Vừa khung' : 'Lấp đầy';
+      button.title = fitMode ? 'Giữ toàn bộ hình và phụ đề; có thể có viền đen' : 'Lấp đầy không kéo méo; có thể cắt mép hình/phụ đề';
+      button.setAttribute('aria-pressed', String(!fitMode));
+    }
     if (!silent) this.showAlert(fitMode ? 'Chế độ Giữ Sub đang bật.' : 'Chế độ Lấp đầy có thể cắt mép phụ đề.');
   },
 
-  toggleAspectRatio() { this.setAspectRatio(this.aspectMode === 'contain' ? 'cover' : 'contain'); },
+  applyPreferredAspect() {
+    let preferred;
+    try { preferred = localStorage.getItem('phim4k-player-fit'); } catch (_) {}
+    const landscape = window.matchMedia('(orientation: landscape)').matches;
+    this.setAspectRatio(['cover', 'contain'].includes(preferred) ? preferred : (this.isCinemaFullscreen || landscape ? 'cover' : 'contain'), { silent: true });
+  },
+
+  toggleAspectRatio() {
+    this.setAspectRatio(this.aspectMode === 'contain' ? 'cover' : 'contain');
+    try { localStorage.setItem('phim4k-player-fit', this.aspectMode); } catch (_) {}
+  },
 
   renderInPlayerServerMenu() {
     const menu = document.getElementById('playerServerMenu');
@@ -361,6 +381,10 @@ const Player = {
   updatePlayBtn(isPlaying) {
     document.getElementById('iconPlay')?.classList.toggle('hidden', isPlaying);
     document.getElementById('iconPause')?.classList.toggle('hidden', !isPlaying);
+    document.getElementById('iconCenterPlay')?.classList.toggle('hidden', isPlaying);
+    document.getElementById('iconCenterPause')?.classList.toggle('hidden', !isPlaying);
+    for (const id of ['btnPlayPause', 'btnCenterPlayPause']) document.getElementById(id)?.setAttribute('aria-label', isPlaying ? 'Tạm dừng' : 'Phát video');
+    if (!isPlaying) this.resetInactivityTimer();
   },
 
   seekRelative(seconds) {
@@ -596,6 +620,7 @@ const Player = {
     this.wrapper?.classList.toggle('cinema-fullscreen', enabled);
     this.modal?.classList.toggle('cinema-fullscreen', enabled);
     document.body.classList.toggle('player-cinema-fullscreen', enabled);
+    this.applyPreferredAspect();
     const button = document.getElementById('btnCinemaFullscreen');
     if (button) {
       button.classList.toggle('active', enabled);
@@ -646,6 +671,16 @@ const Player = {
 
   closeDropdowns() {
     ['playerServerMenu', 'speedMenu', 'qualityMenu'].forEach((id) => document.getElementById(id)?.classList.add('hidden'));
+  },
+
+  toggleControls() {
+    if (!this.wrapper) return;
+    if (this.wrapper.classList.contains('inactive')) this.resetInactivityTimer();
+    else {
+      clearTimeout(this.inactivityTimer);
+      this.closeDropdowns();
+      this.wrapper.classList.add('inactive');
+    }
   },
 
   resetInactivityTimer() {

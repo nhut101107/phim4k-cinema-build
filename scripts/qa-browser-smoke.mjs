@@ -19,6 +19,7 @@ const mimeTypes = new Map([
   ['.html', 'text/html; charset=utf-8'],
   ['.js', 'text/javascript; charset=utf-8'],
   ['.json', 'application/json; charset=utf-8'],
+  ['.mp4', 'video/mp4'],
   ['.svg', 'image/svg+xml'],
 ]);
 
@@ -389,6 +390,39 @@ try {
   writeFileSync(playerScreenshotPath, Buffer.from(playerScreenshot.data, 'base64'));
   await evaluate('Player.close()');
 
+  process.stderr.write('[qa] checking real video touch controls and edge-to-edge landscape\n');
+  await send('Emulation.setDeviceMetricsOverride', { width: 844, height: 390, screenWidth: 844, screenHeight: 390, deviceScaleFactor: 1, mobile: true });
+  await evaluate(`(() => {
+    localStorage.removeItem('phim4k-player-fit');
+    Player.video.muted = true; Player.video.loop = true;
+    Player.open({ name: 'Original QA', slug: 'qa-touch' }, { name: 'QA', link_embed: location.origin + '/media/qa-original.mp4' });
+    return Player.enterCinemaFullscreen();
+  })()`);
+  await waitFor('!Player.video.paused && Player.video.currentTime > 0.1', 'Original QA video did not play');
+  const playerInteractionState = await evaluate(`(() => {
+    const v = Player.video, r = v.getBoundingClientRect();
+    return { fill: getComputedStyle(v).objectFit === 'cover', width: r.width, height: r.height, viewportWidth: innerWidth, viewportHeight: innerHeight };
+  })()`);
+  await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 180, y: 150 }] });
+  await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await delay(300);
+  playerInteractionState.outsideDoesNotPause = await evaluate('!Player.video.paused');
+  await evaluate("Player.resetInactivityTimer(); document.getElementById('btnCenterPlayPause').click()");
+  playerInteractionState.centerPauses = await evaluate('Player.video.paused');
+  await evaluate("document.getElementById('btnPlayPause').click()");
+  await waitFor('!Player.video.paused', 'Bottom play control failed');
+  playerInteractionState.bottomResumes = true;
+  await evaluate('Player.toggleAspectRatio()');
+  await send('Emulation.setDeviceMetricsOverride', { width: 852, height: 393, screenWidth: 852, screenHeight: 393, deviceScaleFactor: 1, mobile: true });
+  await delay(100);
+  playerInteractionState.fitPreferenceSurvivesResize = await evaluate("Player.aspectMode === 'contain' && getComputedStyle(Player.video).objectFit === 'contain'");
+  await evaluate("Player.toggleAspectRatio(); Player.resetInactivityTimer()");
+  const fillScreenshot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+  writeFileSync(resolve(projectRoot, 'data/qa/phim4k-player-fill.png'), Buffer.from(fillScreenshot.data, 'base64'));
+  if (!playerInteractionState.fill || Math.abs(playerInteractionState.width - playerInteractionState.viewportWidth) > 1 || Math.abs(playerInteractionState.height - playerInteractionState.viewportHeight) > 1 || !playerInteractionState.outsideDoesNotPause || !playerInteractionState.centerPauses || !playerInteractionState.fitPreferenceSurvivesResize) throw new Error('Player interaction/fullscreen regression: ' + JSON.stringify(playerInteractionState));
+  await evaluate("Player.close(); Player.video.loop = false; localStorage.removeItem('phim4k-player-fit')");
+  await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, screenWidth: 390, screenHeight: 844, deviceScaleFactor: 3, mobile: true });
+
   process.stderr.write('[qa] checking admin tabs, device request, and close controls\n');
   const adminCloseState = await evaluate(`(async () => {
     const originalFetch = window.fetch;
@@ -520,7 +554,7 @@ try {
   await send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
   const windowsDownloads = await evaluate(`(async () => {
     const saved = API.fetchJson;
-    API.fetchJson = async () => ({ windows: { url: 'https://example.com/app.exe', version: '3.4.14' }, android_tv: { url: 'https://example.com/tv.apk', version: '3.4.14' } });
+    API.fetchJson = async () => ({ windows: { url: 'https://example.com/app.exe', version: '3.4.15' }, android_tv: { url: 'https://example.com/tv.apk', version: '3.4.15' } });
     window.PHIM4K_PLATFORM = 'windows';
     openDownloadModal(); await refreshPublicDownloads();
     const enabled = document.getElementById('btnDownloadExe').getAttribute('aria-disabled') === 'false';
@@ -546,7 +580,7 @@ try {
   const backClosed = await evaluate("Phim4KTV.back() && document.getElementById('downloadAppModal').classList.contains('hidden')");
   if (!windowsDownloads.enabled || !windowsDownloads.missingDisabled || !windowsDownloads.unsafe || !tvState.active || !tvState.focusedInModal || tvState.horizontalOverflow || !backClosed) throw new Error('Windows/TV downloads or remote smoke failed: ' + JSON.stringify({ windowsDownloads, tvState, backClosed }));
   console.log('[qa] Windows downloads and TV focus/back passed');
-  const checksPassed = homeState.version === '3.4.14'
+  const checksPassed = homeState.version === '3.4.15'
     && deviceApprovalState.unlocked
     && deviceApprovalState.deviceOnly
     && deviceApprovalState.telegramEmpty
@@ -610,6 +644,7 @@ try {
   result = {
     passed: checksPassed,
     deviceApproval: deviceApprovalState,
+    playerInteraction: playerInteractionState,
     home: homeState,
     scroll: scrollState,
     filter: filterState,

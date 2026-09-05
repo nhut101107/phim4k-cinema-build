@@ -5,7 +5,7 @@ const crypto = require('node:crypto');
 const yauzl = require('yauzl');
 const crc32 = require('buffer-crc32');
 const plist = require('bplist-parser');
-const root = path.resolve(__dirname, '..', 'builds', 'Phim4K-3.4.14');
+const root = path.resolve(__dirname, '..', 'builds', 'Phim4K-3.4.15');
 function archive(file, inspect) {
   return new Promise((resolve, reject) => yauzl.open(file, { lazyEntries: true }, (error, zip) => {
     if (error) return reject(error);
@@ -33,27 +33,32 @@ function archive(file, inspect) {
   }));
 }
 (async () => {
-  const report = { version: '3.4.14', source: '2367ba126fde3b39a63fdd32527f0d4baba50663', checkedAt: new Date().toISOString(), files: [] };
-  for (const name of ['Phim4K-iOS-3.4.14-unsigned.ipa', 'Phim4K-Android-TV-3.4.14.apk', 'Phim4K-Windows-3.4.14-x64.exe']) {
+  const report = { version: '3.4.15', source: process.env.RELEASE_SOURCE || require('node:child_process').execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), checkedAt: new Date().toISOString(), files: [] };
+  for (const name of ['Phim4K-iOS-3.4.15-unsigned.ipa', 'Phim4K-Android-TV-3.4.15.apk', 'Phim4K-Windows-3.4.15-x64.exe']) {
     const file = path.join(root, name);
     const data = fs.readFileSync(file);
     const item = { name, bytes: data.length, sha256: crypto.createHash('sha256').update(data).digest('hex') };
     if (!name.endsWith('.exe')) {
-      let bridge = false;
+      let bridge = false, playerFix = false;
       item.archiveEntriesVerified = await archive(file, (entry, bytes) => {
         if (entry.endsWith('/js/native-downloads.js')) bridge = bytes.toString().includes('Plugins?.ReleaseDownloads');
+        if (entry.endsWith('/js/player.js')) playerFix = bytes.toString().includes("this.video.addEventListener('click', () => this.toggleControls())");
         if (entry === 'Payload/App.app/Info.plist') {
           const info = plist.parseBuffer(bytes)[0];
-          if (info.CFBundleIdentifier !== 'com.phim4k.cinema' || info.CFBundleShortVersionString !== '3.4.14' || String(info.CFBundleVersion) !== '14') throw new Error('Incorrect IPA identity/version');
+          if (info.CFBundleIdentifier !== 'com.phim4k.cinema' || info.CFBundleShortVersionString !== '3.4.15' || String(info.CFBundleVersion) !== '15') throw new Error('Incorrect IPA identity/version');
           item.bundleId = info.CFBundleIdentifier; item.build = info.CFBundleVersion;
         }
       });
       if (!bridge) throw new Error('Missing verified native downloader bridge');
+      if (!playerFix) throw new Error('Missing player interaction fix');
       item.nativeBridgeFix = true;
+      item.playerInteractionFix = true;
     } else if (data.toString('ascii', 0, 2) !== 'MZ') throw new Error('Not a Windows executable');
     report.files.push(item);
   }
-  fs.writeFileSync(path.join(root, 'SHA256SUMS.txt'), report.files.map(f => `${f.sha256}  ${f.name}`).join('\n') + '\n');
-  fs.writeFileSync(path.join(root, 'verification.json'), JSON.stringify(report, null, 2));
+  const evidence = path.resolve(__dirname, '..', 'data', 'qa', 'release-3.4.15');
+  fs.mkdirSync(evidence, { recursive: true });
+  fs.writeFileSync(path.join(evidence, 'SHA256SUMS.txt'), report.files.map(f => `${f.sha256}  ${f.name}`).join('\n') + '\n');
+  fs.writeFileSync(path.join(evidence, 'verification.json'), JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report, null, 2));
 })().catch(error => { console.error(error.message); process.exitCode = 1; });

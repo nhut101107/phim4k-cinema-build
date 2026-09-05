@@ -343,7 +343,7 @@
           </div>
           <div class="acc-detail-item">
             <span>Phiên bản ứng dụng:</span>
-            <span id="accAppVersion">v3.4.14</span>
+            <span id="accAppVersion">v3.4.15</span>
           </div>
         </div>
 
@@ -465,6 +465,10 @@
 
       <!-- Video Element -->
       <video id="videoPlayer" class="video-element" playsinline preload="metadata"></video>
+      <button id="btnCenterPlayPause" class="player-center-toggle" type="button" onclick="togglePlayPause()" aria-label="Phát video">
+        <svg id="iconCenterPlay" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        <svg id="iconCenterPause" class="hidden" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+      </button>
 
       <!-- Player Loading & Buffering Overlay -->
       <div id="playerBuffering" class="player-buffering hidden">
@@ -985,7 +989,7 @@
 
             <div class="download-link-row">
               <label>Android TV — link APK HTTPS<input id="adminDownloadTvInput" type="url" placeholder="https://.../Phim4K-TV.apk" /></label>
-              <label>Phiên bản TV<input id="adminVersionTvInput" type="text" placeholder="3.4.14" /></label>
+              <label>Phiên bản TV<input id="adminVersionTvInput" type="text" placeholder="3.4.15" /></label>
             </div>
             <div id="adminDownloadsAlert" class="gate-message hidden" style="margin-top: 12px;"></div>
 

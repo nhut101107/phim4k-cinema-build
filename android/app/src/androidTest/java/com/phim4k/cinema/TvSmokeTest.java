@@ -40,13 +40,18 @@ public class TvSmokeTest {
             assertEquals("true", js(activity, "document.documentElement.clientWidth > document.documentElement.clientHeight"));
             // Unavailable downloads must not leave users on a broken relative link.
             assertEquals("true", js(activity, "Phim4KPlatform.safeUrl('/download/apk') === ''"));
-            js(activity, "window.qaVideo=document.createElement('video'); qaVideo.muted=true; qaVideo.playsInline=true; document.body.appendChild(qaVideo); qaVideo.src='/media/qa-original.mp4'; qaVideo.play().catch(()=>{}); true");
+            js(activity, "window.qaVideo=Player.video; qaVideo.muted=true; qaVideo.loop=true; Player.open({name:'Original QA',slug:'qa-tv'}, {name:'QA',link_embed:location.origin+'/media/qa-original.mp4'}); true");
             boolean decoded = false;
             for (int i = 0; i < 30; i++) {
                 if ("true".equals(js(activity, "qaVideo.currentTime > 0.1 && qaVideo.videoWidth > 0"))) { decoded = true; break; }
                 Thread.sleep(500);
             }
             assertTrue("Original video could not be decoded", decoded);
+            assertEquals("true", js(activity, "Player.aspectMode==='cover' && getComputedStyle(qaVideo).objectFit==='cover' && qaVideo.getBoundingClientRect().width===innerWidth && qaVideo.getBoundingClientRect().height===innerHeight"));
+            js(activity, "qaVideo.click(); true");
+            assertEquals("false", js(activity, "qaVideo.paused"));
+            js(activity, "Player.resetInactivityTimer(); document.getElementById('btnCenterPlayPause').click(); true");
+            assertEquals("true", js(activity, "qaVideo.paused"));
             js(activity, "Phim4KNativeDownloads.status().then(r=>window.qaDownloadState=r.status).catch(e=>window.qaDownloadState='error: '+e.message); true");
             boolean downloadBridge = false;
             for (int i = 0; i < 20; i++) {

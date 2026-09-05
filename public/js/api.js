@@ -1,4 +1,4 @@
-﻿// API Client with automatic Telegram ID, License Key & Direct Client-Side Standalone Fallback
+// API Client with automatic Telegram ID, License Key & Direct Client-Side Standalone Fallback
 
 const API = {
   movieCache: new Map(),
@@ -21,7 +21,7 @@ const API = {
   },
 
   getVersion() {
-    return '3.4.14';
+    return '3.4.15';
   },
 
   getSessionId() {
