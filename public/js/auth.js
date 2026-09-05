@@ -527,7 +527,13 @@ async function refreshPublicDownloads() {
         btn.removeAttribute('href');
         btn.setAttribute('aria-disabled', entry.url ? 'false' : 'true');
         btn.textContent = entry.url ? `Tải ${format}${key === platform ? ' · Phù hợp thiết bị này' : ''}` : (failed ? 'Chưa tải được link · Thử lại' : 'Chưa phát hành');
-        if (entry.url) { btn.href = entry.url; btn.target = '_blank'; btn.rel = 'noopener noreferrer'; }
+        btn.onclick = null;
+        if (entry.url) {
+          btn.href = entry.url; btn.target = '_blank'; btn.rel = 'noopener noreferrer';
+          if (key === 'android_tv' && window.Phim4KNativeDownloads?.supported()) {
+            btn.onclick = event => { event.preventDefault(); void Phim4KNativeDownloads.open(btn, entry.url); };
+          }
+        }
         btn.closest('.download-card')?.classList.toggle('recommended-download', key === platform);
       }
       const meta = document.getElementById(`meta${id}Ver`);
