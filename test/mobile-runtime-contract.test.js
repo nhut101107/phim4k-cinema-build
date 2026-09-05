@@ -34,7 +34,7 @@ test('account version and a verified session do not fall back to stale WebView s
   const auth = read('../public/js/auth.js');
   assert.match(api, /window\.API = API/);
   assert.match(auth, /window\.Auth = Auth/);
-  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.6'/);
+  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.7'/);
   assert.match(auth, /const verifiedSession = \{ \.\.\.res, key, telegramId \}/);
   assert.match(auth, /Auth\.unlockApp\(verifiedSession\)/);
 });
@@ -79,7 +79,7 @@ test('native catalog falls back immediately instead of leaving the UI loading', 
   vm.createContext(sandbox);
   vm.runInContext(read('../public/js/catalog-fallback.js'), sandbox);
   vm.runInContext(`${read('../public/js/api.js')}\nglobalThis.__api = API;`, sandbox);
-  assert.equal(sandbox.window.API.getVersion(), '3.4.6');
+  assert.equal(sandbox.window.API.getVersion(), '3.4.7');
   const home = await sandbox.__api.getHomeFeed();
   const detail = await sandbox.__api.getDetail(home.hero[0].slug);
   assert.ok(home.hero.length > 0);
@@ -110,6 +110,15 @@ test('native home paints its bundled catalogue before waiting for the live feed'
   assert.ok(liveRequestIndex > fallbackIndex, 'live request must happen after the fallback is visible');
   assert.match(app, /if \(silent \|\| renderedBundledCatalog\) return;/);
   assert.match(app, /applyHomeFeed\(data\)/);
+});
+
+test('current coverflow layout cannot crash home loading through retired hero IDs', () => {
+  const index = read('../public/index.html');
+  const app = read('../public/js/app.js');
+  assert.match(index, /id="coverflowSection"/);
+  assert.doesNotMatch(index, /id="heroBillboard"/);
+  assert.match(app, /getElementById\('heroBillboard'\)\?\.classList/);
+  assert.match(app, /if \(!backdropEl \|\| !titleEl \|\| !subEl \|\| !descEl \|\| !yearEl \|\| !qualityEl\) return;/);
 });
 
 test('native movie artwork uses the allowlisted same-origin image relay', () => {

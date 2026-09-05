@@ -9,6 +9,7 @@
     "ios:sync": "npm run ios:prepare && npx cap sync ios",
     "ios:verify": "node scripts/verify-ios-shell.js",
     "ios:open": "npx cap open ios",
+    "qa:browser": "node scripts/qa-browser-smoke.mjs",
     "test:player": "node --test test/player-core.test.js test/player-contract.test.js"
   },
   "dependencies": {

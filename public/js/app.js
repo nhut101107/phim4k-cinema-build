@@ -94,9 +94,12 @@ const App = {
     this.homeFeedLoading = true;
     this.currentCategory = 'home';
     this.updateActiveNav('home');
-    document.getElementById('heroBillboard').classList.remove('hidden');
-    document.getElementById('dynamicSections').classList.remove('hidden');
-    document.getElementById('categoryView').classList.add('hidden');
+    // The current mobile layout uses Coverflow instead of the retired
+    // #heroBillboard block. Keep this path compatible with both layouts so a
+    // missing optional hero cannot abort the entire catalogue promise.
+    document.getElementById('heroBillboard')?.classList.remove('hidden');
+    document.getElementById('dynamicSections')?.classList.remove('hidden');
+    document.getElementById('categoryView')?.classList.add('hidden');
 
     const container = document.getElementById('dynamicSections');
     // Native WebViews can take longer than Safari to establish their first
@@ -330,6 +333,11 @@ const App = {
     const descEl = document.getElementById('heroDesc');
     const yearEl = document.getElementById('heroYear');
     const qualityEl = document.getElementById('heroQuality');
+
+    // Coverflow owns the hero UI in the current iOS build. These IDs only
+    // exist in the legacy web layout; Coverflow.init() has already received
+    // the same movie list in applyHomeFeed().
+    if (!backdropEl || !titleEl || !subEl || !descEl || !yearEl || !qualityEl) return;
 
     // KKPhim poster / thumb URL resolver
     this.setBackgroundImage(backdropEl, movie.thumb_url || movie.poster_url);

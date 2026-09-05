@@ -3,6 +3,7 @@ node_modules/
 ios/App/App/public/
 ios/App/build/
 DerivedData/
+data/qa/
 .env
 .env.*
 !/.env.example
