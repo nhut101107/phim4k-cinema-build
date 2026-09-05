@@ -16,4 +16,11 @@ config/downloads.json
 *.p12
 *.cer
 *.key
+*.jks
+*.keystore
+*.apk
+*.exe
+builds/
+public/vendor/hls.min.js
+android/app/src/main/assets/public/
 .DS_Store

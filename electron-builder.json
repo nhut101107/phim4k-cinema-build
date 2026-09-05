@@ -1,0 +1,16 @@
+{
+  "appId": "com.phim4k.cinema.desktop",
+  "productName": "Phim4K Cinema",
+  "extraMetadata": { "main": "desktop/main.cjs", "version": "3.4.14", "dependencies": {} },
+  "directories": { "output": "builds/windows-3.4.14" },
+  "files": ["desktop/**", "public/**", "!public/standalone.html", "package.json"],
+  "asar": true,
+  "electronFuses": {
+    "runAsNode": false,
+    "enableNodeOptionsEnvironmentVariable": false,
+    "enableNodeCliInspectArguments": false,
+    "enableEmbeddedAsarIntegrityValidation": true,
+    "onlyLoadAppFromAsar": true
+  },
+  "win": { "icon": "ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png", "target": [{ "target": "portable", "arch": ["x64"] }], "artifactName": "Phim4K-Windows-${version}-x64.exe" }
+}

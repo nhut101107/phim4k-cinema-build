@@ -25,11 +25,13 @@ const TELEMETRY_ACTIONS = new Set([
   "app_open", "tab_view", "category_view", "filter_applied", "search",
   "movie_open", "episode_open", "playback_start", "playback_ready",
   "playback_stop", "playback_complete", "playback_error", "server_change",
+  "heartbeat", "app_visibility", "network_change", "client_error", "download_open",
 ]);
 const TELEMETRY_FIELDS = new Set([
   "tab", "category", "genre", "country", "query", "results", "movie",
   "episode", "server", "quality", "seconds", "duration", "watched", "error", "entry",
   "session", "runtime", "screen", "language", "network",
+  "viewport", "visibility", "uptime", "browser", "os", "buffered", "readyState", "eventAt",
 ]);
 const RATE_LIMITS = Object.freeze({
   authActivate: { limit: 20, windowSeconds: 60 },
@@ -315,9 +317,27 @@ async function requireVerifiedAdmin(request, env) {
 
 async function parseBody(request) {
   try {
-    const body = await request.json();
+    const reader = request.body?.getReader();
+    if (!reader) return {};
+    let bytes = 0;
+    const chunks = [];
+    while (true) {
+      const part = await reader.read();
+      if (part.done) break;
+      bytes += part.value.byteLength;
+      if (bytes > MAX_JSON_BODY_BYTES) {
+        await reader.cancel();
+        throw new Error('REQUEST_TOO_LARGE');
+      }
+      chunks.push(part.value);
+    }
+    const buffer = new Uint8Array(bytes);
+    let offset = 0;
+    for (const chunk of chunks) { buffer.set(chunk, offset); offset += chunk.byteLength; }
+    const body = JSON.parse(new TextDecoder().decode(buffer));
     return body && typeof body === "object" ? body : {};
   } catch (_error) {
+    if (_error.message === 'REQUEST_TOO_LARGE') throw _error;
     return {};
   }
 }
@@ -375,7 +395,13 @@ async function handleTelemetry(request, env) {
   if (!events.length) return textError("Không có hoạt động hợp lệ để ghi.", 400, "INVALID_TELEMETRY");
   const device = maskedValue(identity.deviceId, 6);
   for (const event of events) {
-    const detail = JSON.stringify({ ...event.context, device, version: appVersion(request) });
+    const context = { device, version: String(appVersion(request)).slice(0, 24), ...event.context };
+    // Preserve valid JSON rather than slicing a serialized object mid-field.
+    for (const key of Object.keys(event.context).reverse()) {
+      if (JSON.stringify(context).length <= 490) break;
+      delete context[key];
+    }
+    const detail = JSON.stringify(context);
     await logEvent(env.DB, event.action, {
       actorTelegramId: identity.telegramId,
       targetTelegramId: identity.telegramId,
@@ -981,11 +1007,15 @@ async function handleDownloads(request, env) {
   if (request.method === "GET") {
     const rows = await env.DB.prepare("SELECT * FROM downloads").all();
     const output = {};
-    for (const row of rows.results || []) output[row.platform] = { url: row.url, version: row.version };
+    for (const row of rows.results || []) {
+      if (['android', 'android_tv', 'ios', 'windows'].includes(row.platform)) output[row.platform] = { url: validDownloadUrl(row.url) ? row.url : '', version: row.version };
+    }
     return json({
+      ...output,
       androidUrl: output.android?.url || "", androidVersion: output.android?.version || "",
       iosUrl: output.ios?.url || "", iosVersion: output.ios?.version || "",
       windowsUrl: output.windows?.url || "", windowsVersion: output.windows?.version || "",
+      android_tvUrl: output.android_tv?.url || "", android_tvVersion: output.android_tv?.version || "",
     });
   }
   const denied = await requireVerifiedAdmin(request, env);
@@ -995,16 +1025,25 @@ async function handleDownloads(request, env) {
     ["android", body.androidUrl, body.androidVersion],
     ["ios", body.iosUrl, body.iosVersion],
     ["windows", body.windowsUrl, body.windowsVersion],
+    ...(body.android_tvUrl !== undefined ? [["android_tv", body.android_tvUrl, body.android_tvVersion]] : []),
   ];
   const timestamp = now();
+  const statements = [];
   for (const [platform, url, version] of entries) {
     const safeUrl = String(url || "").trim();
-    if (safeUrl && !safeUrl.startsWith("https://")) return textError("Link tải phải dùng HTTPS.", 400, "INVALID_DOWNLOAD_URL");
-    await env.DB.prepare(
+    if (safeUrl && !validDownloadUrl(safeUrl)) return textError("Link tải phải dùng HTTPS, không chứa tài khoản/mật khẩu.", 400, "INVALID_DOWNLOAD_URL");
+    statements.push(env.DB.prepare(
       "INSERT INTO downloads (platform, url, version, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(platform) DO UPDATE SET url = excluded.url, version = excluded.version, updated_at = excluded.updated_at",
-    ).bind(platform, safeUrl, String(version || "").trim().slice(0, 64), timestamp).run();
+    ).bind(platform, safeUrl, String(version || "").trim().slice(0, 64), timestamp));
   }
+  await env.DB.batch(statements);
+  await logEvent(env.DB, 'admin_downloads_updated', { actorTelegramId: requestTelegram(request), detail: 'release-links-updated' });
   return json({ success: true, message: "Đã cập nhật link tải." });
+}
+
+export function validDownloadUrl(value) {
+  try { const url = new URL(value); return url.protocol === 'https:' && !url.username && !url.password && value.length <= 2048; }
+  catch (_) { return false; }
 }
 
 async function handleMovieFallback(request) {
@@ -1211,51 +1250,53 @@ export default {
         return json({ ready: Boolean(env.DB), service: "phim4k-license-api" });
       }
       if (request.method === "GET" && pathname === "/api/media/image") {
-        return handleMovieImage(request);
+        return await handleMovieImage(request);
       }
       if (request.method === "GET" && pathname.startsWith("/api/movies/")) {
-        return handleMovieCatalog(request);
+        return await handleMovieCatalog(request);
       }
       const missing = dbUnavailable(env);
       if (missing) return missing;
 
       if (request.method === "POST" && pathname === "/api/auth/activate") {
         const body = await parseBody(request);
-        return activationStatus({ db: env.DB, key: normalizeKey(body.key), telegramId: normalizeId(body.telegramId), deviceId: normalizeId(body.deviceId), request, env, activation: true });
+        return await activationStatus({ db: env.DB, key: normalizeKey(body.key), telegramId: normalizeId(body.telegramId), deviceId: normalizeId(body.deviceId), request, env, activation: true });
       }
       if (request.method === "GET" && pathname === "/api/auth/status") {
-        return activationStatus({ db: env.DB, key: normalizeKey(url.searchParams.get("key")), telegramId: normalizeId(url.searchParams.get("telegramId")), deviceId: normalizeId(url.searchParams.get("deviceId")), request, env, activation: false });
+        return await activationStatus({ db: env.DB, key: requestKey(request) || normalizeKey(url.searchParams.get("key")), telegramId: requestTelegram(request) || normalizeId(url.searchParams.get("telegramId")), deviceId: normalizeId(request.headers.get('x-device-id')) || normalizeId(url.searchParams.get("deviceId")), request, env, activation: false });
       }
-      if (request.method === "POST" && pathname === "/api/auth/request-device-access") return requestDeviceAccess(request, env);
-      if (request.method === "GET" && pathname === "/api/auth/device-status") return deviceAccessStatus(request, env);
+      if (request.method === "POST" && pathname === "/api/auth/request-device-access") return await requestDeviceAccess(request, env);
+      if (request.method === "GET" && pathname === "/api/auth/device-status") return await deviceAccessStatus(request, env);
       if (request.method === "GET" && (pathname === "/api/app/check-update" || pathname === "/api/app/version")) {
         return json(await getForceUpdate(env.DB, url.searchParams.get("version") || appVersion(request)));
       }
       if (request.method === "GET" && pathname === "/api/app/announcement") return json(await getAnnouncement(env.DB));
-      if (request.method === "POST" && pathname === "/api/telemetry") return handleTelemetry(request, env);
-      if ((request.method === "GET" || request.method === "POST") && pathname === "/api/app/downloads") return handleDownloads(request, env);
-      if (request.method === "GET" && pathname === "/api/admin/keys") return listKeys(request, env);
-      if (request.method === "GET" && pathname === "/api/admin/device-access-requests") return listDeviceAccessRequests(request, env);
-      if (request.method === "POST" && pathname === "/api/admin/device-access-decision") return decideDeviceAccess(request, env);
-      if (request.method === "POST" && pathname === "/api/admin/rotate-master-key") return rotateMasterKey(request, env);
-      if (request.method === "POST" && pathname === "/api/admin/create-key") return createKey(request, env);
-      if (request.method === "POST" && pathname === "/api/admin/renew-key") return updateKey(request, env, "renew");
-      if (request.method === "POST" && pathname === "/api/admin/set-key-expiry") return updateKey(request, env, "expiry");
-      if (request.method === "POST" && pathname === "/api/admin/toggle-key") return updateKey(request, env, "toggle");
-      if (request.method === "POST" && pathname === "/api/admin/reset-device") return updateKey(request, env, "reset-device");
-      if (request.method === "POST" && pathname === "/api/admin/reset-telegram") return updateKey(request, env, "reset-telegram");
-      if (request.method === "POST" && pathname === "/api/admin/delete-key") return updateKey(request, env, "delete");
-      if (request.method === "GET" && pathname === "/api/admin/users") return listUsers(request, env);
-      if (request.method === "POST" && pathname === "/api/admin/ban-user") return setBan(request, env, true);
-      if (request.method === "POST" && pathname === "/api/admin/unban-user") return setBan(request, env, false);
-      if ((request.method === "GET" || request.method === "DELETE") && pathname === "/api/admin/logs") return handleLogs(request, env);
-      if (request.method === "GET" && pathname === "/api/admin/content-status") return handleContentStatus(request, env);
-      if (request.method === "POST" && pathname === "/api/admin/refresh-movies") return handleMovieRefresh(request, env);
-      if (request.method === "POST" && pathname === "/api/admin/announcement") return handleAnnouncementAdmin(request, env);
-      if (request.method === "POST" && pathname === "/api/admin/set-force-update") return handleForceUpdate(request, env);
-      if (pathname === "/api/stream/proxy") return handleMovieFallback(request);
+      if (request.method === "POST" && pathname === "/api/telemetry") return await handleTelemetry(request, env);
+      if ((request.method === "GET" || request.method === "POST") && pathname === "/api/app/downloads") return await handleDownloads(request, env);
+      if (request.method === "POST" && pathname === "/api/admin/update-downloads") return await handleDownloads(request, env);
+      if (request.method === "GET" && pathname === "/api/admin/keys") return await listKeys(request, env);
+      if (request.method === "GET" && pathname === "/api/admin/device-access-requests") return await listDeviceAccessRequests(request, env);
+      if (request.method === "POST" && pathname === "/api/admin/device-access-decision") return await decideDeviceAccess(request, env);
+      if (request.method === "POST" && pathname === "/api/admin/rotate-master-key") return await rotateMasterKey(request, env);
+      if (request.method === "POST" && pathname === "/api/admin/create-key") return await createKey(request, env);
+      if (request.method === "POST" && pathname === "/api/admin/renew-key") return await updateKey(request, env, "renew");
+      if (request.method === "POST" && pathname === "/api/admin/set-key-expiry") return await updateKey(request, env, "expiry");
+      if (request.method === "POST" && pathname === "/api/admin/toggle-key") return await updateKey(request, env, "toggle");
+      if (request.method === "POST" && pathname === "/api/admin/reset-device") return await updateKey(request, env, "reset-device");
+      if (request.method === "POST" && pathname === "/api/admin/reset-telegram") return await updateKey(request, env, "reset-telegram");
+      if (request.method === "POST" && pathname === "/api/admin/delete-key") return await updateKey(request, env, "delete");
+      if (request.method === "GET" && pathname === "/api/admin/users") return await listUsers(request, env);
+      if (request.method === "POST" && pathname === "/api/admin/ban-user") return await setBan(request, env, true);
+      if (request.method === "POST" && pathname === "/api/admin/unban-user") return await setBan(request, env, false);
+      if ((request.method === "GET" || request.method === "DELETE") && pathname === "/api/admin/logs") return await handleLogs(request, env);
+      if (request.method === "GET" && pathname === "/api/admin/content-status") return await handleContentStatus(request, env);
+      if (request.method === "POST" && pathname === "/api/admin/refresh-movies") return await handleMovieRefresh(request, env);
+      if (request.method === "POST" && pathname === "/api/admin/announcement") return await handleAnnouncementAdmin(request, env);
+      if (request.method === "POST" && pathname === "/api/admin/set-force-update") return await handleForceUpdate(request, env);
+      if (pathname === "/api/stream/proxy") return await handleMovieFallback(request);
       return textError("Không tìm thấy endpoint.", 404, "NOT_FOUND");
     } catch (error) {
+      if (error.message === 'REQUEST_TOO_LARGE') return textError('Request body is too large.', 413, 'REQUEST_TOO_LARGE');
       return textError("Backend gặp lỗi nội bộ.", 500, "INTERNAL_ERROR");
     }
   },

@@ -515,32 +515,30 @@ function openAdminPanel() {
 // DOWNLOAD APP MODAL HELPERS (ADR, IPA, EXE)
 // ==========================================
 async function refreshPublicDownloads() {
+  const ids = { android: ['Apk', 'APK'], ios: ['Ipa', 'IPA'], windows: ['Exe', 'EXE'], android_tv: ['Tv', 'APK TV'] };
+  const platform = Phim4KPlatform.detect(navigator.userAgent, window.PHIM4K_PLATFORM);
+  const render = (data, failed = false) => {
+    for (const [key, [id, format]] of Object.entries(ids)) {
+      const entry = Phim4KPlatform.release(data, key);
+      for (const prefix of ['btnDownload', 'forceBtn']) {
+        const btn = document.getElementById(prefix + id);
+        if (!btn) continue;
+        btn.removeAttribute('download');
+        btn.removeAttribute('href');
+        btn.setAttribute('aria-disabled', entry.url ? 'false' : 'true');
+        btn.textContent = entry.url ? `Tải ${format}${key === platform ? ' · Phù hợp thiết bị này' : ''}` : (failed ? 'Chưa tải được link · Thử lại' : 'Chưa phát hành');
+        if (entry.url) { btn.href = entry.url; btn.target = '_blank'; btn.rel = 'noopener noreferrer'; }
+        btn.closest('.download-card')?.classList.toggle('recommended-download', key === platform);
+      }
+      const meta = document.getElementById(`meta${id}Ver`);
+      if (meta) meta.textContent = entry.url ? `v${entry.version || '?'} · ${Phim4KPlatform.labels[key]}` : 'Chỉ hiển thị bản đã phát hành';
+    }
+  };
+  render({});
   try {
-    const res = await fetch('/api/app/downloads');
-    const data = await res.json();
-
-    if (data.android) {
-      const btn = document.getElementById('btnDownloadApk');
-      const meta = document.getElementById('metaApkVer');
-      if (btn) btn.href = data.android.url || '/download/apk';
-      if (meta) meta.textContent = `v${data.android.version || '3.0.0'} • APK • Mọi Android`;
-    }
-
-    if (data.ios) {
-      const btn = document.getElementById('btnDownloadIpa');
-      const meta = document.getElementById('metaIpaVer');
-      if (btn) btn.href = data.ios.url || '/download/ipa';
-      if (meta) meta.textContent = `v${data.ios.version || '3.0.0'} • 41.8 MB • iOS 14+`;
-    }
-
-    if (data.windows) {
-      const btn = document.getElementById('btnDownloadExe');
-      const meta = document.getElementById('metaExeVer');
-      if (btn) btn.href = data.windows.url || '/download/exe';
-      if (meta) meta.textContent = `v${data.windows.version || '3.0.0'} • Windows 64-bit`;
-    }
+    render(await API.fetchJson('/api/app/downloads', {}, 12000));
   } catch (err) {
-    console.error('Error refreshing downloads links:', err);
+    render({}, true);
   }
 }
 
@@ -587,9 +585,7 @@ function showForceUpdateModal(data) {
   const btnIpa = document.getElementById('forceBtnIpa');
   const btnExe = document.getElementById('forceBtnExe');
 
-  if (btnApk) btnApk.href = data.downloads?.android?.url || '/download/apk';
-  if (btnIpa) btnIpa.href = data.downloads?.ios?.url || '/download/ipa';
-  if (btnExe) btnExe.href = data.downloads?.windows?.url || '/download/exe';
+  void refreshPublicDownloads();
 
   modal.classList.remove('hidden');
 }
@@ -607,6 +603,19 @@ async function checkAppUpdate(showAccountResult = false) {
 
   try {
     const res = await API.checkUpdate(API.getVersion());
+    if (!res.forceUpdate) {
+      const platform = Phim4KPlatform.detect(navigator.userAgent, window.PHIM4K_PLATFORM);
+      const releases = await API.fetchJson('/api/app/downloads', {}, 12000);
+      const release = Phim4KPlatform.release(releases, platform);
+      const parts = value => String(value).split('.').map(n => Number(n) || 0);
+      const current = parts(API.getVersion()), latest = parts(release.version);
+      let newer = false;
+      for (let i = 0; i < Math.max(current.length, latest.length); i++) {
+        if ((latest[i] || 0) !== (current[i] || 0)) { newer = (latest[i] || 0) > (current[i] || 0); break; }
+      }
+      res.isLatest = Boolean(release.url) && !newer;
+      res.message = !release.url ? 'Chưa có bản phát hành phù hợp thiết bị này.' : newer ? `Có bản ${release.version}. Bấm Tải ứng dụng để cập nhật.` : `Bạn đang dùng bản ${API.getVersion()}.`;
+    }
 
     if (icon) icon.textContent = '🔄';
     if (text) text.textContent = 'Kiểm Tra Phiên Bản Mới Nhất';

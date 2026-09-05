@@ -21,7 +21,7 @@ const API = {
   },
 
   getVersion() {
-    return '3.4.13';
+    return '3.4.14';
   },
 
   getSessionId() {
@@ -38,13 +38,16 @@ const API = {
 
   getOperationalContext() {
     const standalone = window.matchMedia?.('(display-mode: standalone)')?.matches;
-    const runtime = window.Capacitor?.isNativePlatform?.()
-      ? `iOS app`
+    const runtime = /Phim4KTV/.test(navigator.userAgent) ? 'Android TV' : /Phim4KDesktop/.test(navigator.userAgent) ? 'Windows app' : window.Capacitor?.isNativePlatform?.()
+      ? `${window.Capacitor.getPlatform?.() || 'native'} app`
       : (standalone ? 'PWA' : 'Web');
     const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
     return {
       session: this.getSessionId(),
       runtime,
+      viewport: `${innerWidth}x${innerHeight}`,
+      os: /Windows NT/.test(navigator.userAgent) ? 'Windows' : /Android/.test(navigator.userAgent) ? 'Android' : /iPhone|iPad/.test(navigator.userAgent) ? 'iOS' : 'other',
+      browser: /Edg\//.test(navigator.userAgent) ? 'Edge' : /Chrome\//.test(navigator.userAgent) ? 'Chromium' : /Safari\//.test(navigator.userAgent) ? 'WebKit' : 'other',
       screen: `${Math.round(window.screen?.width || innerWidth)}x${Math.round(window.screen?.height || innerHeight)}`,
       language: String(navigator.language || 'unknown').slice(0, 20),
       network: String(connection?.effectiveType || (navigator.onLine ? 'online' : 'offline')).slice(0, 20)
@@ -90,7 +93,8 @@ const API = {
     if (fingerprint === this.lastUsageFingerprint && timestamp - this.lastUsageAt < 2000) return;
     this.lastUsageFingerprint = fingerprint;
     this.lastUsageAt = timestamp;
-    this.usageQueue.push({ action: safeAction, context: safeContext });
+    this.usageQueue.push({ action: safeAction, context: { ...safeContext, eventAt: new Date().toISOString() } });
+    this.usageQueue = this.usageQueue.slice(-60);
     if (this.usageQueue.length >= 10) {
       void this.flushUsage();
       return;
@@ -212,8 +216,8 @@ const API = {
 
   async checkStatus(key, telegramId, deviceId) {
     try {
-      const response = await this.fetchWithTimeout(`/api/auth/status?key=${encodeURIComponent(key)}&telegramId=${encodeURIComponent(telegramId)}&deviceId=${encodeURIComponent(deviceId)}&version=${encodeURIComponent(this.getVersion())}`, {
-        headers: { 'x-app-version': this.getVersion() }
+      const response = await this.fetchWithTimeout('/api/auth/status', {
+        headers: { 'x-app-version': this.getVersion(), 'x-license-key': key, 'x-telegram-id': telegramId, 'x-device-id': deviceId }
       }, 12000);
       return await response.json().catch(() => ({ active: false, code: 'INVALID_SERVER_RESPONSE' }));
     } catch (err) {}

@@ -516,9 +516,37 @@ try {
   })()`);
   await waitFor("document.getElementById('adminModal').classList.contains('hidden')", 'Admin close button did not work');
 
-  const relevantResponses = await evaluate('true');
-  void relevantResponses;
-  const checksPassed = homeState.version === '3.4.13'
+  console.log('[qa] checking Windows download layout and Android TV remote');
+  await send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
+  const windowsDownloads = await evaluate(`(async () => {
+    const saved = API.fetchJson;
+    API.fetchJson = async () => ({ windows: { url: 'https://example.com/app.exe', version: '3.4.14' }, android_tv: { url: 'https://example.com/tv.apk', version: '3.4.14' } });
+    window.PHIM4K_PLATFORM = 'windows';
+    openDownloadModal(); await refreshPublicDownloads();
+    const enabled = document.getElementById('btnDownloadExe').getAttribute('aria-disabled') === 'false';
+    const missingDisabled = !document.getElementById('btnDownloadIpa').hasAttribute('href');
+    const unsafe = Phim4KPlatform.safeUrl('javascript:alert(1)') === '';
+    hideDownloadModal(); API.fetchJson = saved;
+    return { enabled, missingDisabled, unsafe };
+  })()`);
+  await evaluate("window.PHIM4K_PLATFORM = 'android_tv'");
+  await evaluate(readFileSync(resolve(projectRoot, 'public/js/tv.js'), 'utf8'));
+  await evaluate(`(() => {
+    const saved = API.fetchJson;
+    API.fetchJson = async () => ({});
+    openDownloadModal();
+    setTimeout(() => { API.fetchJson = saved; }, 500);
+  })()`);
+  await delay(600);
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowDown', code: 'ArrowDown', windowsVirtualKeyCode: 40 });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowDown', code: 'ArrowDown', windowsVirtualKeyCode: 40 });
+  const tvState = await evaluate(`({ active: document.documentElement.classList.contains('tv-mode'), focusedInModal: !!document.activeElement.closest('#downloadAppModal'), horizontalOverflow: document.documentElement.scrollWidth > innerWidth + 1 })`);
+  const tvShot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+  writeFileSync(resolve(projectRoot, 'data/qa/phim4k-tv-downloads.png'), Buffer.from(tvShot.data, 'base64'));
+  const backClosed = await evaluate("Phim4KTV.back() && document.getElementById('downloadAppModal').classList.contains('hidden')");
+  if (!windowsDownloads.enabled || !windowsDownloads.missingDisabled || !windowsDownloads.unsafe || !tvState.active || !tvState.focusedInModal || tvState.horizontalOverflow || !backClosed) throw new Error('Windows/TV downloads or remote smoke failed: ' + JSON.stringify({ windowsDownloads, tvState, backClosed }));
+  console.log('[qa] Windows downloads and TV focus/back passed');
+  const checksPassed = homeState.version === '3.4.14'
     && deviceApprovalState.unlocked
     && deviceApprovalState.deviceOnly
     && deviceApprovalState.telegramEmpty

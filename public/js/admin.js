@@ -914,6 +914,7 @@ const Admin = {
     }
 
     const actionNames = {
+      usage_heartbeat: 'Đang hoạt động', usage_app_visibility: 'Ẩn / mở lại app', usage_network_change: 'Đổi trạng thái mạng', usage_client_error: 'Lỗi giao diện', usage_download_open: 'Mở link tải',
       usage_app_open: 'Mở ứng dụng', usage_tab_view: 'Chuyển tab', usage_category_view: 'Mở danh mục',
       usage_filter_applied: 'Dùng bộ lọc', usage_search: 'Tìm kiếm', usage_movie_open: 'Mở phim',
       usage_episode_open: 'Chọn tập', usage_playback_start: 'Bắt đầu xem', usage_playback_ready: 'Luồng sẵn sàng',
@@ -926,7 +927,8 @@ const Admin = {
       movie: 'Phim', episode: 'Tập', tab: 'Tab', category: 'Danh mục', genre: 'Thể loại',
       country: 'Quốc gia', query: 'Từ khóa', results: 'Kết quả', server: 'Server', quality: 'Chất lượng',
       seconds: 'Vị trí', duration: 'Thời lượng', watched: 'Đã xem', error: 'Lỗi', entry: 'Cách vào', version: 'Phiên bản',
-      session: 'Phiên', runtime: 'Nền tảng', screen: 'Màn hình', language: 'Ngôn ngữ', network: 'Mạng'
+      session: 'Phiên', runtime: 'Nền tảng', screen: 'Màn hình', language: 'Ngôn ngữ', network: 'Mạng',
+      viewport: 'Vùng hiển thị', visibility: 'Hiển thị', uptime: 'Thời gian mở (giây)', buffered: 'Đệm (giây)', readyState: 'Trạng thái video', eventAt: 'Giờ thiết bị', device: 'Thiết bị (đã che)', os: 'Hệ điều hành', browser: 'Trình duyệt'
     };
 
     logs.forEach(l => {
@@ -1128,24 +1130,32 @@ const Admin = {
       const res = await fetch('/api/app/downloads');
       const data = await res.json();
 
+      for (const [platform, id] of [['android', 'Apk'], ['ios', 'Ipa'], ['windows', 'Exe'], ['android_tv', 'Tv']]) {
+        const entry = Phim4KPlatform.release(data, platform);
+        const input = document.getElementById('adminDownload' + id + 'Input');
+        const version = document.getElementById('adminVersion' + id + 'Input');
+        if (input) { input.value = entry.url; input.required = false; }
+        if (version) { version.value = entry.version; version.required = false; }
+      }
+
       if (data.android) {
         const apkInput = document.getElementById('adminDownloadApkInput');
         const apkVer = document.getElementById('adminVersionApkInput');
-        if (apkInput) apkInput.value = data.android.url || '/download/apk';
+        if (apkInput) apkInput.value = Phim4KPlatform.safeUrl(data.android.url);
         if (apkVer) apkVer.value = data.android.version || '3.0.0';
       }
 
       if (data.ios) {
         const ipaInput = document.getElementById('adminDownloadIpaInput');
         const ipaVer = document.getElementById('adminVersionIpaInput');
-        if (ipaInput) ipaInput.value = data.ios.url || '/download/ipa';
+        if (ipaInput) ipaInput.value = Phim4KPlatform.safeUrl(data.ios.url);
         if (ipaVer) ipaVer.value = data.ios.version || '3.0.0';
       }
 
       if (data.windows) {
         const exeInput = document.getElementById('adminDownloadExeInput');
         const exeVer = document.getElementById('adminVersionExeInput');
-        if (exeInput) exeInput.value = data.windows.url || '/download/exe';
+        if (exeInput) exeInput.value = Phim4KPlatform.safeUrl(data.windows.url);
         if (exeVer) exeVer.value = data.windows.version || '3.0.0';
       }
 
@@ -1234,7 +1244,9 @@ const Admin = {
         body: JSON.stringify({
           androidUrl, androidVersion,
           iosUrl, iosVersion,
-          windowsUrl, windowsVersion
+          windowsUrl, windowsVersion,
+          android_tvUrl: document.getElementById('adminDownloadTvInput').value.trim(),
+          android_tvVersion: document.getElementById('adminVersionTvInput').value.trim()
         })
       });
 

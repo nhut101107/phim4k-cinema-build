@@ -11,11 +11,12 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
   
   <!-- HLS.js for streaming m3u8 -->
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js"></script>
+  <script src="/vendor/hls.min.js"></script>
 
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="/css/modal.css">
   <link rel="stylesheet" href="/css/player.css">
+  <link rel="stylesheet" href="/css/tv.css">
 </head>
 <body class="activation-locked">
 
@@ -341,7 +342,7 @@
           </div>
           <div class="acc-detail-item">
             <span>Phiên bản ứng dụng:</span>
-            <span id="accAppVersion">v3.4.13</span>
+            <span id="accAppVersion">v3.4.14</span>
           </div>
         </div>
 
@@ -981,6 +982,10 @@
               </div>
             </div>
 
+            <div class="download-link-row">
+              <label>Android TV — link APK HTTPS<input id="adminDownloadTvInput" type="url" placeholder="https://.../Phim4K-TV.apk" /></label>
+              <label>Phiên bản TV<input id="adminVersionTvInput" type="text" placeholder="3.4.14" /></label>
+            </div>
             <div id="adminDownloadsAlert" class="gate-message hidden" style="margin-top: 12px;"></div>
 
             <div style="margin-top: 16px; text-align: right;">
@@ -1058,7 +1063,7 @@
         <div class="download-card">
           <div class="card-os-icon">🤖</div>
           <h3>Android (ADR / APK)</h3>
-          <p>Dành cho điện thoại Android, máy tính bảng và Android TV Box.</p>
+          <p>Dành cho điện thoại Android và máy tính bảng. TV có bản riêng bên dưới.</p>
           <span class="card-meta" id="metaApkVer">v3.1.0 • APK • Mọi Android</span>
           <a id="btnDownloadApk" href="/download/apk" class="btn-download-action btn-apk" download>
             Tải File .APK
@@ -1088,13 +1093,19 @@
         </div>
       </div>
 
+      <div class="download-card">
+        <div class="card-os-icon">📺</div><h3>Android TV / Google TV</h3>
+        <p>Android 7 trở lên · Điều khiển bằng remote · Màn hình ngang.</p>
+        <span class="card-meta" id="metaTvVer">Chưa phát hành</span>
+        <a id="btnDownloadTv" class="btn-download-action" aria-disabled="true">Chưa phát hành</a>
+      </div>
       <div class="download-guide-box">
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
           <div>
             <strong>💡 Bạn dùng iPhone muốn cài nhanh không cần máy tính?</strong><br>
-            <span style="color: var(--text-dim);">Cài trực tiếp qua cấu hình WebClip Apple bằng Safari, không lo thu hồi chứng chỉ (No Revoke).</span>
+            <span style="color: var(--text-dim);">IPA cần ký bằng chứng chỉ hợp lệ. Android TV cần cho phép cài APK từ nguồn bạn tin cậy.</span>
           </div>
-          <a href="/download/ios" class="btn-action-mini" style="background: rgba(245, 158, 11, 0.2); color: var(--accent-gold); border: 1px solid var(--accent-gold); padding: 6px 14px; text-decoration: none; border-radius: 4px; font-weight: 700;" target="_blank">
+          <a class="btn-action-mini hidden">
             📲 Cài Ngay (Safari)
           </a>
         </div>
@@ -1200,11 +1211,14 @@
   <script src="/js/runtime-config.js"></script>
   <script src="/js/catalog-fallback.js"></script>
   <script src="/js/api.js"></script>
+  <script src="/js/platform.js"></script>
   <script src="/js/auth.js"></script>
   <script src="/js/admin.js"></script>
   <script src="/js/player-core.js"></script>
   <script src="/js/player.js"></script>
   <script src="/js/coverflow.js"></script>
   <script src="/js/app.js"></script>
+  <script src="/js/tv.js"></script>
+  <script src="/js/diagnostics.js"></script>
 </body>
 </html>

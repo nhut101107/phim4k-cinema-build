@@ -4,6 +4,8 @@ const path = require("path");
 const root = path.resolve(__dirname, "..");
 const source = path.join(root, "public");
 const output = path.join(root, "dist-ios");
+fs.mkdirSync(path.join(source, 'vendor'), { recursive: true });
+fs.copyFileSync(path.join(root, 'node_modules/hls.js/dist/hls.min.js'), path.join(source, 'vendor/hls.min.js'));
 
 if (!fs.statSync(source).isDirectory()) {
   throw new Error("Missing public web assets");

@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Phim4K Streaming App with License Key Gate and Ad-Free HLS Player",
   "main": "server.js",
+  "overrides": { "qs": "6.16.0" },
   "scripts": {
     "start": "node server.js",
     "ios:prepare": "node scripts/prepare-ios-web.js",
@@ -10,17 +11,25 @@
     "ios:verify": "node scripts/verify-ios-shell.js",
     "ios:open": "npx cap open ios",
     "qa:browser": "node scripts/qa-browser-smoke.mjs",
-    "test:player": "node --test test/player-core.test.js test/player-contract.test.js"
+    "test:player": "node --test test/player-core.test.js test/player-contract.test.js",
+    "test": "node --test test/*.test.js backend-worker/test/*.test.mjs",
+    "desktop:build": "npm run ios:prepare && electron-builder --config electron-builder.json --win --x64",
+    "desktop:smoke": "electron desktop/main.cjs --smoke-test",
+    "tv:sync": "npm run ios:prepare && cap sync android"
   },
   "dependencies": {
+    "@capacitor/android": "8.5.1",
     "@capacitor/core": "8.5.1",
     "@capacitor/ios": "8.5.1",
     "@capacitor/screen-orientation": "8.0.1",
     "@capacitor/status-bar": "8.0.3",
     "cors": "^2.8.5",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "hls.js": "1.7.2"
   },
   "devDependencies": {
-    "@capacitor/cli": "8.5.1"
+    "@capacitor/cli": "8.5.1",
+    "electron": "44.2.0",
+    "electron-builder": "26.15.3"
   }
 }
