@@ -14,7 +14,7 @@ const Admin = {
     const save = document.getElementById('saveAccessPolicy');
     toggle.disabled = save.disabled = true;
     try {
-      const res = await API.fetchJson('/api/app/access-policy');
+      const res = await API.fetchJson(`/api/app/access-policy?refresh=${Date.now()}`, { cache: 'no-store' });
       if (typeof res.freeAccess !== 'boolean') throw new Error('Không đọc được trạng thái');
       toggle.checked = res.freeAccess;
       toggle.disabled = save.disabled = false;
@@ -23,15 +23,26 @@ const Admin = {
   },
 
   async saveAccessPolicy() {
+    const toggle = document.getElementById('adminFreeAccess');
     const save = document.getElementById('saveAccessPolicy');
-    save.disabled = true;
+    const message = document.getElementById('accessPolicyMessage');
+    const requestedFreeAccess = toggle.checked;
+    toggle.disabled = save.disabled = true;
+    message.textContent = requestedFreeAccess ? 'Đang bật chế độ miễn key…' : 'Đang bật lại yêu cầu key…';
     try {
-      const response = await fetch('/api/admin/access-policy', {method:'POST', headers:{...this.getAdminHeaders(), 'Content-Type':'application/json'}, body:JSON.stringify({freeAccess:document.getElementById('adminFreeAccess').checked})});
+      const response = await fetch('/api/admin/access-policy', {method:'POST', cache:'no-store', headers:{...this.getAdminHeaders(), 'Content-Type':'application/json'}, body:JSON.stringify({freeAccess:requestedFreeAccess})});
       const result = await response.json();
-      if (!response.ok || !result.success) throw new Error('Không lưu được chế độ');
-      await this.loadAccessPolicy();
-    } catch (_) { document.getElementById('accessPolicyMessage').textContent = 'Lưu thất bại. Chế độ chưa được xác nhận; hãy đọc lại trạng thái.'; }
-    finally { save.disabled = false; }
+      if (!response.ok || !result.success || result.freeAccess !== requestedFreeAccess) throw new Error('Không lưu được chế độ');
+      toggle.checked = result.freeAccess;
+      message.textContent = result.freeAccess ? 'Đã lưu: người dùng vào ngay, không cần key hoặc Telegram.' : 'Đã lưu: người dùng chỉ cần key, không cần Telegram.';
+    } catch (_) {
+      message.textContent = 'Lưu thất bại. Công tắc đã trở về trạng thái trên máy chủ.';
+      try {
+        const current = await API.fetchJson(`/api/app/access-policy?refresh=${Date.now()}`, { cache: 'no-store' });
+        if (typeof current.freeAccess === 'boolean') toggle.checked = current.freeAccess;
+      } catch (_) {}
+    }
+    finally { toggle.disabled = save.disabled = false; }
   },
 
   async open(tab = 'keys') {
@@ -479,95 +490,6 @@ const Admin = {
     }
   },
 
-  renderUsersTable(users = []) {
-    const tbody = document.getElementById('usersTableBody');
-    tbody.innerHTML = '';
-
-    if (users.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-dim); padding: 20px;">Chưa có người dùng nào được ghi nhận.</td></tr>';
-      return;
-    }
-
-    users.forEach(u => {
-      const tr = document.createElement('tr');
-      const isMasterAdmin = Boolean(u.isAdmin);
-
-      let statusBadge = u.isBanned ?
-        '<span class="badge-status status-banned">🚫 Đã bị Ban</span>' :
-        '<span class="badge-status status-active">Bình thường</span>';
-
-      let actionHtml = '';
-      if (isMasterAdmin) {
-        actionHtml = '<span style="color: var(--accent-gold); font-size: 11px; font-weight: bold;">👑 Super Admin Master</span>';
-      } else if (u.isBanned) {
-        actionHtml = `<button class="btn-action-mini btn-unban" onclick="Admin.unbanUser('${u.telegramId}')">✔ Mở Ban</button>`;
-      } else {
-        actionHtml = `<button class="btn-action-mini btn-ban" onclick="Admin.promptBanUser('${u.telegramId}')">🚫 Ban Tài Khoản</button>`;
-      }
-
-      const deviceStr = u.boundDeviceId ? `🔒 ${u.boundDeviceId.substring(0, 10)}...` : '<span style="color: var(--text-dim);">Chưa khóa</span>';
-
-      tr.innerHTML = `
-        <td>
-          <a href="https://t.me/${u.telegramId}" target="_blank" class="badge-tele-bound">
-            ✈️ ${u.telegramId}
-          </a>
-        </td>
-        <td><code>${u.key}</code></td>
-        <td>${u.plan || 'VIP'}</td>
-        <td>${deviceStr}</td>
-        <td><code>${u.lastIp || 'Chưa ghi nhận'}</code></td>
-        <td>${statusBadge}</td>
-        <td>${actionHtml}</td>
-      `;
-
-      tbody.appendChild(tr);
-    });
-  },
-
-  async promptBanUser(telegramId) {
-    const reason = prompt(`Nhập lý do muốn Ban tài khoản Telegram [${telegramId}]:`, 'Vi phạm điều khoản sử dụng');
-    if (reason === null) return;
-
-    try {
-      const res = await fetch('/api/admin/ban-user', {
-        method: 'POST',
-        headers: this.getAdminHeaders(),
-        body: JSON.stringify({ telegramId, reason: reason.trim() })
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Lỗi ban');
-
-      alert(`✔ ${data.message}`);
-      this.loadUsers();
-      this.loadKeys();
-    } catch (err) {
-      alert(`❌ ${err.message}`);
-    }
-  },
-
-  async unbanUser(telegramId) {
-    if (!confirm(`Bạn có chắc chắn muốn mở khóa (Unban) cho Telegram [${telegramId}] không?`)) return;
-
-    try {
-      const res = await fetch('/api/admin/unban-user', {
-        method: 'POST',
-        headers: this.getAdminHeaders(),
-        body: JSON.stringify({ telegramId })
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Lỗi mở ban');
-
-      alert(`✔ ${data.message}`);
-      this.loadUsers();
-      this.loadKeys();
-    } catch (err) {
-      alert(`❌ ${err.message}`);
-    }
-  },
-
   // The replacement account table uses DOM nodes instead of interpolating
   // account data into inline HTML. This keeps user-controlled values out of
   // event handlers and makes the stronger ban actions explicit.
@@ -603,55 +525,45 @@ const Admin = {
 
     users.forEach(user => {
       const row = document.createElement('tr');
-      const telegramId = String(user.telegramId || '');
-      row.appendChild(makeCell(telegramId, true));
-      row.appendChild(makeCell(user.key, true));
+      const key = String(user.key || '');
+      const deviceId = String(user.boundDeviceId || '');
+      row.appendChild(makeCell(deviceId || 'Chưa gắn thiết bị', true));
+      row.appendChild(makeCell(key, true));
       row.appendChild(makeCell(user.plan || 'VIP'));
-      row.appendChild(makeCell(user.boundDeviceId || 'Chưa bind', true));
-      row.appendChild(makeCell(user.lastIp || 'Chưa ghi nhận', true));
+      row.appendChild(makeCell(user.expiresAt ? new Date(user.expiresAt).toLocaleDateString('vi-VN') : 'Vĩnh viễn'));
+      row.appendChild(makeCell(user.telegramId || 'Không sử dụng'));
 
       const statusCell = document.createElement('td');
       const badge = document.createElement('span');
       badge.className = `badge-status ${user.isBanned ? 'status-banned' : 'status-active'}`;
-      const scopes = (user.bans || []).flatMap(item => item.scopes || []);
-      badge.textContent = user.isBanned ? `Đã cấm${scopes.length ? `: ${[...new Set(scopes)].join(', ')}` : ''}` : (user.status || 'Bình thường');
+      badge.textContent = user.isBanned ? 'Đã bị ban' : (user.status || 'Bình thường');
       statusCell.appendChild(badge);
       row.appendChild(statusCell);
 
       const actionCell = document.createElement('td');
       const actions = document.createElement('div');
       actions.className = 'action-buttons-cell';
-      if (user.isAdmin) {
-        actions.textContent = 'Super Admin';
-        actions.style.color = 'var(--accent-gold)';
-      } else if (user.isBanned) {
-        actions.appendChild(makeButton('Mở ban', 'btn-unban', () => this.unbanUser(telegramId)));
+      if (user.isBanned) {
+        actions.appendChild(makeButton('Mở ban', 'btn-unban', () => this.unbanUser(key, deviceId)));
       } else {
-        actions.appendChild(makeButton('Ban TG', 'btn-ban', () => this.banUser(telegramId, ['telegram'])));
-        if (user.boundDeviceId) {
-          actions.appendChild(makeButton('TG + máy', 'btn-ban', () => this.banUser(telegramId, ['telegram', 'device'])));
-        }
-        if (user.boundDeviceId && user.lastIp) {
-          actions.appendChild(makeButton('Ban toàn bộ', 'btn-ban', () => this.banUser(telegramId, ['telegram', 'device', 'ip'])));
-        }
+        actions.appendChild(makeButton('Ban user', 'btn-ban', () => this.banUser(key, deviceId)));
       }
-      actions.appendChild(makeButton('Nhật ký', 'btn-time', () => this.viewAccountLogs(telegramId)));
+      actions.appendChild(makeButton('Nhật ký', 'btn-time', () => this.viewAccountLogs(deviceId || key)));
       actionCell.appendChild(actions);
       row.appendChild(actionCell);
       tbody.appendChild(row);
     });
   },
 
-  async banUser(telegramId, scopes) {
-    const reason = prompt(`Lý do cấm Telegram ${telegramId}:`, 'Vi phạm điều khoản sử dụng');
+  async banUser(key, deviceId = '') {
+    const reason = prompt(`Lý do ban user dùng key [${key}]:`, 'Vi phạm điều khoản sử dụng');
     if (reason === null) return;
-    const scopeLabel = scopes.join(' + ');
-    if (!confirm(`Xác nhận cấm theo phạm vi: ${scopeLabel}? Key liên quan sẽ bị khoá.`)) return;
+    if (!confirm(`Xác nhận ban user này? Key sẽ bị khóa ngay trên thiết bị đang dùng.`)) return;
     try {
       const res = await fetch('/api/admin/ban-user', {
         method: 'POST',
         headers: this.getAdminHeaders(),
-        body: JSON.stringify({ telegramId, scopes, reason: reason.trim() })
+        body: JSON.stringify({ key, deviceId, reason: reason.trim() })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Không thể cấm tài khoản');
@@ -662,13 +574,13 @@ const Admin = {
     }
   },
 
-  async unbanUser(telegramId) {
-    if (!confirm(`Gỡ toàn bộ lệnh cấm cho Telegram ${telegramId}? Key vẫn khoá cho tới khi admin chủ động mở lại.`)) return;
+  async unbanUser(key, deviceId = '') {
+    if (!confirm(`Mở ban cho user dùng key [${key}]?`)) return;
     try {
       const res = await fetch('/api/admin/unban-user', {
         method: 'POST',
         headers: this.getAdminHeaders(),
-        body: JSON.stringify({ telegramId })
+        body: JSON.stringify({ key, deviceId })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Không thể gỡ lệnh cấm');

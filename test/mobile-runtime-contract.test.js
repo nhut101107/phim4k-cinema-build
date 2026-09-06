@@ -16,8 +16,29 @@ test('native runtime has an HTTPS API base and a bundled catalog fallback', () =
 
 test('activation gate does not prefill a cached Telegram identity', () => {
   const auth = read('../public/js/auth.js');
+  const api = read('../public/js/api.js');
+  const index = read('../public/index.html');
   assert.match(auth, /if \(teleInput\) teleInput\.value = '';/);
   assert.doesNotMatch(auth, /teleInput\.value = savedTeleId;\s*\/\/ Pre-fill/);
+  assert.match(auth, /key người xem không cần Telegram ID/i);
+  assert.match(auth, /activationFailureMessage\(res/);
+  assert.match(auth, /clearStoredSession\(\);\s*this\.triggerLock\(activationFailureMessage/);
+  assert.match(index, /Key người xem không cần Telegram ID/);
+  assert.doesNotMatch(api, /Không thể xác thực key hoặc Telegram ID/);
+  assert.match(index, /media\/phim4k-avatar\.png/);
+});
+
+test('free-access policy is checked before a saved key and users can refresh app state', () => {
+  const auth = read('../public/js/auth.js');
+  const admin = read('../public/js/admin.js');
+  const index = read('../public/index.html');
+  assert.ok(auth.indexOf('await this.getAccessPolicy()') < auth.indexOf('if (!savedKey)'));
+  assert.match(auth, /window\.refreshAppFromServer = refreshAppFromServer/);
+  assert.match(auth, /window\.location\.reload\(\)/);
+  assert.match(index, /onclick="refreshAppFromServer\(this\)"[^>]*>🔄 Làm mới ứng dụng/);
+  assert.match(index, /onclick="refreshAppFromServer\(this\)"[^>]*>[\s\S]*?🔄 Làm Mới App/);
+  assert.match(index, /id="adminFreeAccess"[^>]*onchange="Admin\.saveAccessPolicy\(\)"/);
+  assert.match(admin, /result\.freeAccess !== requestedFreeAccess/);
 });
 
 test('admin controls start hidden and require server-confirmed admin data', () => {
@@ -34,7 +55,7 @@ test('account version and a verified session do not fall back to stale WebView s
   const auth = read('../public/js/auth.js');
   assert.match(api, /window\.API = API/);
   assert.match(auth, /window\.Auth = Auth/);
-  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.28'/);
+  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.32'/);
   assert.match(auth, /const verifiedSession = \{ \.\.\.res, key, telegramId \}/);
   assert.match(auth, /Auth\.unlockApp\(verifiedSession\)/);
 });
@@ -43,8 +64,8 @@ test('iOS entry point cache-busts every bundled script and stylesheet', () => {
   const html = read('../public/index.html');
   const localAssets = [...html.matchAll(/(?:src|href)="\/(?:js|css|vendor)\/[^"?]+(?:\?[^" ]+)?"/g)].map(match => match[0]);
   assert.ok(localAssets.length >= 20);
-  assert.ok(localAssets.every(asset => asset.includes('?v=3.4.28')), localAssets.join('\n'));
-  assert.match(html, /3\.4\.28[^<]*NATIVE ANTI-TAMPER/);
+  assert.ok(localAssets.every(asset => asset.includes('?v=3.4.32')), localAssets.join('\n'));
+  assert.match(html, /3\.4\.32[^<]*LÀM MỚI APP/);
 });
 
 test('movie modal is scrollable and sized for a phone viewport', () => {
@@ -89,7 +110,7 @@ test('native catalog falls back immediately instead of leaving the UI loading', 
   vm.runInContext(read('../public/js/home-curation.js'), sandbox);
   sandbox.Phim4KHome = sandbox.window.Phim4KHome;
   vm.runInContext(`${read('../public/js/api.js')}\nglobalThis.__api = API;`, sandbox);
-  assert.equal(sandbox.window.API.getVersion(), '3.4.28');
+  assert.equal(sandbox.window.API.getVersion(), '3.4.32');
   const home = await sandbox.__api.getHomeFeed();
   const detail = await sandbox.__api.getDetail(home.hero[0].slug);
   assert.ok(home.hero.length > 0);
@@ -210,6 +231,8 @@ test('native movie artwork accepts only opaque image tickets from its configured
   assert.equal(sandbox.__app.resolveImageUrl(ticketed), ticketed);
   assert.equal(sandbox.__app.resolveImageUrl('https://source.example/uploads/movies/poster.webp'), '/media/poster-fallback.svg');
   assert.equal(sandbox.__app.resolveImageUrl('/media/poster-fallback.svg'), '/media/poster-fallback.svg');
+  assert.match(appSource, /_poster_retry/);
+  assert.match(appSource, /retry < 2/);
 });
 
 test('native bundle contains no direct movie provider or raw media fallback', () => {

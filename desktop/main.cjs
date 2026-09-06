@@ -53,14 +53,19 @@ else app.whenReady().then(async () => {
       const timer = setTimeout(() => resolve(false), 15000);
       v.addEventListener('timeupdate', () => { if (v.currentTime > 0.1 && v.videoWidth > 0) { clearTimeout(timer); resolve(true); } });
       v.addEventListener('error', () => { clearTimeout(timer); resolve(false); });
-      Player.open({name:'Original QA',slug:'qa-desktop'}, {name:'QA',link_embed:'phim4k://app/media/qa-seek.mp4'});
+      const liveTicket = API.getPlaybackTicket.bind(API);
+      API.getPlaybackTicket = ref => ref === 'qa-desktop'
+        ? Promise.resolve({streamUrl:'phim4k://app/media/qa-seek.mp4',isHls:false})
+        : liveTicket(ref);
+      Player.open({name:'Original QA',slug:'qa-desktop'}, {name:'QA',stream_ref:'qa-desktop'});
     })`, true);
     report.playerInteraction = await win.webContents.executeJavaScript(`(() => {
-      const v=Player.video, r=v.getBoundingClientRect();
-      const subtitleSafe=getComputedStyle(v).objectFit==='contain' && r.width<=innerWidth && r.bottom<=innerHeight;
+      Player.setAspectRatio('contain', {silent:true});
+      const v=Player.video, r=v.getBoundingClientRect(), style=getComputedStyle(v);
+      const subtitleSafe=style.objectFit==='contain' && r.left>=0 && r.top>=0 && r.right<=innerWidth && r.bottom<=innerHeight;
       v.click(); const outsideDoesNotPause=!v.paused;
       Player.resetInactivityTimer(); document.getElementById('btnCenterPlayPause').click();
-      return {subtitleSafe,outsideDoesNotPause,centerPauses:v.paused};
+      return {subtitleSafe,outsideDoesNotPause,centerPauses:v.paused,geometry:{objectFit:style.objectFit,left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height,viewportWidth:innerWidth,viewportHeight:innerHeight}};
     })()`);
     report.seek = await win.webContents.executeJavaScript(`(async () => {
       const v=Player.video, r=v.getBoundingClientRect(); v.currentTime=12;
@@ -71,7 +76,7 @@ else app.whenReady().then(async () => {
       const right=v.currentTime; tap(.2); tap(.2); await new Promise(resolve=>setTimeout(resolve,150));
       return {right:Math.abs(right-start-10)<.5,left:Math.abs(right-v.currentTime-10)<.5,stillPaused:v.paused,timings:[start,right,v.currentTime]};
     })()`);
-    report.pass = !failed && report.keyGate && !report.nodeExposed && report.platform === 'windows' && report.downloadFunction && report.videoDecoded && Object.values(report.playerInteraction).every(Boolean) && Object.values(report.seek).every(Boolean);
+    report.pass = !failed && report.keyGate && !report.nodeExposed && report.platform === 'windows' && report.downloadFunction && report.videoDecoded && report.playerInteraction.subtitleSafe && report.playerInteraction.outsideDoesNotPause && report.playerInteraction.centerPauses && Object.values(report.seek).every(Boolean);
     fs.mkdirSync(path.join(app.getPath('userData'), 'qa'), { recursive: true });
     fs.writeFileSync(path.join(app.getPath('userData'), 'qa', 'desktop-smoke.json'), JSON.stringify(report, null, 2));
     app.exit(report.pass ? 0 : 1);

@@ -14,12 +14,12 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
   
   <!-- HLS.js for streaming m3u8 -->
-  <script src="/vendor/hls.min.js?v=3.4.28"></script>
+  <script src="/vendor/hls.min.js?v=3.4.32"></script>
 
-  <link rel="stylesheet" href="/css/style.css?v=3.4.28">
-  <link rel="stylesheet" href="/css/modal.css?v=3.4.28">
-  <link rel="stylesheet" href="/css/player.css?v=3.4.28">
-  <link rel="stylesheet" href="/css/tv.css?v=3.4.28">
+  <link rel="stylesheet" href="/css/style.css?v=3.4.32">
+  <link rel="stylesheet" href="/css/modal.css?v=3.4.32">
+  <link rel="stylesheet" href="/css/player.css?v=3.4.32">
+  <link rel="stylesheet" href="/css/tv.css?v=3.4.32">
 </head>
 <body class="activation-locked">
 
@@ -29,8 +29,11 @@
   <div id="activationGate" class="gate-overlay">
     <div class="gate-card">
       <div class="gate-logo">
-        <div class="logo-badge">PHIM 4K</div>
-        <span class="pro-tag">CINEMA 4K PRO</span>
+        <img src="/media/phim4k-avatar.png?v=3.4.32" class="app-avatar" alt="Biểu tượng Phim 4K" width="88" height="88">
+        <div class="gate-brand-copy">
+          <div class="logo-badge">PHIM 4K</div>
+          <span class="pro-tag">CINEMA 4K PRO</span>
+        </div>
       </div>
       <h2>Kích Hoạt Bản Quyền</h2>
       <p class="gate-desc">
@@ -70,18 +73,19 @@
           />
         </div>
 
+        <p class="viewer-key-hint">Key người xem không cần Telegram ID.</p>
         <button type="submit" id="btnActivate" class="btn-primary">
           <span class="btn-text">XÁC THỰC VÀ VÀO XEM PHIM</span>
           <div class="spinner hidden" id="activateSpinner"></div>
         </button>
         <button type="button" id="btnRequestDeviceAccess" class="btn-device-request hidden" onclick="requestDeviceOnlyAccess()">
-          Không có Telegram? Báo Admin duyệt thiết bị này
+          Báo Admin duyệt thiết bị này
         </button>
       </form>
 
       <div id="gateMessage" class="gate-message hidden"></div>
       <button type="button" id="gateDownloadBtn" class="btn-secondary app-download-entry" onclick="openDownloadModal()">📥 Tải phiên bản mới / Chọn thiết bị</button>
-      <button type="button" class="btn-secondary app-download-entry" onclick="Auth.init()">Kiểm tra lại quyền truy cập</button>
+      <button type="button" class="btn-secondary app-download-entry" onclick="refreshAppFromServer(this)">🔄 Làm mới ứng dụng</button>
 
       <!-- Support / Contact Admin Box -->
       <div class="support-contact-box">
@@ -102,6 +106,7 @@
     <header class="navbar" id="navbar">
       <div class="nav-left">
         <a href="#" class="brand-logo" onclick="switchCategory('home')">
+          <img src="/media/phim4k-avatar.png?v=3.4.32" class="brand-avatar" alt="" width="38" height="38">
           <span class="logo-gradient">PHIM 4K</span>
           <span class="badge-noads">CINEMA 4K</span>
         </a>
@@ -142,6 +147,10 @@
         <!-- Download Latest App Button -->
         <button class="nav-download-btn" onclick="openDownloadModal()" title="Tải phiên bản mới nhất cho iPhone/iPad và Windows">
           📥 Tải App Mới
+        </button>
+
+        <button class="nav-download-btn" onclick="refreshAppFromServer(this)" title="Nhận ngay thay đổi quyền truy cập và danh sách phim từ Admin">
+          🔄 Làm Mới App
         </button>
 
         <!-- User Switch / Logout Button -->
@@ -285,7 +294,7 @@
             <p>Nền tảng streaming điện ảnh chất lượng 4K chuẩn rạp, bảo vệ phụ đề trọn vẹn và tự động cập nhật liên tục.</p>
           </div>
           <div class="footer-meta">
-            <p>Telegram ID: <span id="footerTeleBadge">-</span></p>
+            <p>Quyền truy cập: <span id="footerTeleBadge">-</span></p>
             <p>Key kích hoạt: <span id="footerKeyBadge">Đang hoạt động</span></p>
             <p>Hạn sử dụng: <span id="footerExpiryBadge">Đang kiểm tra</span></p>
             <p>© 2026 Phim4K VIP Engine (by mnhut).</p>
@@ -334,7 +343,7 @@
         <h2 id="accPlan">Chưa kích hoạt</h2>
         <div class="account-details-list">
           <div class="acc-detail-item">
-            <span>Telegram ID:</span>
+            <span>Phương thức truy cập:</span>
             <strong id="accTelegramId">Chưa đăng nhập</strong>
           </div>
           <div class="acc-detail-item">
@@ -347,7 +356,7 @@
           </div>
           <div class="acc-detail-item">
             <span>Phiên bản ứng dụng:</span>
-            <span id="accAppVersion">v3.4.28</span>
+            <span id="accAppVersion">v3.4.32</span>
           </div>
         </div>
 
@@ -579,7 +588,7 @@
       </div>
       <div class="license-dialog-body">
         <div class="license-item">
-          <span class="label">Telegram ID:</span>
+          <span class="label">Phương thức truy cập:</span>
           <span class="value" id="licTelegram" style="color: var(--accent-gold); font-weight: 800;">-</span>
         </div>
         <div class="license-item">
@@ -628,7 +637,7 @@
           <button class="admin-close-action" type="button" onclick="hideAdminModal()">Đóng</button>
         </div>
         <p class="admin-desc">Quản lý toàn diện: Cấp phát key, Quản lý & Ban người dùng, Tường lửa chống DDoS và Nhật ký hoạt động.</p>
-        <p id="adminBuildVersion" class="admin-build-version">BẢN MỚI 3.4.28 · ẢNH XEM TIẾP TỰ PHỤC HỒI · NATIVE ANTI-TAMPER</p>
+        <p id="adminBuildVersion" class="admin-build-version">BẢN MỚI 3.4.32 · LÀM MỚI APP · ĐỒNG BỘ CHẾ ĐỘ MIỄN KEY</p>
         <div class="admin-quick-actions">
           <button type="button" id="adminReadLogsBtn" class="btn-primary" onclick="Admin.showTab('logs')">📜 Đọc log người dùng</button>
           <button type="button" id="adminGetUpdateBtn" class="btn-secondary" onclick="openDownloadModal()">📥 Tải phiên bản mới</button>
@@ -684,7 +693,7 @@
         <div class="admin-section-box device-request-box">
           <div class="table-header-row">
             <div>
-              <h3>📲 Yêu Cầu Thiết Bị Không Có Telegram</h3>
+              <h3>📲 Yêu Cầu Duyệt Thiết Bị</h3>
               <p class="admin-desc">Chỉ duyệt khi bạn nhận ra key và thiết bị. Duyệt thiết bị mới sẽ thay thiết bị đang gắn với key đó.</p>
             </div>
             <button class="btn-refresh-keys" type="button" onclick="Admin.loadDeviceRequests()">Làm mới</button>
@@ -783,17 +792,17 @@
             <button class="btn-refresh-keys" onclick="Admin.loadUsers()">🔄 Làm mới</button>
           </div>
           <p class="admin-desc" style="margin-bottom: 14px;">
-            Admin có thể cấm (Ban) bất kỳ người dùng hoặc tài khoản Telegram nào. Khi bị ban, tài khoản sẽ lập tức bị đá ra ngoài và không thể kích hoạt lại.
+            Admin ban trực tiếp theo key và thiết bị đang sử dụng. User bị ban sẽ bị khóa ngay và không cần có Telegram ID.
           </p>
           <div class="admin-table-wrapper">
             <table class="admin-table">
               <thead>
                 <tr>
-                  <th>Telegram ID</th>
+                  <th>Thiết Bị / User</th>
                   <th>Key Đang Gắn</th>
                   <th>Gói</th>
-                  <th>Thiết Bị Đã Khóa</th>
-                  <th>IP Gần Nhất</th>
+                  <th>Hạn Dùng</th>
+                  <th>Liên Hệ (Nếu Có)</th>
                   <th>Trạng Thái</th>
                   <th>Thao Tác Ban</th>
                 </tr>
@@ -887,7 +896,7 @@
           <div class="table-header-row">
             <h3>📊 Hoạt Động Người Dùng & Nhật Ký Hệ Thống</h3>
             <div class="log-actions-bar">
-              <input id="logAccountFilter" type="text" placeholder="Telegram ID hoặc mã thiết bị" aria-label="Lọc nhật ký theo Telegram ID hoặc mã thiết bị" />
+              <input id="logAccountFilter" type="text" placeholder="Mã thiết bị hoặc key" aria-label="Lọc nhật ký theo mã thiết bị hoặc key" />
               <select id="logTypeFilter" aria-label="Lọc loại nhật ký" onchange="Admin.applyLogFilter()">
                 <option value="ALL">Tất cả hoạt động</option>
                 <option value="USER">Người dùng xem phim</option>
@@ -938,7 +947,7 @@
         <section class="admin-card" id="accessPolicySection">
           <h3>Quyền truy cập ứng dụng</h3>
           <p>Bật: người dùng vào không cần key hoặc Telegram. Tắt: chỉ nhập key, mỗi key gắn một thiết bị. Không thay đổi quyền quản trị.</p>
-          <label><input type="checkbox" id="adminFreeAccess" disabled> Không cần nhập key</label>
+          <label><input type="checkbox" id="adminFreeAccess" disabled onchange="Admin.saveAccessPolicy()"> Không cần nhập key (tự lưu)</label>
           <button type="button" class="btn-secondary" onclick="Admin.loadAccessPolicy()">Đọc trạng thái</button>
           <button type="button" class="btn-primary" id="saveAccessPolicy" disabled onclick="Admin.saveAccessPolicy()">Lưu chế độ truy cập</button>
           <p id="accessPolicyMessage" role="status"></p>
@@ -1240,21 +1249,21 @@
   </div>
 
   <!-- Scripts -->
-  <script src="/js/mobile-config.js?v=3.4.28"></script>
-  <script src="/js/runtime-config.js?v=3.4.28"></script>
-  <script src="/js/catalog-fallback.js?v=3.4.28"></script>
-  <script src="/js/home-curation.js?v=3.4.28"></script>
-  <script src="/js/api.js?v=3.4.28"></script>
-  <script src="/js/platform.js?v=3.4.28"></script>
-  <script src="/js/native-downloads.js?v=3.4.28"></script>
-  <script src="/js/auth.js?v=3.4.28"></script>
-  <script src="/js/admin.js?v=3.4.28"></script>
-  <script src="/js/player-core.js?v=3.4.28"></script>
-  <script src="/js/audio-enhancer.js?v=3.4.28"></script>
-  <script src="/js/player.js?v=3.4.28"></script>
-  <script src="/js/coverflow.js?v=3.4.28"></script>
-  <script src="/js/app.js?v=3.4.28"></script>
-  <script src="/js/tv.js?v=3.4.28"></script>
-  <script src="/js/diagnostics.js?v=3.4.28"></script>
+  <script src="/js/mobile-config.js?v=3.4.32"></script>
+  <script src="/js/runtime-config.js?v=3.4.32"></script>
+  <script src="/js/catalog-fallback.js?v=3.4.32"></script>
+  <script src="/js/home-curation.js?v=3.4.32"></script>
+  <script src="/js/api.js?v=3.4.32"></script>
+  <script src="/js/platform.js?v=3.4.32"></script>
+  <script src="/js/native-downloads.js?v=3.4.32"></script>
+  <script src="/js/auth.js?v=3.4.32"></script>
+  <script src="/js/admin.js?v=3.4.32"></script>
+  <script src="/js/player-core.js?v=3.4.32"></script>
+  <script src="/js/audio-enhancer.js?v=3.4.32"></script>
+  <script src="/js/player.js?v=3.4.32"></script>
+  <script src="/js/coverflow.js?v=3.4.32"></script>
+  <script src="/js/app.js?v=3.4.32"></script>
+  <script src="/js/tv.js?v=3.4.32"></script>
+  <script src="/js/diagnostics.js?v=3.4.32"></script>
 </body>
 </html>

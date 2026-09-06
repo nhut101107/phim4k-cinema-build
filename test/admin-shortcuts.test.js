@@ -23,3 +23,15 @@ test('account log access starts hidden and still goes through verified-admin ope
   assert.match(admin,/activeKeyData\?\.isAdmin !== true/);
   assert.doesNotMatch(admin,/(?:configuredAdminTelegram|telegramId)[^\n]{0,120}(?:===|==)\s*['"]\d{9,12}['"]/);
 });
+
+test('admin bans current key-only users by key and device instead of requiring Telegram ID',()=>{
+  const html=read('public/index.html');
+  const admin=read('public/js/admin.js');
+  const worker=read('backend-worker/src/worker.mjs');
+  assert.match(html,/ban trực tiếp theo key và thiết bị/i);
+  assert.match(admin,/JSON\.stringify\(\{ key, deviceId, reason:/);
+  assert.match(admin,/JSON\.stringify\(\{ key, deviceId \}\)/);
+  assert.doesNotMatch(admin,/promptBanUser|Ban TG|TG \+ máy/);
+  assert.match(worker,/MISSING_USER_TARGET/);
+  assert.match(worker,/UPDATE license_keys SET active = \?, updated_at = \? WHERE license_key = \?/);
+});

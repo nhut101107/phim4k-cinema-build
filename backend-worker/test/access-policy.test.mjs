@@ -51,6 +51,36 @@ test('key-only activation atomically binds one device and rejects concurrent sec
   } finally {f.sqlite.close();}
 });
 
+test('admin lists, bans and unbans a key-only user without Telegram ID',async()=>{
+  const f=fixture(); f.seed('P4K-KEY-ONLY-USER');
+  try {
+    assert.equal((await f.request('/api/auth/activate',{key:'P4K-KEY-ONLY-USER',deviceId:'viewer-device-a'})).status,200);
+
+    const usersResponse=await f.request('/api/admin/users',undefined,f.admin);
+    const usersText=await usersResponse.text();
+    assert.equal(usersResponse.status,200,usersText);
+    const users=JSON.parse(usersText);
+    assert.equal(users.users.length,1);
+    assert.equal(users.users[0].telegramId,'');
+    assert.equal(users.users[0].boundDeviceId,'viewer-device-a');
+
+    const ban=await f.request('/api/admin/ban-user',{key:'P4K-KEY-ONLY-USER',deviceId:'viewer-device-a',reason:'test'},f.admin);
+    assert.equal(ban.status,200);
+    const blocked=await f.request('/api/auth/status',undefined,{'x-license-key':'P4K-KEY-ONLY-USER','x-device-id':'viewer-device-a'});
+    assert.equal((await blocked.json()).code,'KEY_DISABLED');
+
+    const afterBan=await (await f.request('/api/admin/users',undefined,f.admin)).json();
+    assert.equal(afterBan.users[0].isBanned,true);
+
+    const unban=await f.request('/api/admin/unban-user',{key:'P4K-KEY-ONLY-USER',deviceId:'viewer-device-a'},f.admin);
+    assert.equal(unban.status,200);
+    assert.equal((await f.request('/api/auth/status',undefined,{'x-license-key':'P4K-KEY-ONLY-USER','x-device-id':'viewer-device-a'})).status,200);
+
+    const missing=await f.request('/api/admin/ban-user',{reason:'missing target'},f.admin);
+    assert.equal((await missing.json()).code,'MISSING_USER_TARGET');
+  } finally {f.sqlite.close();}
+});
+
 test('expiry and existing owner ban are still enforced without a Telegram input; admin key is never a user key',async()=>{
   const f=fixture(); f.seed();
   try {

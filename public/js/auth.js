@@ -24,6 +24,13 @@ function deletePersistentCookie(name) {
   } catch (e) {}
 }
 
+function activationFailureMessage(result, fallback = 'Key không đúng hoặc không còn hiệu lực trên thiết bị này.') {
+  if (String(result?.code || '').includes('TELEGRAM')) {
+    return 'Đây là key quản trị. Chỉ key quản trị cần Telegram ID Admin; key người xem không cần Telegram ID.';
+  }
+  return result?.reason || result?.message || fallback;
+}
+
 const Auth = {
   activeKeyData: null,
   heartbeatTimer: null,
@@ -37,6 +44,10 @@ const Auth = {
       setPersistentCookie('phim4k_device_id', id, 365);
     }
     return id;
+  },
+
+  async getAccessPolicy() {
+    return API.fetchJson(`/api/app/access-policy?refresh=${Date.now()}`, { cache: 'no-store' }, 12000);
   },
 
   async init() {
@@ -54,14 +65,21 @@ const Auth = {
     if (teleInput) teleInput.value = '';
     if (keyInput) keyInput.value = '';
 
-    if (!savedKey) {
-      try {
+    // Check the shared Admin policy before using a saved key. A stale or
+    // disabled key must not keep a device trapped at the gate after Admin has
+    // switched the whole app to free access.
+    try {
+      const policy = await this.getAccessPolicy();
+      if (policy.freeAccess === true) {
         const guest = await API.checkStatus('', '', deviceId);
         if (guest.active && guest.freeAccess && !guest.forceUpdate) {
-          this.unlockApp({...guest, key:'', telegramId:''});
+          this.unlockApp({ ...guest, key: '', telegramId: '' });
           return;
         }
-      } catch (_) { /* Offline never grants access. */ }
+      }
+    } catch (_) { /* The normal key check below still fails closed. */ }
+
+    if (!savedKey) {
       const pendingDeviceKey = localStorage.getItem('phim4k_pending_device_key');
       this.triggerLock();
       if (pendingDeviceKey) {
@@ -84,8 +102,9 @@ const Auth = {
         this.unlockApp({ ...res, key: savedKey, telegramId: deviceOnly ? '' : savedTeleId, deviceOnly });
         this.startHeartbeat();
       } else if (res.code === 'KEY_EXPIRED') {
-        // Only require new key when expired! Pre-fill Telegram ID
-        if (teleInput) teleInput.value = savedTeleId;
+        if (teleInput) teleInput.value = '';
+        localStorage.removeItem('phim4k_telegram_id');
+        deletePersistentCookie('phim4k_telegram_id');
         const keyInput = document.getElementById('keyInput');
         if (keyInput) {
           keyInput.value = '';
@@ -95,7 +114,7 @@ const Auth = {
         this.triggerLock(`⚠️ Gói License Key của bạn đã hết hạn! Vui lòng nhập mã Key mới để tiếp tục xem phim.`);
       } else {
         this.clearStoredSession();
-        this.triggerLock(res.reason || 'Thông tin bản quyền không còn hợp lệ');
+        this.triggerLock(activationFailureMessage(res, 'Thông tin bản quyền không còn hợp lệ'));
       }
     } catch (err) {
       console.warn('Network issue on init, keeping persistent state:', err);
@@ -172,7 +191,7 @@ const Auth = {
     const deviceRequestButton = document.getElementById('btnRequestDeviceAccess');
     if (deviceRequestButton) {
       deviceRequestButton.disabled = false;
-      deviceRequestButton.textContent = 'Không có Telegram? Báo Admin duyệt thiết bị này';
+      deviceRequestButton.textContent = 'Báo Admin duyệt thiết bị này';
     }
     
     // Save to both localStorage and persistent cookie (365 days)
@@ -284,7 +303,7 @@ const Auth = {
             alert(`⚠️ THÔNG BÁO:\nHạn sử dụng License Key của bạn đã kết thúc! Vui lòng nhập key mới để tiếp tục.`);
           } else {
             this.clearStoredSession();
-            this.triggerLock(`⚠️ ${res.reason || 'Khóa kích hoạt không còn hiệu lực.'}`);
+            this.triggerLock(`⚠️ ${activationFailureMessage(res, 'Khóa kích hoạt không còn hiệu lực.')}`);
           }
         }
       } catch (err) {
@@ -345,7 +364,15 @@ async function handleActivation(e) {
         }
       }, 500);
     } else {
-      msgEl.textContent = res.message || 'Mã kích hoạt hoặc Telegram ID không đúng!';
+      const adminIdentityRequired = String(res.code || '').includes('TELEGRAM');
+      if (adminIdentityRequired) {
+        const adminFields = document.getElementById('adminLoginFields');
+        if (adminFields) adminFields.open = true;
+        msgEl.textContent = activationFailureMessage(res);
+        teleInput?.focus();
+      } else {
+        msgEl.textContent = activationFailureMessage(res);
+      }
       msgEl.className = 'gate-message error';
       msgEl.classList.remove('hidden');
     }
@@ -386,7 +413,7 @@ async function requestDeviceOnlyAccess() {
     msgEl.className = 'gate-message error';
     msgEl.classList.remove('hidden');
     button.disabled = false;
-    button.textContent = 'Không có Telegram? Báo Admin duyệt thiết bị này';
+    button.textContent = 'Báo Admin duyệt thiết bị này';
   }
 }
 
@@ -434,7 +461,7 @@ async function beginDeviceApprovalPolling(key) {
         }
         if (button) {
           button.disabled = false;
-          button.textContent = 'Không có Telegram? Báo Admin duyệt thiết bị này';
+          button.textContent = 'Báo Admin duyệt thiết bị này';
         }
         return;
       }
@@ -465,7 +492,15 @@ function openLicenseModal() {
   const d = Auth.activeKeyData;
   if (!d) return;
 
-  document.getElementById('licTelegram').textContent = d.telegramId || localStorage.getItem('phim4k_telegram_id') || '-';
+  document.getElementById('licTelegram').textContent = d.freeAccess
+    ? 'Miễn key'
+    : d.keyOnly
+      ? 'Key gắn với thiết bị'
+      : d.deviceOnly
+        ? 'Thiết bị được Admin duyệt'
+        : d.isAdmin
+          ? 'Tài khoản quản trị đã xác thực'
+          : 'Key người xem';
   document.getElementById('licPlan').textContent = d.plan || '-';
   const rawKey = String(d.key || '');
   document.getElementById('licKey').textContent = rawKey ? `${rawKey.slice(0, 4)}••••${rawKey.slice(-4)}` : '-';
@@ -520,6 +555,40 @@ function openAdminPanel() {
     alert('❌ Bạn không có quyền truy cập Admin Panel!');
   }
 }
+
+let appRefreshInFlight = false;
+async function refreshAppFromServer(button) {
+  if (appRefreshInFlight) return;
+  appRefreshInFlight = true;
+  const originalText = button?.textContent || '🔄 Làm mới ứng dụng';
+  if (button) {
+    button.disabled = true;
+    button.textContent = '⏳ Đang cập nhật…';
+  }
+  try {
+    API.clearMovieCache();
+    await Auth.getAccessPolicy();
+    if (button) button.textContent = '✅ Đã cập nhật';
+    window.setTimeout(() => window.location.reload(), 180);
+  } catch (_error) {
+    appRefreshInFlight = false;
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+    const message = 'Không lấy được thay đổi mới. Hãy kiểm tra mạng rồi bấm lại.';
+    const gateMessage = document.getElementById('gateMessage');
+    if (!document.getElementById('activationGate')?.classList.contains('hidden') && gateMessage) {
+      gateMessage.textContent = message;
+      gateMessage.className = 'gate-message error';
+      gateMessage.classList.remove('hidden');
+    } else {
+      alert(message);
+    }
+  }
+}
+
+window.refreshAppFromServer = refreshAppFromServer;
 
 // ==========================================
 // DOWNLOAD APP MODAL HELPERS (ADR, IPA, EXE)

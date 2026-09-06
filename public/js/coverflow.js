@@ -47,7 +47,7 @@ const Coverflow = {
       img.decoding = 'async';
       img.fetchPriority = item.role === 'center' ? 'high' : 'low';
       img.src = App.resolveImageUrl(item.movie.poster_url || item.movie.thumb_url || '');
-      App.attachPosterFallback(img);
+      App.attachPosterFallback(img, [App.resolveImageUrl(item.movie.thumb_url || item.movie.poster_url || '')]);
 
       card.appendChild(img);
 
@@ -547,7 +547,7 @@ function renderAccountTab() {
   if (planEl) planEl.textContent = isSuperAdmin ? '👑 SUPER ADMIN' : plan;
   if (keyEl) keyEl.textContent = key;
   const versionEl = document.getElementById('accAppVersion');
-  if (versionEl) versionEl.textContent = `v${window.API?.getVersion?.() || '3.4.28'}`;
+  if (versionEl) versionEl.textContent = `v${window.API?.getVersion?.() || '3.4.32'}`;
 
   if (adminBtn) {
     adminBtn.classList.toggle('hidden', !isSuperAdmin);

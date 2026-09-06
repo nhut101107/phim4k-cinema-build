@@ -52,6 +52,14 @@ test('browser curation does not expose upstream catalogue routes',()=>{
   assert.equal(home.paths,undefined);
   assert.doesNotMatch(fs.readFileSync('public/js/home-curation.js','utf8'),/\/v1\/api|\/danh-sach\/phim-moi-cap-nhat/);
 });
+test('home keeps a larger useful catalogue for browsing',()=>{
+  const list=Array.from({length:80},(_,index)=>movie(`movie-${index}`,{year:2026,type:index%2?'series':'single',modified:{time:`2026-08-${String(index%28+1).padStart(2,'0')}T00:00:00Z`}}));
+  const data=home.build(list,{now});
+  assert.equal(data.hero.length,10);
+  assert.equal(data.sections.find(section=>section.id==='new-releases').items.length,48);
+  assert.equal(data.sections.find(section=>section.id==='series-new').items.length,36);
+  assert.equal(data.sections.find(section=>section.id==='latest').items.length,60);
+});
 test('coverflow does not invent another movie synopsis, year, category or quality',()=>{
   const elements=new Map(['cfTitle','cfSubtitle','cfBadgeQuality','cfBadgeYear','cfBadgeStatus','cfCategories','cfSynopsis'].map(id=>[id,{textContent:''}]));
   const ctx={window:{},document:{getElementById:id=>elements.get(id),addEventListener:()=>{}},console};

@@ -10,6 +10,7 @@ const API = {
   maxMovieCacheEntries: 80,
 
   getKey() {
+    if (window.Auth?.activeKeyData?.freeAccess === true) return '';
     return localStorage.getItem('phim4k_key') || '';
   },
 
@@ -22,7 +23,7 @@ const API = {
   },
 
   getVersion() {
-    return '3.4.28';
+    return '3.4.32';
   },
 
   getSessionId() {
@@ -202,7 +203,7 @@ const API = {
         return {
           success: false,
           code: payload.code || 'ACTIVATION_REJECTED',
-          message: payload.message || payload.error || 'Không thể xác thực key hoặc Telegram ID.'
+          message: payload.message || payload.error || 'Không thể xác thực key trên thiết bị này.'
         };
       }
       return payload;
@@ -218,6 +219,7 @@ const API = {
   async checkStatus(key, telegramId, deviceId) {
     try {
       const response = await this.fetchWithTimeout('/api/auth/status', {
+        cache: 'no-store',
         headers: { 'x-app-version': this.getVersion(), 'x-license-key': key, 'x-telegram-id': telegramId, 'x-device-id': deviceId }
       }, 12000);
       return await response.json().catch(() => ({ active: false, code: 'INVALID_SERVER_RESPONSE' }));

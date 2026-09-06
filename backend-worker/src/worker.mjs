@@ -649,7 +649,8 @@ async function freshWatchProgressThumb(row, request, env, expiresAt) {
   if (!slug) return { thumb: '', persist: false };
   try {
     const detail = await fetchProtectedCatalogJson(`/phim/${slug}`, env, { ttl: 300 });
-    const source = detail?.movie?.thumb_url || detail?.movie?.poster_url || '';
+    const resolved = resolveCatalogImageReferences(detail, catalogImageBase(detail, env));
+    const source = resolved?.movie?.thumb_url || resolved?.movie?.poster_url || '';
     const upgraded = await protectImageValue(source, request, env, expiresAt, { movieSlug: slug });
     return { thumb: upgraded, persist: Boolean(upgraded) };
   } catch (_error) {
@@ -1128,14 +1129,16 @@ async function listUsers(request, env) {
   const missing = dbUnavailable(env);
   if (missing) return missing;
   const rows = await env.DB.prepare(
-    "SELECT license_keys.*, bans.telegram_id AS banned_telegram_id FROM license_keys LEFT JOIN bans ON bans.telegram_id = COALESCE(license_keys.activated_telegram_id, license_keys.assigned_telegram_id) WHERE license_keys.activated_telegram_id IS NOT NULL OR license_keys.assigned_telegram_id IS NOT NULL ORDER BY license_keys.updated_at DESC",
-  ).all();
+    "SELECT license_keys.*, bans.telegram_id AS banned_telegram_id, bans.reason AS ban_reason FROM license_keys LEFT JOIN bans ON bans.telegram_id = COALESCE(license_keys.activated_telegram_id, license_keys.assigned_telegram_id) WHERE license_keys.device_id IS NOT NULL OR license_keys.activated_telegram_id IS NOT NULL OR license_keys.assigned_telegram_id IS NOT NULL ORDER BY license_keys.updated_at DESC",
+  ).bind().all();
   return json({ users: (rows.results || []).map((record) => ({
     telegramId: record.activated_telegram_id || record.assigned_telegram_id || "",
     key: record.license_key,
     plan: record.plan,
-    isBanned: Boolean(record.banned_telegram_id),
+    isBanned: !Boolean(record.active) || Boolean(record.banned_telegram_id),
+    banReason: record.ban_reason || "",
     active: Boolean(record.active) && !isExpired(record.expires_at),
+    status: !record.active ? "Đã bị ban" : (isExpired(record.expires_at) ? "Hết hạn" : "Bình thường"),
     expiresAt: record.expires_at || null,
     boundDeviceId: record.device_id || "",
   })) });
@@ -1147,8 +1150,35 @@ async function setBan(request, env, banned) {
   const missing = dbUnavailable(env);
   if (missing) return missing;
   const body = await parseBody(request);
+  const key = normalizeKey(body.key || body.licenseKey);
+  const deviceId = normalizeId(body.deviceId);
   const telegramId = normalizeId(body.telegramId);
-  if (!telegramId) return textError("Thiếu Telegram ID.", 400, "MISSING_TELEGRAM_ID");
+
+  let license = null;
+  if (key) {
+    if (!validKey(key)) return textError("Mã key không hợp lệ.", 400, "INVALID_KEY_FORMAT");
+    license = await queryOne(env.DB, "SELECT * FROM license_keys WHERE license_key = ?", key);
+  } else if (deviceId) {
+    license = await queryOne(env.DB, "SELECT * FROM license_keys WHERE device_id = ?", deviceId);
+  }
+
+  // Current viewer accounts are identified by their license and bound device.
+  // Keep the Telegram branch below only so old bans can still be removed.
+  if (license) {
+    const owner = license.activated_telegram_id || license.assigned_telegram_id || "";
+    await env.DB.prepare("UPDATE license_keys SET active = ?, updated_at = ? WHERE license_key = ?")
+      .bind(banned ? 0 : 1, now(), license.license_key).run();
+    if (!banned && owner) await env.DB.prepare("DELETE FROM bans WHERE telegram_id = ?").bind(owner).run();
+    await logEvent(env.DB, banned ? "user_banned" : "user_unbanned", {
+      actorTelegramId: requestTelegram(request),
+      targetKey: license.license_key,
+      detail: `${banned ? "ban" : "unban"} device=${maskedValue(license.device_id || "unbound")} ${String(body.reason || "").slice(0, 300)}`.trim(),
+    });
+    return json({ success: true, message: banned ? "Đã khóa user theo key và thiết bị." : "Đã mở khóa user theo key." });
+  }
+
+  if (key || deviceId) return textError("Không tìm thấy user gắn với key hoặc thiết bị này.", 404, "USER_NOT_FOUND");
+  if (!telegramId) return textError("Thiếu key hoặc mã thiết bị của user.", 400, "MISSING_USER_TARGET");
   if (!validTelegramId(telegramId)) return textError("Telegram ID is invalid.", 400, "INVALID_TELEGRAM_ID");
   if (banned) {
     const timestamp = now();
@@ -1311,11 +1341,13 @@ async function handleContentStatus(request, env) {
 async function handleMovieRefresh(request, env) {
   const denied = await requireVerifiedAdmin(request, env);
   if (denied) return denied;
-  const path = "/danh-sach/phim-moi-cap-nhat?page=1";
+  const paths = homeCatalogPaths(new Date().getUTCFullYear());
   const cache = typeof caches !== "undefined" ? caches.default : null;
-  if (cache) await cache.delete(catalogCacheKey(path));
-  const data = await fetchProtectedCatalogJson(path, env, { force: true });
-  const itemCount = catalogItems(data).length;
+  if (cache) await Promise.all(paths.map((path) => cache.delete(catalogCacheKey(path))));
+  const results = await Promise.allSettled(paths.map((path) => fetchProtectedCatalogJson(path, env, { force: true, ttl: 30 })));
+  const uniqueItems = new Set(results.flatMap((result) => result.status === "fulfilled" ? catalogItems(result.value).map((item) => item?.slug).filter(Boolean) : []));
+  const itemCount = uniqueItems.size;
+  if (!itemCount) return textError("Nguồn danh mục tạm thời không khả dụng.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
   await logEvent(env.DB, "admin_catalog_refreshed", {
     actorTelegramId: requestTelegram(request),
     detail: JSON.stringify({ itemCount }),
@@ -1419,11 +1451,52 @@ function catalogItems(data) {
   return Array.isArray(data?.items) ? data.items : (Array.isArray(data?.data?.items) ? data.data.items : []);
 }
 
+function catalogImageBase(data, env) {
+  const hosts = configuredImageHosts(env);
+  const candidates = [
+    data?.data?.APP_DOMAIN_CDN_IMAGE,
+    data?.APP_DOMAIN_CDN_IMAGE,
+    data?.data?.pathImage,
+    data?.pathImage,
+  ];
+  for (const value of candidates) {
+    const target = safePublicHttpsUrl(value);
+    if (!target || !hosts.has(target.hostname.toLowerCase())) continue;
+    target.search = "";
+    target.hash = "";
+    if (!target.pathname.endsWith("/")) target.pathname += "/";
+    return target.href;
+  }
+  return "";
+}
+
+function resolveCatalogImageReferences(value, base) {
+  if (Array.isArray(value)) return value.map((item) => resolveCatalogImageReferences(item, base));
+  if (!value || typeof value !== "object") return value;
+  const output = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (key === "poster_url" || key === "thumb_url") {
+      const raw = String(child || "").trim();
+      if (!raw || /^[a-z][a-z0-9+.-]*:/i.test(raw) || !base) output[key] = raw;
+      else {
+        try { output[key] = new URL(raw.replace(/^\/+/, ""), base).href; }
+        catch (_error) { output[key] = ""; }
+      }
+    } else output[key] = resolveCatalogImageReferences(child, base);
+  }
+  return output;
+}
+
+function normalizedCatalogItems(data, env) {
+  return resolveCatalogImageReferences(catalogItems(data), catalogImageBase(data, env));
+}
+
 function homeCatalogPaths(year) {
   const suffix = `?page=1&limit=64&year=${year}&sort_field=modified.time&sort_type=desc`;
   return [
-    '/danh-sach/phim-moi-cap-nhat?page=1',
-    ...['phim-chieu-rap', 'phim-le', 'phim-bo'].map((category) => `/v1/api/danh-sach/${category}${suffix}`),
+    ...[1, 2, 3, 4].map((page) => `/danh-sach/phim-moi-cap-nhat?page=${page}`),
+    ...['phim-chieu-rap', 'phim-le', 'phim-bo', 'hoat-hinh', 'tv-shows']
+      .map((category) => `/v1/api/danh-sach/${category}${suffix}`),
   ];
 }
 
@@ -1443,8 +1516,14 @@ async function handleProtectedMovieImage(request, env) {
   const hosts = configuredImageHosts(env);
   const safePath = target && (target.pathname.startsWith("/upload/") || target.pathname.startsWith("/uploads/"));
   if (!target || !hosts.has(target.hostname.toLowerCase()) || !safePath) return textError("Nguồn ảnh không được phép.", 400, "IMAGE_HOST_NOT_ALLOWED");
+  const catalogOrigin = configuredCatalogOrigin(env);
   const upstream = await fetch(target.href, {
-    headers: { accept: "image/avif,image/webp,image/jpeg,image/png,image/*;q=0.8" },
+    headers: {
+      accept: "image/avif,image/webp,image/jpeg,image/png,image/*;q=0.8",
+      "accept-language": "vi,en-US;q=0.8,en;q=0.6",
+      "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36",
+      ...(catalogOrigin ? { referer: `${catalogOrigin.origin}/` } : {}),
+    },
     redirect: "manual",
     cf: { cacheEverything: true, cacheTtl: 86400 },
   });
@@ -1521,7 +1600,8 @@ async function protectCatalogImages(value, request, env, expiresAt = Math.floor(
 }
 
 async function protectMovieDetail(data, request, env, slug) {
-  const output = await protectCatalogImages(data, request, env);
+  const resolved = resolveCatalogImageReferences(data, catalogImageBase(data, env));
+  const output = await protectCatalogImages(resolved, request, env);
   if (output?.movie && typeof output.movie === "object") delete output.movie.trailer_url;
   const servers = Array.isArray(output?.episodes) ? output.episodes : [];
   output.episodes = servers.map((server, serverIndex) => ({
@@ -1545,7 +1625,7 @@ async function handleProtectedMovieCatalog(request, env) {
   if (pathname === "/api/movies/home") {
     const paths = homeCatalogPaths(new Date().getUTCFullYear());
     const results = await Promise.allSettled(paths.map((path, index) => fetchProtectedCatalogJson(path, env, { ttl: index ? 300 : 30 })));
-    const items = results.flatMap((result) => result.status === "fulfilled" ? catalogItems(result.value) : []);
+    const items = results.flatMap((result) => result.status === "fulfilled" ? normalizedCatalogItems(result.value, env) : []);
     if (!items.length) return textError("Nguồn danh mục tạm thời không khả dụng.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
     return json(await protectCatalogImages(HomeCuration.build(items), request, env));
   }
@@ -1558,11 +1638,11 @@ async function handleProtectedMovieCatalog(request, env) {
     if (country && !MOVIE_FILTER_COUNTRIES.has(country)) return textError("Quốc gia không hợp lệ.", 400, "INVALID_COUNTRY_FILTER");
     const page = catalogPage(url.searchParams.get("page"));
     let target = genre === "hoat-hinh"
-      ? `/v1/api/danh-sach/hoat-hinh?page=${page}&limit=24`
-      : genre ? `/v1/api/the-loai/${genre}?page=${page}&limit=24` : `/v1/api/quoc-gia/${country}?page=${page}&limit=24`;
+      ? `/v1/api/danh-sach/hoat-hinh?page=${page}&limit=48`
+      : genre ? `/v1/api/the-loai/${genre}?page=${page}&limit=48` : `/v1/api/quoc-gia/${country}?page=${page}&limit=48`;
     if (country && genre) target += `&country=${encodeURIComponent(country)}`;
     const data = await fetchProtectedCatalogJson(target, env);
-    return json({ filters: { genre, country }, items: await protectCatalogImages(catalogItems(data), request, env), pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1, totalItems: 0 } });
+    return json({ filters: { genre, country }, items: await protectCatalogImages(normalizedCatalogItems(data, env), request, env), pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1, totalItems: 0 } });
   }
 
   const categoryMatch = pathname.match(/^\/api\/movies\/category\/([a-z0-9-]+)$/);
@@ -1570,17 +1650,17 @@ async function handleProtectedMovieCatalog(request, env) {
     const category = categoryMatch[1];
     if (!MOVIE_CATALOG_CATEGORIES.has(category)) return textError("Danh mục phim không hợp lệ.", 400, "INVALID_CATEGORY");
     const page = catalogPage(url.searchParams.get("page"));
-    const target = category === "phim-moi-cap-nhat" ? `/danh-sach/phim-moi-cap-nhat?page=${page}` : `/v1/api/danh-sach/${category}?page=${page}&limit=24`;
+    const target = category === "phim-moi-cap-nhat" ? `/danh-sach/phim-moi-cap-nhat?page=${page}` : `/v1/api/danh-sach/${category}?page=${page}&limit=48`;
     const data = await fetchProtectedCatalogJson(target, env);
-    return json({ title: category, items: await protectCatalogImages(catalogItems(data), request, env), pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1 } });
+    return json({ title: category, items: await protectCatalogImages(normalizedCatalogItems(data, env), request, env), pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1 } });
   }
 
   if (pathname === "/api/movies/search") {
     const query = String(url.searchParams.get("q") || "").trim().slice(0, 100);
     if (!query) return textError("Thiếu từ khóa tìm kiếm.", 400, "MISSING_QUERY");
     const page = catalogPage(url.searchParams.get("page"));
-    const data = await fetchProtectedCatalogJson(`/v1/api/tim-kiem?keyword=${encodeURIComponent(query)}&page=${page}&limit=24`, env);
-    return json({ query, items: await protectCatalogImages(catalogItems(data), request, env), pagination: data.data?.params?.pagination || { currentPage: page, totalPages: 1 } });
+    const data = await fetchProtectedCatalogJson(`/v1/api/tim-kiem?keyword=${encodeURIComponent(query)}&page=${page}&limit=48`, env);
+    return json({ query, items: await protectCatalogImages(normalizedCatalogItems(data, env), request, env), pagination: data.data?.params?.pagination || { currentPage: page, totalPages: 1 } });
   }
 
   const detailMatch = pathname.match(/^\/api\/movies\/detail\/([^/]+)$/);

@@ -36,16 +36,16 @@
     const cinema = recent.filter(m => m.chieurap === true).sort(ranked);
     const hot = recent.filter(m => interest(m) > 0).sort(ranked);
     const releases = [...recent].sort(newest);
-    const hero = unique([...cinema.slice(0, 4), ...hot, ...releases]).slice(0, 8);
+    const hero = unique([...cinema.slice(0, 5), ...hot, ...releases]).slice(0, 10);
     const recentYear = recent[0]?.year || year;
     return { policy: POLICY, updatedAt, offline, rankingBasis: 'release-year + recent-catalog-update + TMDB/IMDb vote-count proxy',
       hero,
       sections: [
-        { id: 'cinema-new', title: `Chiếu rạp ${recentYear} · Nổi bật`, items: cinema.slice(0, 18) },
-        { id: 'new-releases', title: `Phim mới ${recentYear}`, items: releases.slice(0, 24) },
-        { id: 'recent-interest', title: 'Phim mới được quan tâm', items: hot.slice(0, 18) },
-        { id: 'series-new', title: `Phim bộ ${recentYear}`, items: releases.filter(m => m.type === 'series').slice(0, 18) },
-        { id: 'latest', title: offline ? 'Kho phim đã lưu · Đang chờ kết nối' : 'Vừa cập nhật trong kho · Có cả phim năm cũ', items: [...catalog].sort((a,b) => modified(b,now)-modified(a,now) || a.slug.localeCompare(b.slug)).slice(0, 24) }
+        { id: 'cinema-new', title: `Chiếu rạp ${recentYear} · Nổi bật`, items: cinema.slice(0, 30) },
+        { id: 'new-releases', title: `Phim mới ${recentYear}`, items: releases.slice(0, 48) },
+        { id: 'recent-interest', title: 'Phim mới được quan tâm', items: hot.slice(0, 36) },
+        { id: 'series-new', title: `Phim bộ ${recentYear}`, items: releases.filter(m => m.type === 'series').slice(0, 36) },
+        { id: 'latest', title: offline ? 'Kho phim đã lưu · Đang chờ kết nối' : 'Vừa cập nhật trong kho · Có cả phim năm cũ', items: [...catalog].sort((a,b) => modified(b,now)-modified(a,now) || a.slug.localeCompare(b.slug)).slice(0, 60) }
       ].filter(section => section.items.length) };
   }
   // Upstream route construction is deliberately server-only. This browser

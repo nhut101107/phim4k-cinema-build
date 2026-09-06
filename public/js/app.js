@@ -306,12 +306,14 @@ const App = {
     state.classList.add('hidden');
     movies.forEach((movie) => {
       const timestamp = this.formatScheduleTime(movie?.modified?.time);
+      const posterUrl = this.resolveImageUrl(movie.poster_url || movie.thumb_url);
+      const alternatePosterUrl = this.resolveImageUrl(movie.thumb_url || movie.poster_url);
       const card = document.createElement('button');
       card.type = 'button';
       card.className = 'schedule-card';
       card.setAttribute('aria-label', `Mở phim ${movie.name || movie.origin_name || ''}`);
       card.innerHTML = `
-        <img class="schedule-poster" src="${this.escapeHtml(this.resolveImageUrl(movie.poster_url || movie.thumb_url))}" alt="" loading="lazy" decoding="async" />
+        <img class="schedule-poster" src="${this.escapeHtml(posterUrl)}" alt="" loading="lazy" decoding="async" />
         <span class="schedule-date"><strong>${this.escapeHtml(timestamp.day)}</strong><small>${this.escapeHtml(timestamp.time)}</small></span>
         <span class="schedule-info">
           <strong class="schedule-name">${this.escapeHtml(movie.name || movie.origin_name || 'Phim mới')}</strong>
@@ -324,7 +326,7 @@ const App = {
         </span>
         <span class="schedule-open" aria-hidden="true">›</span>
       `;
-      this.attachPosterFallback(card.querySelector('.schedule-poster'));
+      this.attachPosterFallback(card.querySelector('.schedule-poster'), [alternatePosterUrl]);
       card.addEventListener('click', () => this.openMovieDetail(movie.slug));
       grid.appendChild(card);
     });
@@ -700,6 +702,7 @@ const App = {
     card.onclick = () => this.openMovieDetail(movie.slug);
 
     const posterUrl = this.resolveImageUrl(movie.poster_url || movie.thumb_url);
+    const alternatePosterUrl = this.resolveImageUrl(movie.thumb_url || movie.poster_url);
     const epCurrent = movie.episode_current || movie.episode_total || '';
     const genre = this.getMovieTags(movie, 'category')[0] || '';
     const country = this.getMovieTags(movie, 'country')[0] || '';
@@ -720,7 +723,7 @@ const App = {
       </div>
     `;
 
-    this.attachPosterFallback(card.querySelector('.card-poster'));
+    this.attachPosterFallback(card.querySelector('.card-poster'), [alternatePosterUrl]);
 
     return card;
   },
@@ -745,13 +748,45 @@ const App = {
     return '/media/poster-fallback.svg';
   },
 
-  attachPosterFallback(image) {
+  attachPosterFallback(image, alternatives = []) {
     if (!image) return;
-    image.addEventListener('error', () => {
-      if (image.dataset.posterFallback === '1') return;
-      image.dataset.posterFallback = '1';
-      image.src = this.posterFallbackUrl();
-    });
+    const fallback = this.posterFallbackUrl();
+    const sources = [image.getAttribute('src'), ...alternatives]
+      .map((source) => String(source || '').trim())
+      .filter((source, index, list) => source && source !== fallback && list.indexOf(source) === index);
+    let sourceIndex = 0;
+    let retry = 0;
+    let finished = false;
+    const retryUrl = (source) => {
+      try {
+        const url = new URL(source, window.location.href);
+        url.searchParams.set('_poster_retry', `${Date.now()}-${retry}`);
+        return url.href;
+      } catch (_error) { return source; }
+    };
+    const loadNext = () => {
+      if (finished) return;
+      if (sourceIndex >= sources.length) {
+        finished = true;
+        image.dataset.posterFallback = '1';
+        image.src = fallback;
+        return;
+      }
+      image.src = retryUrl(sources[sourceIndex]);
+    };
+    const onError = () => {
+      if (finished || image.dataset.posterFallback === '1') return;
+      if (retry < 2) {
+        retry += 1;
+        window.setTimeout(loadNext, retry * 700);
+        return;
+      }
+      sourceIndex += 1;
+      retry = 0;
+      window.setTimeout(loadNext, 250);
+    };
+    image.addEventListener('error', onError);
+    if (image.complete && image.naturalWidth === 0) window.queueMicrotask(onError);
   },
 
   setBackgroundImage(element, source) {
@@ -900,6 +935,7 @@ const App = {
         };
 
         const posterUrl = this.resolveImageUrl(movie.poster_url || movie.thumb_url);
+        const alternatePosterUrl = this.resolveImageUrl(movie.thumb_url || movie.poster_url);
         item.innerHTML = `
           <img class="search-thumb" src="${posterUrl}" alt="${this.escapeHtml(movie.name || 'Poster phim')}" loading="lazy" decoding="async" width="56" height="82" />
           <div class="search-info">
@@ -907,7 +943,7 @@ const App = {
             <div class="search-sub">${this.escapeHtml(movie.origin_name || '')} (${this.escapeHtml(movie.year || '2026')})</div>
           </div>
         `;
-        this.attachPosterFallback(item.querySelector('.search-thumb'));
+        this.attachPosterFallback(item.querySelector('.search-thumb'), [alternatePosterUrl]);
         dropdown.appendChild(item);
       });
 
@@ -1006,7 +1042,7 @@ const App = {
     const thumbUrl = this.resolveImageUrl(movie.thumb_url || movie.poster_url);
     const detailPoster = document.getElementById('detailPoster');
     detailPoster.src = posterUrl;
-    this.attachPosterFallback(detailPoster);
+    this.attachPosterFallback(detailPoster, [thumbUrl]);
     this.setBackgroundImage(document.getElementById('detailBackdrop'), thumbUrl);
     // Details are image-only; never mount a trailer or embedded video.
 
