@@ -60,6 +60,17 @@ test('account version and a verified session do not fall back to stale WebView s
   assert.match(auth, /Auth\.unlockApp\(verifiedSession\)/);
 });
 
+test('web, iOS and Windows release versions stay aligned', () => {
+  const api = read('../public/js/api.js');
+  const iosProject = read('../ios/App/App.xcodeproj/project.pbxproj');
+  const desktop = JSON.parse(read('../electron-builder.json'));
+  const webVersion = api.match(/return '(\d+\.\d+\.\d+)'/)?.[1];
+  assert.equal(webVersion, '3.4.32');
+  assert.equal(desktop.extraMetadata.version, webVersion);
+  assert.deepEqual([...iosProject.matchAll(/MARKETING_VERSION = ([^;]+);/g)].map((match) => match[1]), [webVersion, webVersion]);
+  assert.deepEqual([...iosProject.matchAll(/CURRENT_PROJECT_VERSION = ([^;]+);/g)].map((match) => match[1]), ['32', '32']);
+});
+
 test('iOS entry point cache-busts every bundled script and stylesheet', () => {
   const html = read('../public/index.html');
   const localAssets = [...html.matchAll(/(?:src|href)="\/(?:js|css|vendor)\/[^"?]+(?:\?[^" ]+)?"/g)].map(match => match[0]);
