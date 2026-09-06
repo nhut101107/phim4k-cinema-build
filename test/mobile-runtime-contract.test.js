@@ -34,9 +34,17 @@ test('account version and a verified session do not fall back to stale WebView s
   const auth = read('../public/js/auth.js');
   assert.match(api, /window\.API = API/);
   assert.match(auth, /window\.Auth = Auth/);
-  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.17'/);
+  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.28'/);
   assert.match(auth, /const verifiedSession = \{ \.\.\.res, key, telegramId \}/);
   assert.match(auth, /Auth\.unlockApp\(verifiedSession\)/);
+});
+
+test('iOS entry point cache-busts every bundled script and stylesheet', () => {
+  const html = read('../public/index.html');
+  const localAssets = [...html.matchAll(/(?:src|href)="\/(?:js|css|vendor)\/[^"?]+(?:\?[^" ]+)?"/g)].map(match => match[0]);
+  assert.ok(localAssets.length >= 20);
+  assert.ok(localAssets.every(asset => asset.includes('?v=3.4.28')), localAssets.join('\n'));
+  assert.match(html, /3\.4\.28[^<]*NATIVE ANTI-TAMPER/);
 });
 
 test('movie modal is scrollable and sized for a phone viewport', () => {
@@ -78,8 +86,10 @@ test('native catalog falls back immediately instead of leaving the UI loading', 
   };
   vm.createContext(sandbox);
   vm.runInContext(read('../public/js/catalog-fallback.js'), sandbox);
+  vm.runInContext(read('../public/js/home-curation.js'), sandbox);
+  sandbox.Phim4KHome = sandbox.window.Phim4KHome;
   vm.runInContext(`${read('../public/js/api.js')}\nglobalThis.__api = API;`, sandbox);
-  assert.equal(sandbox.window.API.getVersion(), '3.4.17');
+  assert.equal(sandbox.window.API.getVersion(), '3.4.28');
   const home = await sandbox.__api.getHomeFeed();
   const detail = await sandbox.__api.getDetail(home.hero[0].slug);
   assert.ok(home.hero.length > 0);
@@ -187,7 +197,7 @@ test('schedule is generated from the live catalogue and opens movie details', ()
   assert.match(tabs, /tabId === 'schedule'[\s\S]*?renderSchedule/);
 });
 
-test('native movie artwork uses the allowlisted same-origin image relay', () => {
+test('native movie artwork accepts only opaque image tickets from its configured Worker', () => {
   const sandbox = {
     URL,
     window: { Phim4KRuntime: { apiBaseUrl: 'https://api.example.test' } },
@@ -196,9 +206,25 @@ test('native movie artwork uses the allowlisted same-origin image relay', () => 
   vm.createContext(sandbox);
   const appSource = read('../public/js/app.js').split('// Global Helpers for HTML inline calls')[0];
   vm.runInContext(`${appSource}\nglobalThis.__app = App;`, sandbox);
-  const proxied = sandbox.__app.resolveImageUrl('https://phimimg.com/uploads/movies/poster.webp');
-  assert.equal(proxied, 'https://api.example.test/api/media/image?url=https%3A%2F%2Fphimimg.com%2Fuploads%2Fmovies%2Fposter.webp');
+  const ticketed = 'https://api.example.test/api/media/image?t=abcdefghijklmnopqrstuvwxyz_0123456789';
+  assert.equal(sandbox.__app.resolveImageUrl(ticketed), ticketed);
+  assert.equal(sandbox.__app.resolveImageUrl('https://source.example/uploads/movies/poster.webp'), '/media/poster-fallback.svg');
   assert.equal(sandbox.__app.resolveImageUrl('/media/poster-fallback.svg'), '/media/poster-fallback.svg');
+});
+
+test('native bundle contains no direct movie provider or raw media fallback', () => {
+  const bundled = ['../public/js/api.js', '../public/js/app.js', '../public/js/catalog-fallback.js', '../public/js/home-curation.js', '../public/js/player.js']
+    .map(read).join('\n');
+  assert.doesNotMatch(bundled, /phimapi|ophim1|phimimg|api\/media\/image\?url=|\/v1\/api|\/danh-sach\/phim-moi-cap-nhat|link_(?:m3u8|embed)/i);
+  assert.match(bundled, /getPlaybackTicket/);
+  assert.match(read('../public/js/player.js'), /stream_ref/);
+});
+
+test('iOS workflow audits the completed IPA before uploading it', () => {
+  const workflow = read('../.github/workflows/build-ios-ipa.yml');
+  const audit = workflow.indexOf('package_ios_web_update.py --audit-only');
+  const upload = workflow.indexOf('actions/upload-artifact@');
+  assert.ok(audit >= 0 && upload > audit);
 });
 
 test('user activity is batched without stream URLs and admin logs support user filters and pagination', () => {

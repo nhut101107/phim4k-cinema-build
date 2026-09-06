@@ -57,10 +57,10 @@ else app.whenReady().then(async () => {
     })`, true);
     report.playerInteraction = await win.webContents.executeJavaScript(`(() => {
       const v=Player.video, r=v.getBoundingClientRect();
-      const fill=getComputedStyle(v).objectFit==='cover' && r.width===innerWidth && r.height===innerHeight;
+      const subtitleSafe=getComputedStyle(v).objectFit==='contain' && r.width<=innerWidth && r.bottom<=innerHeight;
       v.click(); const outsideDoesNotPause=!v.paused;
       Player.resetInactivityTimer(); document.getElementById('btnCenterPlayPause').click();
-      return {fill,outsideDoesNotPause,centerPauses:v.paused};
+      return {subtitleSafe,outsideDoesNotPause,centerPauses:v.paused};
     })()`);
     report.seek = await win.webContents.executeJavaScript(`(async () => {
       const v=Player.video, r=v.getBoundingClientRect(); v.currentTime=12;

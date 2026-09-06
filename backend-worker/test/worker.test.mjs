@@ -1,6 +1,28 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker, { auditTypeForAction, compareAppVersions, createRateLimiter, json, normalizeAnnouncementSetting, normalizeTelemetryEvents } from "../src/worker.mjs";
+import worker, { auditTypeForAction, compareAppVersions, createRateLimiter, json, normalizeAnnouncementSetting, normalizeTelemetryEvents, sealMediaTicket } from "../src/worker.mjs";
+
+const MEDIA_SECRET = "fixture-media-ticket-secret-at-least-32-characters";
+function freeViewerEnv(extra = {}) {
+  return {
+    DB: {
+      prepare(sql) {
+        return { bind() { return { async first() { return { setting_value: "true" }; } }; } };
+      },
+    },
+    MOVIE_CATALOG_ORIGIN: "https://catalog.example",
+    MOVIE_IMAGE_HOSTS: "images.example",
+    MEDIA_TICKET_SECRET: MEDIA_SECRET,
+    ...extra,
+  };
+}
+
+function viewerRequest(path, init = {}) {
+  return new Request(`https://example.workers.dev${path}`, {
+    ...init,
+    headers: { "x-device-id": "fixture-device", ...(init.headers || {}) },
+  });
+}
 
 test("health reports an unconfigured database without exposing settings", async () => {
   const response = await worker.fetch(new Request("https://example.workers.dev/api/health"), {});
@@ -23,37 +45,39 @@ test("JSON responses include CORS and no-store headers", async () => {
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
 });
 
-test("movie metadata relay works without D1 and never accepts an arbitrary upstream", async () => {
+test("movie metadata is authenticated and relayed only through the configured server origin", async () => {
   const originalFetch = globalThis.fetch;
   const requests = [];
   globalThis.fetch = async (input) => {
     const target = String(input);
     requests.push(target);
-    return new Response(JSON.stringify({ items: [{ name: "Fixture", slug: "fixture" }] }), {
+    return new Response(JSON.stringify({ items: [{ name: "Fixture", slug: "fixture", year: new Date().getUTCFullYear(), chieurap: true, tmdb: {vote_count:100, vote_average:7}, type:'series' }] }), {
       status: 200,
       headers: { "content-type": "application/json" },
     });
   };
   try {
-    const home = await worker.fetch(new Request("https://example.workers.dev/api/movies/home"), {});
+    const env = freeViewerEnv();
+    const home = await worker.fetch(viewerRequest("/api/movies/home"), env);
     assert.equal(home.status, 200);
     const payload = await home.json();
     assert.equal(payload.hero[0].slug, "fixture");
-    assert.equal(payload.sections.length, 4);
+    assert.equal(payload.sections.length, 5);
+    assert.equal(payload.sections[0].id, 'cinema-new');
     assert.equal(home.headers.get("access-control-allow-origin"), "*");
-    assert.equal(requests.length, 1);
-    assert.ok(requests.every((target) => target.startsWith("https://phimapi.com/")));
+    assert.equal(requests.length, 4);
+    assert.ok(requests.every((target) => target.startsWith("https://catalog.example/")));
 
-    const filtered = await worker.fetch(new Request("https://example.workers.dev/api/movies/filter?genre=hanh-dong&country=trung-quoc&page=2"), {});
+    const filtered = await worker.fetch(viewerRequest("/api/movies/filter?genre=hanh-dong&country=trung-quoc&page=2"), env);
     assert.equal(filtered.status, 200);
-    assert.equal(requests.at(-1), "https://phimapi.com/v1/api/the-loai/hanh-dong?page=2&limit=24&country=trung-quoc");
+    assert.equal(requests.at(-1), "https://catalog.example/v1/api/the-loai/hanh-dong?page=2&limit=24&country=trung-quoc");
 
-    const invalidFilter = await worker.fetch(new Request("https://example.workers.dev/api/movies/filter?genre=../../secret"), {});
+    const invalidFilter = await worker.fetch(viewerRequest("/api/movies/filter?genre=../../secret"), env);
     assert.equal(invalidFilter.status, 400);
 
-    const invalid = await worker.fetch(new Request("https://example.workers.dev/api/movies/category/not-allowed"), {});
+    const invalid = await worker.fetch(viewerRequest("/api/movies/category/not-allowed"), env);
     assert.equal(invalid.status, 400);
-    assert.equal(requests.length, 2);
+    assert.equal(requests.length, 5);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -65,7 +89,7 @@ test("app update checks compare version components rather than strings", () => {
   assert.equal(compareAppVersions("3.2", "3.2.0"), 0);
 });
 
-test("image relay accepts only the reviewed movie image host and image responses", async () => {
+test("image relay accepts only an opaque encrypted capability for the configured host", async () => {
   const originalFetch = globalThis.fetch;
   const requests = [];
   globalThis.fetch = async (input, options) => {
@@ -76,19 +100,22 @@ test("image relay accepts only the reviewed movie image host and image responses
     });
   };
   try {
-    const source = encodeURIComponent("https://phimimg.com/uploads/movies/fixture.jpg");
-    const allowed = await worker.fetch(new Request(`https://example.workers.dev/api/media/image?url=${source}`), {});
+    const env = freeViewerEnv();
+    const source = "https://images.example/uploads/movies/fixture.jpg";
+    const token = await sealMediaTicket({ kind: "image", url: source, exp: Math.floor(Date.now() / 1000) + 300 }, env);
+    assert.doesNotMatch(token, /images|fixture|https/i);
+    const allowed = await worker.fetch(new Request(`https://example.workers.dev/api/media/image?t=${token}`), env);
     assert.equal(allowed.status, 200);
     assert.equal(allowed.headers.get("content-type"), "image/jpeg");
     assert.equal(allowed.headers.get("access-control-allow-origin"), "*");
     assert.match(allowed.headers.get("cache-control"), /max-age=86400/);
     assert.equal(requests.length, 1);
-    assert.equal(requests[0].target, "https://phimimg.com/uploads/movies/fixture.jpg");
+    assert.equal(requests[0].target, source);
     assert.equal(requests[0].redirect, "manual");
 
-    const denied = await worker.fetch(new Request("https://example.workers.dev/api/media/image?url=https%3A%2F%2F127.0.0.1%2Fsecret"), {});
+    const denied = await worker.fetch(new Request(`https://example.workers.dev/api/media/image?t=${token.slice(0, -1)}x`), env);
     assert.equal(denied.status, 400);
-    assert.equal((await denied.json()).code, "IMAGE_HOST_NOT_ALLOWED");
+    assert.equal((await denied.json()).code, "INVALID_IMAGE_TICKET");
     assert.equal(requests.length, 1);
   } finally {
     globalThis.fetch = originalFetch;
@@ -101,20 +128,21 @@ test("admin master key is normalized but restricted to its configured Telegram I
       return { bind() { return { first: async () => null }; } };
     },
   };
-  const env = { DB: db, ADMIN_LICENSE_KEY: "mnhut", ADMIN_TELEGRAM_ID: "5992662564" };
+  const env = { DB: db, ADMIN_LICENSE_KEY: "TEST-ADMIN-MASTER", ADMIN_TELEGRAM_ID: "1000000001" };
   const makeRequest = (telegramId) => new Request("https://example.workers.dev/api/auth/activate", {
     method: "POST",
     headers: { "content-type": "application/json", "cf-connecting-ip": telegramId },
-    body: JSON.stringify({ key: "MNHUT", telegramId, deviceId: "device-1" }),
+    body: JSON.stringify({ key: "TEST-ADMIN-MASTER", telegramId, deviceId: "device-1" }),
   });
 
-  const allowed = await worker.fetch(makeRequest("5992662564"), env);
+  const allowed = await worker.fetch(makeRequest("1000000001"), env);
   assert.equal(allowed.status, 200);
   const allowedBody = await allowed.json();
   assert.equal(allowedBody.isAdmin, true);
-  assert.equal(allowedBody.telegramId, "5992662564");
+  assert.equal(allowedBody.telegramId, undefined);
+  assert.equal(allowedBody.key, undefined);
 
-  const denied = await worker.fetch(makeRequest("5992662565"), env);
+  const denied = await worker.fetch(makeRequest("1000000002"), env);
   assert.equal(denied.status, 403);
   assert.equal((await denied.json()).code, "ADMIN_TELEGRAM_REQUIRED");
 });
@@ -160,7 +188,7 @@ test("device-only access stays pending until the verified admin approves that ex
       };
     },
   };
-  const env = { DB: db, ADMIN_LICENSE_KEY: "MASTER-DEVICE-KEY", ADMIN_TELEGRAM_ID: "5992662564" };
+  const env = { DB: db, ADMIN_LICENSE_KEY: "MASTER-DEVICE-KEY", ADMIN_TELEGRAM_ID: "1000000001" };
   const request = await worker.fetch(new Request("https://example.workers.dev/api/auth/request-device-access", {
     method: "POST",
     headers: { "content-type": "application/json", "cf-connecting-ip": "203.0.113.31" },
@@ -179,7 +207,7 @@ test("device-only access stays pending until the verified admin approves that ex
     headers: {
       "content-type": "application/json",
       "x-license-key": "MASTER-DEVICE-KEY",
-      "x-telegram-id": "5992662564",
+      "x-telegram-id": "1000000001",
       "cf-connecting-ip": "203.0.113.33",
     },
     body: JSON.stringify({ key: "P4K-DEVICE-TEST", deviceId: "device-no-telegram", decision: "approve" }),
@@ -329,10 +357,11 @@ test("admin content status checks catalog and exposes only authorized provider r
   };
   try {
     const response = await worker.fetch(new Request("https://example.workers.dev/api/admin/content-status", {
-      headers: { "x-license-key": "MASTER-CONTENT-KEY", "x-telegram-id": "5992662564" },
+      headers: { "x-license-key": "MASTER-CONTENT-KEY", "x-telegram-id": "1000000001" },
     }), {
-      DB: db, ADMIN_LICENSE_KEY: "MASTER-CONTENT-KEY", ADMIN_TELEGRAM_ID: "5992662564",
+      DB: db, ADMIN_LICENSE_KEY: "MASTER-CONTENT-KEY", ADMIN_TELEGRAM_ID: "1000000001",
       JELLYFIN_BASE_URL: "https://media.example.com",
+      MOVIE_CATALOG_ORIGIN: "https://catalog.example",
     });
     assert.equal(response.status, 200);
     const payload = await response.json();
@@ -382,9 +411,9 @@ test("verified admin can publish and clear a timed global announcement", async (
       };
     },
   };
-  const env = { DB: db, ADMIN_LICENSE_KEY: "MASTER-NOTICE-KEY", ADMIN_TELEGRAM_ID: "5992662564" };
+  const env = { DB: db, ADMIN_LICENSE_KEY: "MASTER-NOTICE-KEY", ADMIN_TELEGRAM_ID: "1000000001" };
   const headers = {
-    "content-type": "application/json", "x-license-key": "MASTER-NOTICE-KEY", "x-telegram-id": "5992662564",
+    "content-type": "application/json", "x-license-key": "MASTER-NOTICE-KEY", "x-telegram-id": "1000000001",
   };
   const publish = await worker.fetch(new Request("https://example.workers.dev/api/admin/announcement", {
     method: "POST", headers, body: JSON.stringify({ title: "Tin mới", message: "Phim mới đã cập nhật.", durationMinutes: 90 }),

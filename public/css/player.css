@@ -63,7 +63,7 @@
     object-position: center top;
   }
 
-  .player-modal-overlay .cinema-player-wrapper.aspect-contain:not(.inactive) .video-element {
+  .player-modal-overlay .cinema-player-wrapper.aspect-contain:not(.cinema-fullscreen):not(.inactive) .video-element {
     height: min(56.25vw, calc(100dvh - 224px));
     margin-bottom: 0;
   }

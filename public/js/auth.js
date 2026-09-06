@@ -32,7 +32,7 @@ const Auth = {
   getDeviceId() {
     let id = localStorage.getItem('phim4k_device_id') || getPersistentCookie('phim4k_device_id');
     if (!id) {
-      id = 'dev_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now().toString(36);
+      id = 'dev_' + crypto.randomUUID();
       localStorage.setItem('phim4k_device_id', id);
       setPersistentCookie('phim4k_device_id', id, 365);
     }
@@ -54,7 +54,14 @@ const Auth = {
     if (teleInput) teleInput.value = '';
     if (keyInput) keyInput.value = '';
 
-    if (!savedKey || (!savedTeleId && !deviceOnly)) {
+    if (!savedKey) {
+      try {
+        const guest = await API.checkStatus('', '', deviceId);
+        if (guest.active && guest.freeAccess && !guest.forceUpdate) {
+          this.unlockApp({...guest, key:'', telegramId:''});
+          return;
+        }
+      } catch (_) { /* Offline never grants access. */ }
       const pendingDeviceKey = localStorage.getItem('phim4k_pending_device_key');
       this.triggerLock();
       if (pendingDeviceKey) {
@@ -169,15 +176,16 @@ const Auth = {
     }
     
     // Save to both localStorage and persistent cookie (365 days)
-    localStorage.setItem('phim4k_key', keyData.key);
-    setPersistentCookie('phim4k_key', keyData.key, 365);
+    localStorage.setItem('phim4k_key', keyData.key || '');
+    setPersistentCookie('phim4k_key', keyData.key || '', 365);
 
     if (keyData.telegramId) {
       localStorage.setItem('phim4k_telegram_id', keyData.telegramId);
       setPersistentCookie('phim4k_telegram_id', keyData.telegramId, 365);
     }
-    if (keyData.deviceOnly) {
-      localStorage.setItem('phim4k_device_only', '1');
+    if (keyData.deviceOnly || keyData.keyOnly || keyData.freeAccess) {
+      if (keyData.deviceOnly) localStorage.setItem('phim4k_device_only', '1');
+      else localStorage.removeItem('phim4k_device_only');
       localStorage.removeItem('phim4k_telegram_id');
       deletePersistentCookie('phim4k_telegram_id');
     } else {
@@ -193,14 +201,15 @@ const Auth = {
     const vipText = document.getElementById('vipPlanText');
     if (vipText) vipText.textContent = keyData.isAdmin ? 'SUPER ADMIN' : (keyData.plan || 'VIP PRO');
 
-    const expiryLabel = this.formatExpiry(keyData.expiresAt);
+    const expiryLabel = keyData.freeAccess ? 'Miễn key trong thời gian Admin cho phép' : this.formatExpiry(keyData.expiresAt);
     const vipExpiry = document.getElementById('vipExpiryText');
     if (vipExpiry) vipExpiry.textContent = expiryLabel;
 
-    // The server decides whether this activated session is an administrator.
+    // The server is the only authority for administrator access. Never bundle
+    // the private administrator identity in a client-side comparison.
     const adminBtn = document.getElementById('adminNavBtn');
     if (adminBtn) {
-      if (keyData.isAdmin && String(keyData.telegramId || '') === '5992662564') {
+      if (keyData.isAdmin === true) {
         adminBtn.classList.remove('hidden');
       } else {
         adminBtn.classList.add('hidden');
@@ -210,7 +219,7 @@ const Auth = {
     // Footer info
     const footerTele = document.getElementById('footerTeleBadge');
     if (footerTele) {
-      footerTele.textContent = keyData.deviceOnly ? 'Thiết bị được Admin duyệt' : (keyData.telegramId || 'Chưa liên kết');
+      footerTele.textContent = keyData.freeAccess ? 'Chế độ miễn key' : (keyData.keyOnly ? 'Key gắn với thiết bị này' : keyData.deviceOnly ? 'Thiết bị được Admin duyệt' : (keyData.telegramId || 'Chưa liên kết'));
     }
     const footerBadge = document.getElementById('footerKeyBadge');
     if (footerBadge) {
@@ -228,6 +237,7 @@ const Auth = {
     if (window.App && window.App.loadHomeFeed) {
       window.App.loadHomeFeed();
     }
+    void window.ContinueWatching?.syncFromServer?.();
     window.renderAccountTab?.();
     window.API?.trackUsage?.('app_open', {
       entry: keyData.deviceOnly ? 'device-approved' : (keyData.isAdmin ? 'admin' : 'telegram')
@@ -241,7 +251,7 @@ const Auth = {
       const key = localStorage.getItem('phim4k_key') || getPersistentCookie('phim4k_key');
       const teleId = localStorage.getItem('phim4k_telegram_id') || getPersistentCookie('phim4k_telegram_id');
       const deviceOnly = localStorage.getItem('phim4k_device_only') === '1';
-      if (!key || (!teleId && !deviceOnly)) return;
+      if (!key && !this.activeKeyData?.freeAccess) return;
 
       try {
         const res = deviceOnly
@@ -278,7 +288,7 @@ const Auth = {
           }
         }
       } catch (err) {
-        // Network fluctuation, ignore single glitch
+        if (this.activeKeyData?.freeAccess) this.triggerLock('Không xác minh được chế độ miễn key. Vui lòng thử lại.');
       }
     }, 30000);
   }
@@ -298,11 +308,11 @@ async function handleActivation(e) {
   const spinner = document.getElementById('activateSpinner');
   const msgEl = document.getElementById('gateMessage');
 
-  const telegramId = teleInput.value.trim();
+  const telegramId = document.getElementById('adminLoginFields')?.open ? teleInput.value.trim() : '';
   const key = keyInput.value.trim();
 
-  if (!telegramId || !key) {
-    msgEl.textContent = 'Vui lòng nhập cả Telegram ID và License Key!';
+  if (!key) {
+    msgEl.textContent = 'Vui lòng nhập License Key!';
     msgEl.className = 'gate-message error';
     msgEl.classList.remove('hidden');
     return;
@@ -330,7 +340,7 @@ async function handleActivation(e) {
         // without this merge the UI would open and then render as inactive.
         const verifiedSession = { ...res, key, telegramId };
         Auth.unlockApp(verifiedSession);
-        if (verifiedSession.isAdmin && String(verifiedSession.telegramId) === '5992662564') {
+        if (verifiedSession.isAdmin === true) {
           setTimeout(() => Admin.open(), 400);
         }
       }, 500);
@@ -492,10 +502,10 @@ function closeLicenseModal(e) {
 }
 
 function logoutKey() {
-  if (confirm('Bạn có chắc chắn muốn đăng xuất tài khoản và gỡ key khỏi thiết bị này không?')) {
+  if (confirm('Đăng xuất trên máy này? Key vẫn gắn với thiết bị; chỉ Admin có thể reset để đổi máy.')) {
     Auth.clearStoredSession();
     hideLicenseModal();
-    Auth.triggerLock('Vui lòng nhập Telegram ID và License Key để đăng nhập');
+    Auth.triggerLock('Nhập key để đăng nhập. Admin dùng mục Đăng nhập quản trị.');
   }
 }
 
@@ -514,7 +524,10 @@ function openAdminPanel() {
 // ==========================================
 // DOWNLOAD APP MODAL HELPERS (ADR, IPA, EXE)
 // ==========================================
+let downloadRequest = null;
+let downloadReturnFocus = null;
 async function refreshPublicDownloads() {
+  if (downloadRequest) return downloadRequest;
   const ids = { android: ['Apk', 'APK'], ios: ['Ipa', 'IPA'], windows: ['Exe', 'EXE'], android_tv: ['Tv', 'APK TV'] };
   const platform = Phim4KPlatform.detect(navigator.userAgent, window.PHIM4K_PLATFORM);
   const render = (data, failed = false) => {
@@ -526,7 +539,8 @@ async function refreshPublicDownloads() {
         btn.removeAttribute('download');
         btn.removeAttribute('href');
         btn.setAttribute('aria-disabled', entry.url ? 'false' : 'true');
-        btn.textContent = entry.url ? `Tải ${format}${key === platform ? ' · Phù hợp thiết bị này' : ''}` : (failed ? 'Chưa tải được link · Thử lại' : 'Chưa phát hành');
+        const older = key === platform && Phim4KPlatform.releaseState(entry, API.getVersion()) === 'older';
+        btn.textContent = entry.url ? `Tải ${format}${older ? ' · Bản công khai cũ hơn' : key === platform ? ' · Phù hợp thiết bị này' : ''}` : (failed ? 'Chưa tải được link · Thử lại' : 'Chưa phát hành');
         btn.onclick = null;
         if (entry.url) {
           btn.href = entry.url; btn.target = '_blank'; btn.rel = 'noopener noreferrer';
@@ -541,22 +555,45 @@ async function refreshPublicDownloads() {
     }
   };
   render({});
-  try {
-    render(await API.fetchJson('/api/app/downloads', {}, 12000));
-  } catch (err) {
-    render({}, true);
-  }
+  const status = document.getElementById('downloadReleaseStatus');
+  const retry = document.getElementById('downloadRetryBtn');
+  if (status) status.textContent = 'Đang lấy danh sách bản phát hành…';
+  retry?.classList.add('hidden');
+  downloadRequest = (async () => {
+    try {
+      const data = await API.fetchJson('/api/app/downloads', {}, 12000);
+      render(data);
+      const entry = Phim4KPlatform.release(data, platform);
+      const state = Phim4KPlatform.releaseState(entry, API.getVersion());
+      if (status) status.textContent = state === 'older'
+        ? `Bạn đang dùng ${API.getVersion()}; bản công khai là ${entry.version}, cũ hơn bản trên máy. Chưa có link tải bản mới này; không cần hạ phiên bản.`
+        : state === 'newer' ? `Có bản ${entry.version} cho ${Phim4KPlatform.labels[platform]}. Bấm nút tải bên dưới.`
+        : state === 'current' ? `Bạn đang dùng bản ${API.getVersion()}. Có thể tải lại hoặc chọn bản cho thiết bị khác.`
+        : state === 'unknown' ? 'Có file tải nhưng chưa xác định được phiên bản. Kiểm tra thông tin trước khi cài.'
+        : 'Chưa có file cho thiết bị này. Các bản đã phát hành được liệt kê bên dưới.';
+    } catch (err) {
+      render({}, true);
+      if (status) status.textContent = 'Không lấy được danh sách. Kiểm tra kết nối và bấm Thử tải lại danh sách.';
+      retry?.classList.remove('hidden');
+    }
+  })();
+  try { await downloadRequest; } finally { downloadRequest = null; }
 }
 
 window.refreshPublicDownloads = refreshPublicDownloads;
 
 function openDownloadModal() {
-  refreshPublicDownloads();
+  if (document.getElementById('downloadAppModal').classList.contains('hidden')) downloadReturnFocus = document.activeElement;
   document.getElementById('downloadAppModal').classList.remove('hidden');
+  document.querySelector('.download-dialog').scrollTop = 0;
+  document.querySelector('#downloadAppModal .modal-close-btn').focus({ preventScroll: true });
+  return refreshPublicDownloads();
 }
 
 function hideDownloadModal() {
   document.getElementById('downloadAppModal').classList.add('hidden');
+  downloadReturnFocus?.focus?.({ preventScroll: true });
+  downloadReturnFocus = null;
 }
 
 function closeDownloadModal(e) {
@@ -613,14 +650,13 @@ async function checkAppUpdate(showAccountResult = false) {
       const platform = Phim4KPlatform.detect(navigator.userAgent, window.PHIM4K_PLATFORM);
       const releases = await API.fetchJson('/api/app/downloads', {}, 12000);
       const release = Phim4KPlatform.release(releases, platform);
-      const parts = value => String(value).split('.').map(n => Number(n) || 0);
-      const current = parts(API.getVersion()), latest = parts(release.version);
-      let newer = false;
-      for (let i = 0; i < Math.max(current.length, latest.length); i++) {
-        if ((latest[i] || 0) !== (current[i] || 0)) { newer = (latest[i] || 0) > (current[i] || 0); break; }
-      }
-      res.isLatest = Boolean(release.url) && !newer;
-      res.message = !release.url ? 'Chưa có bản phát hành phù hợp thiết bị này.' : newer ? `Có bản ${release.version}. Bấm Tải ứng dụng để cập nhật.` : `Bạn đang dùng bản ${API.getVersion()}.`;
+      const state = Phim4KPlatform.releaseState(release, API.getVersion());
+      res.isLatest = state === 'current' || state === 'older';
+      res.message = state === 'unavailable' ? 'Chưa có bản phát hành phù hợp thiết bị này.'
+        : state === 'newer' ? `Có bản ${release.version}. Bấm Tải phiên bản mới để cập nhật.`
+        : state === 'older' ? `Bạn đang dùng ${API.getVersion()}, mới hơn bản công khai ${release.version}. Không cần hạ phiên bản.`
+        : state === 'unknown' ? 'Chưa xác định được phiên bản file tải. Vui lòng kiểm tra lại sau.'
+        : `Bạn đang dùng bản ${API.getVersion()}.`;
     }
 
     if (icon) icon.textContent = '🔄';

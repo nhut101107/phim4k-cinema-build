@@ -8,6 +8,19 @@ const player = fs.readFileSync(path.join(root, 'public/js/player.js'), 'utf8');
 const index = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'public/css/player.css'), 'utf8');
 
+test('legacy crop preference is retired and fullscreen defaults to contain', () => {
+  assert.match(player, /getItem\('phim4k-player-fit-v2'\)/);
+  assert.doesNotMatch(player, /getItem\('phim4k-player-fit'\)/);
+  assert.match(player, /preferred === 'cover' \? 'cover' : 'contain'/);
+});
+
+test('admin owns a block scroll layout so horizontal tabs cannot flex-shrink away', () => {
+  const modal=fs.readFileSync(path.join(root,'public/css/modal.css'),'utf8');
+  assert.match(modal,/\.admin-dialog\s*\{[^}]*display:\s*block/);
+  assert.match(modal,/\.admin-tabs-nav\s*\{[^}]*flex:\s*0 0 auto/);
+  assert.match(modal,/\.admin-tab-btn\s*\{[^}]*min-height:\s*44px/);
+});
+
 test('playback clock stays below seek bar and is not hidden on mobile', () => {
   assert.ok(index.indexOf('id="progressContainer"') < index.indexOf('id="currentTime"'));
   assert.ok(index.indexOf('id="currentTime"') < index.indexOf('class="controls-row"'));

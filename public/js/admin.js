@@ -9,15 +9,53 @@ const Admin = {
   logRefreshTimer: null,
   logLoading: false,
 
-  async open() {
-    const configuredAdminTelegram = '5992662564';
-    if (!window.Auth?.activeKeyData?.isAdmin || String(window.Auth?.activeKeyData?.telegramId || '') !== configuredAdminTelegram) {
+  async loadAccessPolicy() {
+    const toggle = document.getElementById('adminFreeAccess');
+    const save = document.getElementById('saveAccessPolicy');
+    toggle.disabled = save.disabled = true;
+    try {
+      const res = await API.fetchJson('/api/app/access-policy');
+      if (typeof res.freeAccess !== 'boolean') throw new Error('Không đọc được trạng thái');
+      toggle.checked = res.freeAccess;
+      toggle.disabled = save.disabled = false;
+      document.getElementById('accessPolicyMessage').textContent = res.freeAccess ? 'Đang miễn key' : 'Đang yêu cầu key · 1 key / 1 máy';
+    } catch (_) { document.getElementById('accessPolicyMessage').textContent = 'Không đọc được trạng thái. Bấm thử lại.'; }
+  },
+
+  async saveAccessPolicy() {
+    const save = document.getElementById('saveAccessPolicy');
+    save.disabled = true;
+    try {
+      const response = await fetch('/api/admin/access-policy', {method:'POST', headers:{...this.getAdminHeaders(), 'Content-Type':'application/json'}, body:JSON.stringify({freeAccess:document.getElementById('adminFreeAccess').checked})});
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error('Không lưu được chế độ');
+      await this.loadAccessPolicy();
+    } catch (_) { document.getElementById('accessPolicyMessage').textContent = 'Lưu thất bại. Chế độ chưa được xác nhận; hãy đọc lại trạng thái.'; }
+    finally { save.disabled = false; }
+  },
+
+  async open(tab = 'keys') {
+    // Server responses set isAdmin only after the master key and administrator
+    // identity have both been verified. Keep the private identity off-device.
+    if (window.Auth?.activeKeyData?.isAdmin !== true) {
       alert('Truy cập bị từ chối: chỉ tài khoản quản trị đã được máy chủ xác thực mới được mở Panel Quản trị.');
       return;
     }
 
     document.getElementById('adminModal').classList.remove('hidden');
-    this.switchTab('keys');
+    void this.loadAccessPolicy();
+    const version = document.getElementById('adminBuildVersion');
+    if (version) version.textContent = `Phiên bản giao diện ${API.getVersion()}`;
+    return this.showTab(tab);
+  },
+
+  showTab(tab) {
+    if (!['keys', 'users', 'downloads', 'content', 'logs'].includes(tab)) return;
+    const result = this.switchTab(tab);
+    const content = document.getElementById(`adminTab${tab.charAt(0).toUpperCase() + tab.slice(1)}`);
+    if (tab === 'logs') content?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    else document.querySelector('.admin-dialog').scrollTop = 0;
+    return result;
   },
 
   close() {

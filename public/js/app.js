@@ -11,6 +11,7 @@ const App = {
   announcementExpiryTimer: null,
   homeFeedLoading: false,
   homeFeedUpdatedAt: null,
+  homeFeedOffline: false,
   homeFeedSignature: '',
   homeCatalog: [],
   homeSections: [],
@@ -158,8 +159,8 @@ const App = {
     try {
       const data = await API.getHomeFeed();
       if (renderedBundledCatalog) {
-        const artworkReady = await this.preloadHomeArtwork(data);
-        if (!artworkReady) return;
+        await this.preloadHomeArtwork(data);
+        // A slow image host must not keep yesterday's movie metadata on screen.
       }
       const signature = this.catalogSignature(data);
       if (!silent || signature !== this.homeFeedSignature) this.applyHomeFeed(data);
@@ -186,7 +187,7 @@ const App = {
 
   updateLiveFeedLabel() {
     document.querySelectorAll('.section-update-status').forEach((element) => {
-      element.textContent = `LIVE · ${new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`;
+      element.textContent = this.homeFeedOffline ? 'Dữ liệu đã lưu' : `Đã đồng bộ · ${new Date(this.homeFeedUpdatedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`;
     });
   },
 
@@ -231,12 +232,17 @@ const App = {
   },
 
   applyHomeFeed(data) {
+    if (data?.policy !== Phim4KHome.POLICY) data = Phim4KHome.build([
+      ...(data?.hero || []), ...(data?.sections || []).flatMap(section => section.items || [])
+    ], { updatedAt: data?.updatedAt || null, offline: Boolean(data?.offline) });
     const sections = Array.isArray(data?.sections) ? data.sections : [];
     const hasMovies = sections.some((section) => Array.isArray(section?.items) && section.items.length > 0);
     if (!hasMovies) throw new Error('MOVIE_CATALOG_EMPTY');
-    this.homeFeedUpdatedAt = data.updatedAt || new Date().toISOString();
+    this.homeFeedOffline = Boolean(data.offline);
+    this.homeFeedUpdatedAt = this.homeFeedOffline ? null : data.updatedAt || new Date().toISOString();
     this.homeFeedSignature = this.catalogSignature(data);
     this.heroList = data.hero || [];
+    document.getElementById('coverflowSection')?.classList.toggle('hidden', !this.heroList.length);
     const rawCatalog = this.uniqueMovies([
       ...this.heroList,
       ...sections.flatMap((section) => Array.isArray(section?.items) ? section.items : [])
@@ -409,10 +415,8 @@ const App = {
   },
 
   buildHomeSections(sourceSections = []) {
-    const catalog = this.homeCatalog;
-    const latest = this.uniqueMovies(sourceSections.find((section) => section?.id === 'latest')?.items || catalog).slice(0, 18);
     const groups = [
-      { id: 'latest', title: 'Phim mới cập nhật', items: latest },
+      ...sourceSections.filter(section => Array.isArray(section?.items) && section.items.length),
       { id: 'genre-action', title: 'Phim hành động', items: this.filterMoviesByTag('category', 'Hành Động') },
       { id: 'genre-animation', title: 'Hoạt hình và Anime', items: this.filterMoviesByTag('category', 'Hoạt Hình') },
       { id: 'country-china', title: 'Phim Trung Quốc', items: this.filterMoviesByTag('country', 'Trung Quốc') },
@@ -645,14 +649,14 @@ const App = {
     // the same movie list in applyHomeFeed().
     if (!backdropEl || !titleEl || !subEl || !descEl || !yearEl || !qualityEl) return;
 
-    // KKPhim poster / thumb URL resolver
+    // Protected poster / thumbnail URL resolver
     this.setBackgroundImage(backdropEl, movie.thumb_url || movie.poster_url);
 
     titleEl.textContent = movie.name;
     subEl.textContent = movie.origin_name || '';
-    yearEl.textContent = movie.year || '2026';
-    qualityEl.textContent = movie.quality || '4K Ultra HD';
-    descEl.textContent = movie.content ? movie.content.replace(/<[^>]*>?/gm, '') : 'Trải nghiệm điện ảnh đỉnh cao với chất lượng hình ảnh 4K sắc nét và âm thanh sống động.';
+    yearEl.textContent = movie.year || 'Chưa rõ năm';
+    qualityEl.textContent = movie.quality || 'Theo nguồn';
+    descEl.textContent = movie.content ? movie.content.replace(/<[^>]*>?/gm, '') : 'Bấm Thông tin để xem nội dung và danh sách tập.';
   },
 
   startHeroRotation() {
@@ -673,7 +677,8 @@ const App = {
     sec.innerHTML = `
       <div class="section-header">
         <h2 class="section-title">${this.escapeHtml(section.title)}</h2>
-        ${section.id === 'latest' && this.homeFeedUpdatedAt ? `<span class="section-update-status">LIVE · ${new Date(this.homeFeedUpdatedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</span>` : ''}
+        ${section.id === 'latest' && this.homeFeedUpdatedAt ? `<span class="section-update-status">Đồng bộ · ${new Date(this.homeFeedUpdatedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</span>` : ''}
+        ${section.id === 'recent-interest' ? '<span class="section-update-status">Theo lượt đánh giá TMDB/IMDb · Không phải lượt xem trực tiếp</span>' : ''}
       </div>
       <div class="${section.layout === 'grid' ? 'movie-grid filtered-movie-grid' : 'movie-row'}"></div>
     `;
@@ -721,26 +726,19 @@ const App = {
   },
 
   resolveImageUrl(path) {
-    const directUrl = this.resolveDirectImageUrl(path);
-    const relayOrigin = window.Phim4KRuntime?.apiBaseUrl || '';
-    try {
-      const parsed = new URL(directUrl);
-      if (relayOrigin && parsed.protocol === 'https:' && parsed.hostname === 'phimimg.com') {
-        return `${relayOrigin}/api/media/image?url=${encodeURIComponent(parsed.href)}`;
-      }
-    } catch (_error) {}
-    return directUrl;
+    return this.resolveDirectImageUrl(path);
   },
 
   resolveDirectImageUrl(path) {
     const value = String(path || '').trim();
     if (!value) return this.posterFallbackUrl();
     if (value.startsWith('/media/')) return value;
-    if (value.startsWith('//')) return `https:${value}`;
-    if (value.startsWith('https://')) return value;
-    if (value.startsWith('http://')) return `https://${value.slice(7)}`;
-    if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return this.posterFallbackUrl();
-    return `https://phimimg.com/${value.replace(/^\/+/, '')}`;
+    try {
+      const parsed = new URL(value);
+      const relayOrigin = window.Phim4KRuntime?.apiBaseUrl || '';
+      if (relayOrigin && parsed.origin === relayOrigin && parsed.pathname === '/api/media/image' && parsed.searchParams.has('t')) return parsed.href;
+    } catch (_error) {}
+    return this.posterFallbackUrl();
   },
 
   posterFallbackUrl() {
@@ -750,17 +748,6 @@ const App = {
   attachPosterFallback(image) {
     if (!image) return;
     image.addEventListener('error', () => {
-      if (image.dataset.posterDirectTried !== '1') {
-        try {
-          const failedUrl = new URL(image.src);
-          const directUrl = failedUrl.pathname === '/api/media/image' ? failedUrl.searchParams.get('url') : '';
-          if (directUrl?.startsWith('https://')) {
-            image.dataset.posterDirectTried = '1';
-            image.src = directUrl;
-            return;
-          }
-        } catch (_error) {}
-      }
       if (image.dataset.posterFallback === '1') return;
       image.dataset.posterFallback = '1';
       image.src = this.posterFallbackUrl();
@@ -770,19 +757,9 @@ const App = {
   setBackgroundImage(element, source) {
     if (!element) return;
     const primary = this.resolveImageUrl(source);
-    const direct = this.resolveDirectImageUrl(source);
     const preload = new Image();
     preload.onload = () => { element.style.backgroundImage = `url("${primary}")`; };
-    preload.onerror = () => {
-      if (direct !== primary) {
-        const retry = new Image();
-        retry.onload = () => { element.style.backgroundImage = `url("${direct}")`; };
-        retry.onerror = () => { element.style.backgroundImage = `url("${this.posterFallbackUrl()}")`; };
-        retry.src = direct;
-        return;
-      }
-      element.style.backgroundImage = `url("${this.posterFallbackUrl()}")`;
-    };
+    preload.onerror = () => { element.style.backgroundImage = `url("${this.posterFallbackUrl()}")`; };
     preload.src = primary;
   },
 
@@ -1031,7 +1008,7 @@ const App = {
     detailPoster.src = posterUrl;
     this.attachPosterFallback(detailPoster);
     this.setBackgroundImage(document.getElementById('detailBackdrop'), thumbUrl);
-    window.Phim4KTrailer?.mount(movie);
+    // Details are image-only; never mount a trailer or embedded video.
 
     // Badges
     const badgesBox = document.getElementById('detailBadges');

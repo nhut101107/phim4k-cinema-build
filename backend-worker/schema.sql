@@ -50,6 +50,23 @@ CREATE TABLE IF NOT EXISTS downloads (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS watch_progress (
+  owner_id TEXT NOT NULL,
+  movie_slug TEXT NOT NULL,
+  episode_id TEXT NOT NULL,
+  movie_name TEXT NOT NULL,
+  episode_name TEXT NOT NULL,
+  thumb_url TEXT NOT NULL DEFAULT '',
+  current_seconds REAL NOT NULL,
+  duration_seconds REAL NOT NULL,
+  progress_percent INTEGER NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (owner_id, movie_slug, episode_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_watch_progress_owner_updated
+  ON watch_progress(owner_id, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS audit_logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   created_at TEXT NOT NULL,

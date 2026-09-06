@@ -1603,9 +1603,9 @@ button,
 }
 
 .is-pressing {
-  transform: scale(0.975) !important;
+  /* Preserve positioning transforms: moving a target during a press can cancel its click. */
   filter: brightness(0.92);
-  transition: transform 70ms ease-out, filter 70ms ease-out !important;
+  transition: filter 70ms ease-out !important;
 }
 
 button:focus-visible,

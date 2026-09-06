@@ -5,23 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>Phim 4K - Cinema Ultra HD & VIP Master</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
   
   <!-- HLS.js for streaming m3u8 -->
-  <script src="/vendor/hls.min.js"></script>
+  <script src="/vendor/hls.min.js?v=3.4.28"></script>
 
-  <link rel="stylesheet" href="/css/style.css">
-  <link rel="stylesheet" href="/css/modal.css">
-  <link rel="stylesheet" href="/css/player.css">
-  <link rel="stylesheet" href="/css/tv.css">
+  <link rel="stylesheet" href="/css/style.css?v=3.4.28">
+  <link rel="stylesheet" href="/css/modal.css?v=3.4.28">
+  <link rel="stylesheet" href="/css/player.css?v=3.4.28">
+  <link rel="stylesheet" href="/css/tv.css?v=3.4.28">
 </head>
 <body class="activation-locked">
 
   <!-- ================================================= -->
-  <!-- 1. ACTIVATION GATE (BẮT BUỘC TELEGRAM ID + KEY)  -->
+  <!-- 1. ACTIVATION GATE (KEY-ONLY OR ADMIN FREE MODE) -->
   <!-- ================================================= -->
   <div id="activationGate" class="gate-overlay">
     <div class="gate-card">
@@ -32,12 +35,12 @@
       <h2>Kích Hoạt Bản Quyền</h2>
       <p class="gate-desc">
         Hệ thống streaming <strong>4K Ultra HD Chuẩn Rạp</strong>, âm thanh vòm sống động và tốc độ cao.
-        Mỗi License Key chỉ được cấp phép cho <strong>1 Telegram ID / 1 Thiết Bị</strong>.
+        Chỉ cần nhập key. Mỗi key gắn với <strong>1 thiết bị</strong>; đổi máy cần Admin reset.
       </p>
 
       <form id="activationForm" onsubmit="handleActivation(event)">
         <p class="gate-desc">Ứng dụng ghi hoạt động xem, phiên bản, loại thiết bị và lỗi kỹ thuật để admin hỗ trợ. Không đọc cookie, mật khẩu hay dữ liệu ngoài ứng dụng.</p>
-        <!-- Telegram ID Input -->
+        <details id="adminLoginFields"><summary>Đăng nhập quản trị (chỉ dành cho Admin)</summary>
         <div class="input-group">
           <svg class="key-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21.198 2.433a2.242 2.242 0 0 0-1.022.215l-16.7 6.452a2.235 2.235 0 0 0-.154 4.148l4.47 1.674 1.77 5.568a1.5 1.5 0 0 0 2.484.544l2.842-2.617 4.67 3.44a2.25 2.25 0 0 0 3.528-1.428l3.1-15.5a2.25 2.25 0 0 0-2.988-2.496z"></path>
@@ -45,12 +48,12 @@
           <input 
             type="text" 
             id="telegramInput" 
-            placeholder="Nhập Telegram ID của bạn (VD: 6189234123)" 
+            placeholder="Telegram ID quản trị"
             autocomplete="off"
             spellcheck="false"
-            required
           />
         </div>
+        </details>
 
         <!-- License Key Input -->
         <div class="input-group">
@@ -71,12 +74,14 @@
           <span class="btn-text">XÁC THỰC VÀ VÀO XEM PHIM</span>
           <div class="spinner hidden" id="activateSpinner"></div>
         </button>
-        <button type="button" id="btnRequestDeviceAccess" class="btn-device-request" onclick="requestDeviceOnlyAccess()">
+        <button type="button" id="btnRequestDeviceAccess" class="btn-device-request hidden" onclick="requestDeviceOnlyAccess()">
           Không có Telegram? Báo Admin duyệt thiết bị này
         </button>
       </form>
 
       <div id="gateMessage" class="gate-message hidden"></div>
+      <button type="button" id="gateDownloadBtn" class="btn-secondary app-download-entry" onclick="openDownloadModal()">📥 Tải phiên bản mới / Chọn thiết bị</button>
+      <button type="button" class="btn-secondary app-download-entry" onclick="Auth.init()">Kiểm tra lại quyền truy cập</button>
 
       <!-- Support / Contact Admin Box -->
       <div class="support-contact-box">
@@ -180,8 +185,8 @@
 
         <!-- Focused Movie Details Under Center Card -->
         <div class="coverflow-details" id="coverflowDetails">
-          <h1 class="cf-title" id="cfTitle">Người Nhện: Khởi Đầu Mới</h1>
-          <h3 class="cf-subtitle" id="cfSubtitle">Spider-Man: Brand New Day</h3>
+          <h1 class="cf-title" id="cfTitle">Đang tải phim nổi bật…</h1>
+          <h3 class="cf-subtitle" id="cfSubtitle"></h3>
 
           <!-- 2 Action Buttons Side-by-Side (Yellow Play, White Info) -->
           <div class="cf-action-buttons">
@@ -197,19 +202,18 @@
 
           <!-- Badges Row: CAM, 2026, Full -->
           <div class="cf-badges-row">
-            <span class="badge-cf-cam" id="cfBadgeQuality">CAM</span>
-            <span class="badge-cf-dark" id="cfBadgeYear">2026</span>
-            <span class="badge-cf-dark" id="cfBadgeStatus">Full</span>
+            <span class="badge-cf-cam" id="cfBadgeQuality">Theo nguồn</span>
+            <span class="badge-cf-dark" id="cfBadgeYear">—</span>
+            <span class="badge-cf-dark" id="cfBadgeStatus">—</span>
           </div>
 
           <!-- Category Line in Golden Yellow -->
           <div class="cf-categories" id="cfCategories">
-            Phim Hành Động, Phim Khoa Học Viễn Tưởng
           </div>
 
           <!-- Synopsis Line -->
           <p class="cf-synopsis" id="cfSynopsis">
-            Không còn Tony Stark, MJ hay Ned kề cận, Peter buộc phải đứng dậy bảo vệ thành phố một lần nữa...
+            Đang lấy thông tin từ danh mục phim.
           </p>
 
           <!-- Carousel Dots / Dash Pagination (— • • • • •) -->
@@ -343,7 +347,7 @@
           </div>
           <div class="acc-detail-item">
             <span>Phiên bản ứng dụng:</span>
-            <span id="accAppVersion">v3.4.17</span>
+            <span id="accAppVersion">v3.4.28</span>
           </div>
         </div>
 
@@ -351,9 +355,12 @@
           <button id="accAdminBtn" class="btn-primary hidden" onclick="openAdminPanel()">
             ⚙️ MỞ PANEL QUẢN TRỊ ADMIN
           </button>
+          <button type="button" id="accLogsBtn" class="btn-secondary hidden" onclick="Admin.open('logs')">📜 Đọc log người dùng</button>
           <button class="btn-secondary" onclick="checkAppUpdate(true)">
             🔄 Kiểm Tra Cập Nhật Bản Mới
           </button>
+          <button type="button" id="accDownloadBtn" class="btn-primary app-download-entry" onclick="openDownloadModal()">📥 Tải phiên bản mới</button>
+          <p class="download-entry-note">iPhone / iPad · Android TV · Windows. Chọn bản phù hợp trong cửa sổ tải.</p>
           <p id="accUpdateStatus" class="gate-message hidden" role="status"></p>
           <button class="btn-secondary" style="color: #f87171;" onclick="promptChangeAccount()">
             🚪 Đăng Xuất / Đổi Tài Khoản
@@ -404,11 +411,6 @@
       </div>
 
       <div class="detail-body">
-        <section id="detailTrailer" class="detail-trailer hidden" aria-label="Trailer phim">
-          <div class="detail-trailer-heading"><strong>Trailer xem trước</strong><button id="detailTrailerSkip" type="button" onclick="Phim4KTrailer.stop(); document.getElementById('detailTrailer').classList.add('hidden')">Bỏ qua trailer</button></div>
-          <p id="detailTrailerStatus" role="status"></p>
-          <div id="detailTrailerMedia"></div>
-        </section>
         <div class="detail-main">
           <div class="detail-poster-col">
             <img id="detailPoster" src="" alt="Poster" class="detail-poster" />
@@ -626,6 +628,12 @@
           <button class="admin-close-action" type="button" onclick="hideAdminModal()">Đóng</button>
         </div>
         <p class="admin-desc">Quản lý toàn diện: Cấp phát key, Quản lý & Ban người dùng, Tường lửa chống DDoS và Nhật ký hoạt động.</p>
+        <p id="adminBuildVersion" class="admin-build-version">BẢN MỚI 3.4.28 · ẢNH XEM TIẾP TỰ PHỤC HỒI · NATIVE ANTI-TAMPER</p>
+        <div class="admin-quick-actions">
+          <button type="button" id="adminReadLogsBtn" class="btn-primary" onclick="Admin.showTab('logs')">📜 Đọc log người dùng</button>
+          <button type="button" id="adminGetUpdateBtn" class="btn-secondary" onclick="openDownloadModal()">📥 Tải phiên bản mới</button>
+          <button type="button" id="adminAccessPolicyBtn" class="btn-secondary" onclick="Admin.showTab('downloads'); document.getElementById('accessPolicySection').scrollIntoView({block:'start'}); Admin.loadAccessPolicy()">🔑 Bật / tắt yêu cầu key</button>
+        </div>
       </div>
 
       <!-- Admin Tab Switcher -->
@@ -637,7 +645,7 @@
           👥 Quản Lý Người Dùng & Ban
         </button>
         <button class="admin-tab-btn" id="tabBtnDownloads" onclick="Admin.switchTab('downloads')">
-          🚀 Link Tải 3 Bản (ADR, IPA, EXE)
+          ⚙️ Cấu hình link tải
         </button>
         <button class="admin-tab-btn" id="tabBtnContent" onclick="Admin.switchTab('content')">
           🎬 Phim & Poster trực tiếp
@@ -700,7 +708,7 @@
               </div>
               <div class="form-group flex-1">
                 <label>Gán Cho Telegram ID (Tùy chọn):</label>
-                <input type="text" id="newKeyTelegram" placeholder="Để trống nếu để khách tự nhập" />
+                <input type="text" id="newKeyTelegram" placeholder="Không bắt buộc · chỉ để quản lý liên hệ" />
               </div>
               <div class="form-group flex-1">
                 <label>Thời Hạn Sử Dụng:</label>
@@ -927,6 +935,14 @@
 
       <!-- TAB 4: APP DOWNLOADS & UPDATE LINKS -->
       <div id="adminTabDownloads" class="admin-tab-content hidden">
+        <section class="admin-card" id="accessPolicySection">
+          <h3>Quyền truy cập ứng dụng</h3>
+          <p>Bật: người dùng vào không cần key hoặc Telegram. Tắt: chỉ nhập key, mỗi key gắn một thiết bị. Không thay đổi quyền quản trị.</p>
+          <label><input type="checkbox" id="adminFreeAccess" disabled> Không cần nhập key</label>
+          <button type="button" class="btn-secondary" onclick="Admin.loadAccessPolicy()">Đọc trạng thái</button>
+          <button type="button" class="btn-primary" id="saveAccessPolicy" disabled onclick="Admin.saveAccessPolicy()">Lưu chế độ truy cập</button>
+          <p id="accessPolicyMessage" role="status"></p>
+        </section>
           <div class="admin-keys-header">
             <h3>🚀 Cập Nhật Link Tải 3 Phiên Bản (ADR, IPA, EXE)</h3>
             <button class="btn-refresh-keys" onclick="Admin.loadDownloadsConfig()">🔄 Tải Lại Cấu Hình</button>
@@ -995,7 +1011,7 @@
 
             <div class="download-link-row">
               <label>Android TV — link APK HTTPS<input id="adminDownloadTvInput" type="url" placeholder="https://.../Phim4K-TV.apk" /></label>
-              <label>Phiên bản TV<input id="adminVersionTvInput" type="text" placeholder="3.4.17" /></label>
+              <label>Phiên bản TV<input id="adminVersionTvInput" type="text" placeholder="3.4.18" /></label>
             </div>
             <div id="adminDownloadsAlert" class="gate-message hidden" style="margin-top: 12px;"></div>
 
@@ -1052,13 +1068,15 @@
   <!-- ================================================= -->
   <!-- 7. DOWNLOAD LATEST VERSION MODAL (ADR, IPA, EXE)  -->
   <!-- ================================================= -->
-  <div id="downloadAppModal" class="modal-overlay hidden" onclick="closeDownloadModal(event)">
+  <div id="downloadAppModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="downloadTitle" onclick="closeDownloadModal(event)">
     <div class="modal-dialog download-dialog" onclick="event.stopPropagation()">
-      <button class="modal-close-btn" onclick="hideDownloadModal()">✕</button>
+      <button type="button" class="modal-close-btn" aria-label="Đóng cửa sổ tải ứng dụng" onclick="hideDownloadModal()">✕</button>
       <div class="download-modal-header">
         <div class="download-icon">📥</div>
-        <h2>Tải Ứng Dụng Phim 4K Mới Nhất</h2>
+        <h2 id="downloadTitle">Tải phiên bản Phim4K</h2>
         <p class="download-sub">Chọn đúng phiên bản thiết bị của bạn để tải về và cập nhật ngay trong app:</p>
+        <p id="downloadReleaseStatus" class="download-release-status" role="status" aria-live="polite">Đang lấy danh sách bản phát hành…</p>
+        <button type="button" id="downloadRetryBtn" class="btn-secondary hidden" onclick="refreshPublicDownloads()">Thử tải lại danh sách</button>
 
         <!-- Check Update Button for User -->
         <div style="margin-top: 14px;">
@@ -1075,8 +1093,8 @@
           <div class="card-os-icon">🤖</div>
           <h3>Android (ADR / APK)</h3>
           <p>Dành cho điện thoại Android và máy tính bảng. TV có bản riêng bên dưới.</p>
-          <span class="card-meta" id="metaApkVer">v3.1.0 • APK • Mọi Android</span>
-          <a id="btnDownloadApk" href="/download/apk" class="btn-download-action btn-apk" download>
+          <span class="card-meta" id="metaApkVer">Đang kiểm tra bản phát hành</span>
+          <a id="btnDownloadApk" class="btn-download-action btn-apk" aria-disabled="true">
             Tải File .APK
           </a>
         </div>
@@ -1086,8 +1104,8 @@
           <div class="card-os-icon">🍏</div>
           <h3>iPhone / iPad (File IPA)</h3>
           <p>Dành cho cài đặt qua Sideloadly, AltStore, Scarlet, TrollStore, Esign.</p>
-          <span class="card-meta" id="metaIpaVer">v3.1.1 • ~2.1 MB • iOS 14+</span>
-          <a id="btnDownloadIpa" href="/download/ipa" class="btn-download-action btn-ipa" download>
+          <span class="card-meta" id="metaIpaVer">Đang kiểm tra bản phát hành</span>
+          <a id="btnDownloadIpa" class="btn-download-action btn-ipa" aria-disabled="true">
             Tải File .IPA
           </a>
         </div>
@@ -1097,8 +1115,8 @@
           <div class="card-os-icon">💻</div>
           <h3>Máy Tính Windows (EXE)</h3>
           <p>Ứng dụng 1-click cho máy tính PC & Laptop Windows 10/11, nhấp đúp là xem ngay.</p>
-          <span class="card-meta" id="metaExeVer">v3.1.0 • Windows 64-bit</span>
-          <a id="btnDownloadExe" href="/download/exe" class="btn-download-action btn-exe" download>
+          <span class="card-meta" id="metaExeVer">Đang kiểm tra bản phát hành</span>
+          <a id="btnDownloadExe" class="btn-download-action btn-exe" aria-disabled="true">
             Tải File .EXE
           </a>
         </div>
@@ -1108,7 +1126,7 @@
         <div class="card-os-icon">📺</div><h3>Android TV / Google TV</h3>
         <p>Android 7 trở lên · Điều khiển bằng remote · Màn hình ngang.</p>
         <span class="card-meta" id="metaTvVer">Chưa phát hành</span>
-        <a id="btnDownloadTv" class="btn-download-action" aria-disabled="true">Chưa phát hành</a>
+        <a id="btnDownloadTv" class="btn-download-action btn-apk" aria-disabled="true">Chưa phát hành</a>
       </div>
       <div class="download-guide-box">
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
@@ -1222,21 +1240,21 @@
   </div>
 
   <!-- Scripts -->
-  <script src="/js/mobile-config.js"></script>
-  <script src="/js/runtime-config.js"></script>
-  <script src="/js/catalog-fallback.js"></script>
-  <script src="/js/api.js"></script>
-  <script src="/js/platform.js"></script>
-  <script src="/js/native-downloads.js"></script>
-  <script src="/js/auth.js"></script>
-  <script src="/js/admin.js"></script>
-  <script src="/js/player-core.js"></script>
-  <script src="/js/trailer.js"></script>
-  <script src="/js/audio-enhancer.js"></script>
-  <script src="/js/player.js"></script>
-  <script src="/js/coverflow.js"></script>
-  <script src="/js/app.js"></script>
-  <script src="/js/tv.js"></script>
-  <script src="/js/diagnostics.js"></script>
+  <script src="/js/mobile-config.js?v=3.4.28"></script>
+  <script src="/js/runtime-config.js?v=3.4.28"></script>
+  <script src="/js/catalog-fallback.js?v=3.4.28"></script>
+  <script src="/js/home-curation.js?v=3.4.28"></script>
+  <script src="/js/api.js?v=3.4.28"></script>
+  <script src="/js/platform.js?v=3.4.28"></script>
+  <script src="/js/native-downloads.js?v=3.4.28"></script>
+  <script src="/js/auth.js?v=3.4.28"></script>
+  <script src="/js/admin.js?v=3.4.28"></script>
+  <script src="/js/player-core.js?v=3.4.28"></script>
+  <script src="/js/audio-enhancer.js?v=3.4.28"></script>
+  <script src="/js/player.js?v=3.4.28"></script>
+  <script src="/js/coverflow.js?v=3.4.28"></script>
+  <script src="/js/app.js?v=3.4.28"></script>
+  <script src="/js/tv.js?v=3.4.28"></script>
+  <script src="/js/diagnostics.js?v=3.4.28"></script>
 </body>
 </html>

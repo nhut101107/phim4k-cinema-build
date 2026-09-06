@@ -11,12 +11,21 @@ if (!fs.statSync(source).isDirectory()) {
   throw new Error("Missing public web assets");
 }
 
-// This is a generated build directory only. Exclude the legacy standalone page
-// so an iOS package has one reviewed activation path.
+// This is a generated build directory only. Exclude development-only media and
+// the legacy standalone page so the native integrity manifest matches the
+// exact production bundle shipped to users.
+const productionExcludes = new Set([
+  'standalone.html',
+  'media/qa-original.mp4',
+  'media/qa-seek.mp4',
+]);
 fs.rmSync(output, { recursive: true, force: true });
 fs.cpSync(source, output, {
   recursive: true,
-  filter: (entry) => path.basename(entry) !== "standalone.html"
+  filter: (entry) => {
+    const relative = path.relative(source, entry).split(path.sep).join('/');
+    return !productionExcludes.has(relative);
+  }
 });
 
 if (!fs.existsSync(path.join(output, "index.html"))) {

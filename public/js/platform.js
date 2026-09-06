@@ -18,6 +18,15 @@
     const entry = data?.[platform] || { url: data?.[platform + 'Url'], version: data?.[platform + 'Version'] };
     return { url: safeUrl(entry.url), version: String(entry.version || '').slice(0, 64) };
   }
-  root.Phim4KPlatform = Object.freeze({ labels, detect, safeUrl, release });
+  function releaseState(entry, current) {
+    if (!entry.url) return 'unavailable';
+    if (!/^\d+(\.\d+){0,3}$/.test(entry.version) || !/^\d+(\.\d+){0,3}$/.test(current)) return 'unknown';
+    const a = entry.version.split('.').map(Number), b = current.split('.').map(Number);
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+      if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0) ? 'newer' : 'older';
+    }
+    return 'current';
+  }
+  root.Phim4KPlatform = Object.freeze({ labels, detect, safeUrl, release, releaseState });
   if (typeof module !== 'undefined') module.exports = root.Phim4KPlatform;
 })(typeof window !== 'undefined' ? window : globalThis);

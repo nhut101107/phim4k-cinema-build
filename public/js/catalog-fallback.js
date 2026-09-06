@@ -13,14 +13,14 @@ const PHIM4K_FILTER_METADATA = [
 ];
 
 window.PHIM4K_CATALOG_FALLBACK = Object.freeze([
-  ["Chien Tranh Giua Cac Vi Sao: Maul", "chien-tranh-giua-cac-vi-sao-maul-chua-te-bong-toi", "Star Wars: Maul - Shadow Lord", "https://phimimg.com/uploads/movies/20260905/chien-tranh-giua-cac-vi-sao-maul-chua-te-bong-toi-poster.webp", "https://phimimg.com/uploads/movies/20260905/chien-tranh-giua-cac-vi-sao-maul-chua-te-bong-toi-thumb.webp", 2026],
-  ["Quy Ong The Gioi Ngam (Phan 2)", "quy-ong-the-gioi-ngam-phan-2", "The Gentlemen (Season 2)", "https://phimimg.com/uploads/movies/20260905/quy-ong-the-gioi-ngam-phan-2-poster.webp", "https://phimimg.com/uploads/movies/20260905/quy-ong-the-gioi-ngam-phan-2-thumb.webp", 2026],
-  ["Quy Ong The Gioi Ngam (Phan 1)", "quy-ong-the-gioi-ngam-phan-1", "The Gentlemen (Season 1)", "https://phimimg.com/uploads/movies/20260905/quy-ong-the-gioi-ngam-phan-1-poster.webp", "https://phimimg.com/upload/vod/20240307-1/73fe9704d483d8ed0d6d300e3000f8ba.jpg", 2024],
-  ["Tuyet The Chien Hon", "tuyet-the-chien-hon", "Peerless Battle Spirit", "https://phimimg.com/upload/vod/20250219-1/b880c627b5571d9afd22e58d056e772a.jpg", "https://phimimg.com/upload/vod/20250219-1/b2facbf6cebbf66d0c728df0b75ad5b9.jpg", 2025],
-  ["Son Hai Kinh: Thiet Lap Lai Trat Tu", "son-hai-kinh-thiet-lap-lai-trat-tu", "Threads of Fate", "https://phimimg.com/uploads/movies/20260719/son-hai-kinh-thiet-lap-lai-trat-tu-poster.webp", "https://phimimg.com/uploads/movies/20260719/son-hai-kinh-thiet-lap-lai-trat-tu-thumb.webp", 2026],
-  ["Ve Xong Di, Roi Hay Chet!", "ve-xong-di-roi-hay-chet", "Draw This, Then Die!", "https://phimimg.com/upload/vod/20260705-1/6b0abe9e476c2371ef7e79a385f58479.jpg", "https://phimimg.com/upload/vod/20260705-1/6aba22327663c3122b8e9184764e375d.jpg", 2026],
-  ["Ve Nen Giac Mo Ngay Cuoi", "ve-nen-giac-mo-ngay-cuoi", "In Love Forever The Series", "https://phimimg.com/upload/vod/20260620-1/4e75731d01ce9578582f65d9b21fb276.jpg", "https://phimimg.com/upload/vod/20260620-1/d61fcd20fba7e8b05fc0846bf1562be6.jpg", 2026],
-  ["U Thi Ly Hon!", "u-thi-ly-hon", "OK! Let's Get Divorced", "https://phimimg.com/uploads/movies/20260821/u-thi-ly-hon-poster.webp", "https://phimimg.com/uploads/movies/20260821/u-thi-ly-hon-thumb.webp", 2026],
+  ["Chien Tranh Giua Cac Vi Sao: Maul", "chien-tranh-giua-cac-vi-sao-maul-chua-te-bong-toi", "Star Wars: Maul - Shadow Lord", "/media/spider_man_4k.jpg", "/media/spider_man_4k.jpg", 2026],
+  ["Quy Ong The Gioi Ngam (Phan 2)", "quy-ong-the-gioi-ngam-phan-2", "The Gentlemen (Season 2)", "/media/the_boys_4k.jpg", "/media/the_boys_4k.jpg", 2026],
+  ["Quy Ong The Gioi Ngam (Phan 1)", "quy-ong-the-gioi-ngam-phan-1", "The Gentlemen (Season 1)", "/media/killer_shop_4k.jpg", "/media/killer_shop_4k.jpg", 2024],
+  ["Tuyet The Chien Hon", "tuyet-the-chien-hon", "Peerless Battle Spirit", "/media/superman_4k.jpg", "/media/superman_4k.jpg", 2025],
+  ["Son Hai Kinh: Thiet Lap Lai Trat Tu", "son-hai-kinh-thiet-lap-lai-trat-tu", "Threads of Fate", "/media/avengers_4k.jpg", "/media/avengers_4k.jpg", 2026],
+  ["Ve Xong Di, Roi Hay Chet!", "ve-xong-di-roi-hay-chet", "Draw This, Then Die!", "/media/killer_shop_4k.jpg", "/media/killer_shop_4k.jpg", 2026],
+  ["Ve Nen Giac Mo Ngay Cuoi", "ve-nen-giac-mo-ngay-cuoi", "In Love Forever The Series", "/media/the_boys_4k.jpg", "/media/the_boys_4k.jpg", 2026],
+  ["U Thi Ly Hon!", "u-thi-ly-hon", "OK! Let's Get Divorced", "/media/spider_man_4k.jpg", "/media/spider_man_4k.jpg", 2026],
 ].map(([name, slug, origin_name, poster_url, thumb_url, year], index) => {
   const [genres, countries] = PHIM4K_FILTER_METADATA[index] || [[], []];
   return Object.freeze({

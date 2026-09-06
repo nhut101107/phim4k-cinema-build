@@ -18,6 +18,7 @@ const Player = {
   aspectMode: 'contain',
   isCinemaFullscreen: false,
   streamSession: 0,
+  playbackTicketRequest: 0,
   activeStreamUrl: '',
   qualityOptions: [],
   qualityMode: 'auto',
@@ -48,6 +49,7 @@ const Player = {
     });
     onVideo('pause', () => {
       this.captureWatchedTime();
+      this.saveProgressNow({ flush: true });
       this.updatePlayBtn(false);
     });
     onVideo('timeupdate', () => this.onTimeUpdate());
@@ -84,9 +86,9 @@ const Player = {
       });
     }
     window.addEventListener('keydown', (event) => this.onKeyDown(event));
-    window.addEventListener('pagehide', () => this.saveProgressNow());
+    window.addEventListener('pagehide', () => this.saveProgressNow({ flush: true }));
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') this.saveProgressNow();
+      if (document.visibilityState === 'hidden') this.saveProgressNow({ flush: true });
     });
     document.addEventListener('fullscreenchange', () => this.onBrowserFullscreenChange());
   },
@@ -96,6 +98,8 @@ const Player = {
     this.clearSurfaceTap();
     if (!this.video) this.init();
     if (!this.video || !movie || !episode) return;
+    clearTimeout(this.alertTimer);
+    document.getElementById('playerAlert')?.classList.add('hidden');
     this.currentMovie = movie;
     this.currentEpisode = episode;
     this.episodesList = Array.isArray(episodesList) ? episodesList : [];
@@ -123,7 +127,7 @@ const Player = {
 
   close() {
     this.clearSurfaceTap();
-    this.saveProgressNow();
+    this.saveProgressNow({ flush: true });
     this.captureWatchedTime();
     if (Number(this.video?.currentTime) > 1) {
       API.trackUsage('playback_stop', {
@@ -135,6 +139,7 @@ const Player = {
     }
     void this.exitCinemaFullscreen();
     this.streamSession += 1;
+    this.playbackTicketRequest += 1;
     this.activeStreamUrl = '';
     this.closeDropdowns();
     this.destroyHls();
@@ -159,9 +164,26 @@ const Player = {
     this.activePlayStartedAt = 0;
   },
 
-  loadEpisode(episode, options = {}) {
-    const source = episode?.link_m3u8 || episode?.link_embed || '';
-    this.loadStream(source, { ...options, isHls: Boolean(episode?.link_m3u8) });
+  async loadEpisode(episode, options = {}) {
+    const requestId = ++this.playbackTicketRequest;
+    if (!episode?.stream_ref) {
+      this.showBuffering(false);
+      this.showAlert('Server này không cung cấp vé phát an toàn. Đang thử server khác…');
+      this.fallbackToNextServer();
+      return;
+    }
+    this.showBuffering(true, 'Đang xác thực vé phát an toàn…');
+    this.setResolutionBadge(0, 0, 'Đang xác minh');
+    try {
+      const result = await API.getPlaybackTicket(episode.stream_ref);
+      if (requestId !== this.playbackTicketRequest || this.modal?.classList.contains('hidden')) return;
+      this.loadStream(result.streamUrl, { ...options, isHls: Boolean(result.isHls) });
+    } catch (_error) {
+      if (requestId !== this.playbackTicketRequest) return;
+      this.showBuffering(false);
+      this.showAlert('Không lấy được vé phát. Đang thử server khác…');
+      this.fallbackToNextServer();
+    }
   },
 
   loadStream(streamUrl, options = {}) {
@@ -169,7 +191,7 @@ const Player = {
     const session = ++this.streamSession;
     const resumeTime = Number(options.resumeTime) || 0;
     const autoplay = options.autoplay !== false;
-    const isHls = options.isHls ?? /\.m3u8(?:[?#]|$)/i.test(String(streamUrl));
+    const isHls = options.isHls === true;
     if (!streamUrl) {
       this.showBuffering(false);
       this.showAlert('Không có luồng phát tương thích ở server này. Đang thử server khác…');
@@ -313,14 +335,15 @@ const Player = {
 
   applyPreferredAspect() {
     let preferred;
-    try { preferred = localStorage.getItem('phim4k-player-fit'); } catch (_) {}
-    const landscape = window.matchMedia('(orientation: landscape)').matches;
-    this.setAspectRatio(['cover', 'contain'].includes(preferred) ? preferred : (this.isCinemaFullscreen || landscape ? 'cover' : 'contain'), { silent: true });
+    // Retire the old crop-by-default preference. Fullscreen must preserve
+    // burned-in captions, which cannot be repositioned like subtitle tracks.
+    try { preferred = localStorage.getItem('phim4k-player-fit-v2'); } catch (_) {}
+    this.setAspectRatio(preferred === 'cover' ? 'cover' : 'contain', { silent: true });
   },
 
   toggleAspectRatio() {
     this.setAspectRatio(this.aspectMode === 'contain' ? 'cover' : 'contain');
-    try { localStorage.setItem('phim4k-player-fit', this.aspectMode); } catch (_) {}
+    try { localStorage.setItem('phim4k-player-fit-v2', this.aspectMode); } catch (_) {}
   },
 
   updateSubtitleSafeArea() {
@@ -776,15 +799,19 @@ const Player = {
   getSavedWatchTime() {
     const key = this.getProgressStorageKey();
     const saved = key ? Number(localStorage.getItem(key)) : 0;
-    return Number.isFinite(saved) ? saved : 0;
+    if (Number.isFinite(saved) && saved > 0) return saved;
+    const episodeId = this.currentEpisode?.slug || this.currentEpisode?.filename || String(this.currentEpIndex);
+    return window.ContinueWatching?.getSavedTime?.(this.currentMovie?.slug, episodeId, this.currentEpisode?.name) || 0;
   },
 
-  saveProgressNow() {
-    if (!this.video || this.video.paused || this.video.currentTime <= 3) return;
+  saveProgressNow({ flush = false } = {}) {
+    if (!this.video || this.video.currentTime <= 3 || (this.video.paused && !flush)) return;
     const key = this.getProgressStorageKey();
     if (key) localStorage.setItem(key, this.video.currentTime.toFixed(1));
     if (window.ContinueWatching && this.currentMovie && Number.isFinite(this.video.duration)) {
-      ContinueWatching.saveItem(this.currentMovie, this.currentEpisode?.name || `Tập ${this.currentEpIndex + 1}`, this.video.currentTime, this.video.duration);
+      const episodeId = this.currentEpisode?.slug || this.currentEpisode?.filename || String(this.currentEpIndex);
+      ContinueWatching.saveItem(this.currentMovie, this.currentEpisode?.name || `Tập ${this.currentEpIndex + 1}`, this.video.currentTime, this.video.duration, episodeId);
+      if (flush) void ContinueWatching.flushSync({ keepalive: true });
     }
   },
 

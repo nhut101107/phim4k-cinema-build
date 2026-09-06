@@ -47,6 +47,9 @@ jobs:
       - name: Sync Capacitor iOS project
         run: npx cap sync ios
 
+      - name: Seal native web assets into the release binary
+        run: npm run ios:integrity
+
       - name: Build unsigned iPhone application
         shell: bash
         run: |
@@ -74,6 +77,7 @@ jobs:
           cp -R "$app_path" "$package_dir/Payload/App.app"
           (cd "$package_dir" && /usr/bin/zip -qry "$GITHUB_WORKSPACE/Phim4K-Cinema-unsigned.ipa" Payload)
           /usr/bin/unzip -t "$GITHUB_WORKSPACE/Phim4K-Cinema-unsigned.ipa"
+          python3 scripts/package_ios_web_update.py --audit-only "$GITHUB_WORKSPACE/Phim4K-Cinema-unsigned.ipa"
 
       - name: Upload unsigned IPA for ESign
         uses: actions/upload-artifact@v4

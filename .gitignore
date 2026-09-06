@@ -1,5 +1,12 @@
 dist-ios/
 node_modules/
+relay/config.private.json
+relay/current-origin.private.txt
+relay/logs/
+relay/supervisor.private.lock
+relay/windows-service/*.exe
+relay/windows-service/*.pdb
+tools/cloudflared/cloudflared.exe
 ios/App/App/public/
 ios/App/build/
 DerivedData/
@@ -24,3 +31,5 @@ builds/
 public/vendor/hls.min.js
 android/app/src/main/assets/public/
 .DS_Store
+__pycache__/
+*.py[cod]

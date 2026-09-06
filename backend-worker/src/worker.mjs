@@ -1,3 +1,5 @@
+import HomeCuration from '../../public/js/home-curation.js';
+
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store",
@@ -9,8 +11,8 @@ const JSON_HEADERS = {
 const CORS_HEADERS = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
-  "access-control-allow-headers": "content-type, x-license-key, x-telegram-id, x-device-id, x-app-version",
-  "access-control-expose-headers": "retry-after",
+  "access-control-allow-headers": "content-type, range, x-license-key, x-telegram-id, x-device-id, x-app-version",
+  "access-control-expose-headers": "accept-ranges, content-length, content-range, retry-after",
   "access-control-max-age": "86400",
 };
 
@@ -40,13 +42,13 @@ const RATE_LIMITS = Object.freeze({
   default: { limit: 240, windowSeconds: 60 },
 });
 
-// These are deliberately narrow catalog/media relays, not open proxies.
-// Native WebViews cannot reliably call every catalog asset host directly.
-// Only known public metadata routes and image paths on one exact host are
-// allowed; video streams, arbitrary hosts and arbitrary paths are never
-// forwarded.
-const MOVIE_CATALOG_ORIGIN = "https://phimapi.com";
-const MOVIE_IMAGE_HOSTS = new Set(["phimimg.com"]);
+// Provider configuration belongs in encrypted Worker Secrets. The client only
+// receives this Worker's origin plus short-lived, opaque AES-GCM capabilities.
+const MEDIA_TICKET_AAD = new TextEncoder().encode("phim4k-media-ticket-v1");
+const VPS_RELAY_SIGNATURE_CONTEXT = "phim4k-vps-relay-v1";
+const IMAGE_TICKET_TTL_SECONDS = 90 * 24 * 60 * 60;
+const STREAM_TICKET_TTL_SECONDS = 12 * 60 * 60;
+const MAX_HLS_MANIFEST_BYTES = 2 * 1024 * 1024;
 const MOVIE_CATALOG_CATEGORIES = new Set([
   "phim-moi-cap-nhat", "phim-le", "phim-bo", "hoat-hinh", "tv-shows",
 ]);
@@ -67,6 +69,145 @@ const MOVIE_FILTER_COUNTRIES = new Set([
 ]);
 
 const now = () => new Date().toISOString();
+
+function configuredCatalogOrigin(env) {
+  const raw = String(env?.MOVIE_CATALOG_ORIGIN || "").trim();
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:" || url.username || url.password || url.port || url.search || url.hash) return null;
+    url.pathname = url.pathname === "/" ? "" : url.pathname.replace(/\/+$/, "");
+    return url;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function configuredImageHosts(env) {
+  return new Set(String(env?.MOVIE_IMAGE_HOSTS || "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter((value) => /^[a-z0-9.-]+$/.test(value) && !value.startsWith(".") && !value.endsWith(".")));
+}
+
+function configuredRelayOrigin(env) {
+  const raw = String(env?.VPS_RELAY_ORIGIN || "").trim();
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:" || url.username || url.password || url.port || url.search || url.hash) return null;
+    url.pathname = "";
+    return url;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function relaySecret(env) {
+  const secret = String(env?.VPS_RELAY_SECRET || "");
+  if (secret.length < 32) throw new Error("VPS_RELAY_NOT_CONFIGURED");
+  return secret;
+}
+
+function mediaTicketSecret(env) {
+  const secret = String(env?.MEDIA_TICKET_SECRET || "");
+  if (secret.length < 32) throw new Error("MEDIA_TICKET_NOT_CONFIGURED");
+  return secret;
+}
+
+function bytesToBase64Url(bytes) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function base64UrlToBytes(value) {
+  if (!/^[A-Za-z0-9_-]{24,4096}$/.test(String(value || ""))) throw new Error("INVALID_MEDIA_TICKET");
+  const normalized = String(value).replace(/-/g, "+").replace(/_/g, "/");
+  const binary = atob(normalized + "=".repeat((4 - normalized.length % 4) % 4));
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  if (bytesToBase64Url(bytes) !== String(value)) throw new Error("INVALID_MEDIA_TICKET");
+  return bytes;
+}
+
+function decodeBase64UrlText(value) {
+  if (!/^[A-Za-z0-9_-]{8,8192}$/.test(String(value || ""))) throw new Error("INVALID_RELAY_FINAL_URL");
+  const normalized = String(value).replace(/-/g, "+").replace(/_/g, "/");
+  const binary = atob(normalized + "=".repeat((4 - normalized.length % 4) % 4));
+  return new TextDecoder().decode(Uint8Array.from(binary, (character) => character.charCodeAt(0)));
+}
+
+async function signRelayRequest(payload, timestamp, nonce, env) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(relaySecret(env)),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const message = new TextEncoder().encode(`${VPS_RELAY_SIGNATURE_CONTEXT}\n${timestamp}\n${nonce}\n${payload}`);
+  return bytesToBase64Url(new Uint8Array(await crypto.subtle.sign("HMAC", key, message)));
+}
+
+async function mediaTicketKey(env) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(mediaTicketSecret(env)));
+  return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+}
+
+export async function sealMediaTicket(payload, env) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const cleartext = new TextEncoder().encode(JSON.stringify({ v: 1, ...payload }));
+  const ciphertext = new Uint8Array(await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv, additionalData: MEDIA_TICKET_AAD, tagLength: 128 },
+    await mediaTicketKey(env),
+    cleartext,
+  ));
+  const packed = new Uint8Array(iv.byteLength + ciphertext.byteLength);
+  packed.set(iv);
+  packed.set(ciphertext, iv.byteLength);
+  return bytesToBase64Url(packed);
+}
+
+export async function openMediaTicket(token, env, expectedKind) {
+  try {
+    const packed = base64UrlToBytes(token);
+    if (packed.byteLength < 12 + 16 + 8) throw new Error("INVALID_MEDIA_TICKET");
+    const cleartext = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: packed.slice(0, 12), additionalData: MEDIA_TICKET_AAD, tagLength: 128 },
+      await mediaTicketKey(env),
+      packed.slice(12),
+    );
+    const payload = JSON.parse(new TextDecoder().decode(cleartext));
+    if (payload?.v !== 1 || payload?.kind !== expectedKind || typeof payload?.url !== "string") throw new Error("INVALID_MEDIA_TICKET");
+    const expiresAt = Number(payload.exp);
+    if (!Number.isInteger(expiresAt) || expiresAt <= Math.floor(Date.now() / 1000)) throw new Error("EXPIRED_MEDIA_TICKET");
+    return { ...payload, exp: expiresAt };
+  } catch (error) {
+    if (error.message === "MEDIA_TICKET_NOT_CONFIGURED" || error.message === "EXPIRED_MEDIA_TICKET") throw error;
+    throw new Error("INVALID_MEDIA_TICKET");
+  }
+}
+
+function safePublicHttpsUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+    const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    if (url.protocol !== "https:" || url.username || url.password || url.port || !host) return null;
+    if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) return null;
+    if (/^\d+(?:\.\d+){3}$/.test(host) || host.includes(":")) return null;
+    if (!/^[a-z0-9.-]+$/.test(host) || host.startsWith(".") || host.endsWith(".")) return null;
+    url.hash = "";
+    return url;
+  } catch (_error) {
+    return null;
+  }
+}
+
+async function protectedMediaUrl(request, env, target, kind, expiresAt, extra = {}) {
+  const safe = safePublicHttpsUrl(target);
+  if (!safe) return "";
+  const token = await sealMediaTicket({ ...extra, kind, url: safe.href, exp: expiresAt }, env);
+  const path = kind === "image" ? "/api/media/image" : "/api/media/stream";
+  return `${new URL(request.url).origin}${path}?t=${encodeURIComponent(token)}`;
+}
 
 export function json(payload, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(payload), {
@@ -150,6 +291,15 @@ function plusDays(iso, days) {
 
 function appVersion(request) {
   return request.headers.get("x-app-version") || "unknown";
+}
+
+function requestPlatform(request) {
+  const userAgent = request.headers.get("user-agent") || "";
+  if (/Phim4KTV/i.test(userAgent)) return "android_tv";
+  if (/Android/i.test(userAgent)) return "android";
+  if (/iPhone|iPad|iPod/i.test(userAgent)) return "ios";
+  if (/Windows/i.test(userAgent)) return "windows";
+  return "";
 }
 
 export function compareAppVersions(left, right) {
@@ -360,7 +510,9 @@ async function verifyTelemetryViewer(request, env) {
   const key = requestKey(request);
   const telegramId = requestTelegram(request);
   const deviceId = normalizeId(request.headers.get("x-device-id"));
-  if (!key || !deviceId) return { error: textError("Thiếu phiên người dùng hợp lệ.", 401, "VIEWER_SESSION_REQUIRED") };
+  if (!deviceId) return { error: textError("Thiếu phiên người dùng hợp lệ.", 401, "VIEWER_SESSION_REQUIRED") };
+  if (!key && await freeAccessEnabled(env.DB)) return {telegramId: '', deviceId, isAdmin: false};
+  if (!key) return {error: textError('Vui lòng nhập key.', 401, 'KEY_REQUIRED')};
 
   if (await verifyMasterKey(key, env, env.DB)) {
     if (!await verifyAdminIdentity(key, telegramId, env, env.DB)) {
@@ -377,9 +529,6 @@ async function verifyTelemetryViewer(request, env) {
     return { error: textError("Thiết bị không khớp với phiên đã kích hoạt.", 403, "DEVICE_MISMATCH") };
   }
   const boundTelegram = normalizeId(record.activated_telegram_id || record.assigned_telegram_id);
-  if (boundTelegram && boundTelegram !== telegramId) {
-    return { error: textError("Telegram ID không khớp với phiên đã kích hoạt.", 403, "TELEGRAM_MISMATCH") };
-  }
   if (boundTelegram) {
     const ban = await queryOne(env.DB, "SELECT reason FROM bans WHERE telegram_id = ?", boundTelegram);
     if (ban) return { error: textError("Tài khoản đã bị khóa.", 403, "USER_BANNED") };
@@ -409,6 +558,174 @@ async function handleTelemetry(request, env) {
     });
   }
   return json({ success: true, accepted: events.length }, 202);
+}
+
+async function ensureWatchProgressTable(db) {
+  await db.prepare(
+    "CREATE TABLE IF NOT EXISTS watch_progress (owner_id TEXT NOT NULL, movie_slug TEXT NOT NULL, episode_id TEXT NOT NULL, movie_name TEXT NOT NULL, episode_name TEXT NOT NULL, thumb_url TEXT NOT NULL DEFAULT '', current_seconds REAL NOT NULL, duration_seconds REAL NOT NULL, progress_percent INTEGER NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (owner_id, movie_slug, episode_id))",
+  ).run();
+  await db.prepare(
+    "CREATE INDEX IF NOT EXISTS idx_watch_progress_owner_updated ON watch_progress(owner_id, updated_at DESC)",
+  ).run();
+}
+
+async function progressOwner(request, env) {
+  const identity = await verifyTelemetryViewer(request, env);
+  if (identity.error) return identity;
+  const key = requestKey(request);
+  const namespace = identity.isAdmin
+    ? `admin:${normalizeId(env.ADMIN_TELEGRAM_ID)}`
+    : key
+      ? `license:${key}`
+      : `guest-device:${identity.deviceId}`;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(namespace));
+  return { ...identity, ownerId: toHex(digest) };
+}
+
+function cleanProgressText(value, maxLength) {
+  return String(value || "")
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength);
+}
+
+function cleanProgressThumb(value, requestOrigin) {
+  const raw = cleanProgressText(value, 500);
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:" || url.username || url.password || url.port) return "";
+    if (url.origin !== requestOrigin || url.pathname !== "/api/media/image") return "";
+    if (!/^[A-Za-z0-9_-]{24,4096}$/.test(url.searchParams.get("t") || "") || [...url.searchParams.keys()].some((key) => key !== "t")) return "";
+    url.hash = "";
+    return url.href;
+  } catch (_error) {
+    return "";
+  }
+}
+
+function normalizeWatchProgressItem(value, requestOrigin) {
+  const movieSlug = cleanProgressText(value?.slug, 160).toLowerCase();
+  const movieName = cleanProgressText(value?.name, 160);
+  const episodeName = cleanProgressText(value?.epName, 120);
+  const episodeId = cleanProgressText(value?.episodeId || episodeName, 160);
+  const currentSeconds = Math.round(Number(value?.currentTime) * 10) / 10;
+  const durationSeconds = Math.round(Number(value?.duration) * 10) / 10;
+  if (!/^[a-z0-9][a-z0-9-]{0,159}$/.test(movieSlug) || !movieName || !episodeName || !episodeId) return null;
+  if (!Number.isFinite(currentSeconds) || !Number.isFinite(durationSeconds) || currentSeconds < 0 || durationSeconds < 5 || durationSeconds > 172800 || currentSeconds > durationSeconds + 5) return null;
+  return {
+    slug: movieSlug,
+    name: movieName,
+    epName: episodeName,
+    episodeId,
+    thumb: cleanProgressThumb(value?.thumb, requestOrigin),
+    currentTime: Math.min(currentSeconds, durationSeconds),
+    duration: durationSeconds,
+    progressPercent: Math.max(0, Math.min(100, Math.round((currentSeconds / durationSeconds) * 100))),
+  };
+}
+
+async function freshWatchProgressThumb(row, request, env, expiresAt) {
+  const stored = String(row?.thumb_url || '').trim();
+  const requestOrigin = new URL(request.url).origin;
+  const slug = catalogSlug(row?.movie_slug);
+
+  // A technically valid image URL is not enough: older builds could associate
+  // the current hero poster with a different movie's watch-progress row. Only
+  // reuse a Worker ticket that was minted for this exact movie slug.
+  if (stored && slug) {
+    try {
+      const candidate = new URL(stored);
+      if (candidate.origin === requestOrigin
+        && candidate.pathname === '/api/media/image'
+        && [...candidate.searchParams.keys()].every((key) => key === 't')) {
+        const ticket = await openMediaTicket(candidate.searchParams.get('t'), env, 'image');
+        if (catalogSlug(ticket.movieSlug) === slug) return { thumb: candidate.href, persist: false };
+      }
+    } catch (_error) {}
+  }
+
+  if (!slug) return { thumb: '', persist: false };
+  try {
+    const detail = await fetchProtectedCatalogJson(`/phim/${slug}`, env, { ttl: 300 });
+    const source = detail?.movie?.thumb_url || detail?.movie?.poster_url || '';
+    const upgraded = await protectImageValue(source, request, env, expiresAt, { movieSlug: slug });
+    return { thumb: upgraded, persist: Boolean(upgraded) };
+  } catch (_error) {
+    // Clear a known-untrusted association so a stale local poster cannot keep
+    // winning the timestamp merge. A later read retries catalogue recovery.
+    return { thumb: '', persist: Boolean(stored) };
+  }
+}
+
+async function handleWatchProgress(request, env) {
+  const identity = await progressOwner(request, env);
+  if (identity.error) return identity.error;
+  await ensureWatchProgressTable(env.DB);
+
+  if (request.method === "GET") {
+    const rows = await env.DB.prepare(
+      "SELECT movie_slug, episode_id, movie_name, episode_name, thumb_url, current_seconds, duration_seconds, progress_percent, updated_at FROM watch_progress WHERE owner_id = ? ORDER BY updated_at DESC LIMIT 10",
+    ).bind(identity.ownerId).all();
+    const sourceRows = rows.results || [];
+    const imageExpiresAt = Math.floor(Date.now() / 1000) + IMAGE_TICKET_TTL_SECONDS;
+    const thumbStates = await Promise.all(sourceRows.map((row) => freshWatchProgressThumb(row, request, env, imageExpiresAt)));
+    const upgradedAt = now();
+    await Promise.all(sourceRows.map((row, index) => {
+      const state = thumbStates[index];
+      if (!state.persist) return Promise.resolve();
+      return env.DB.prepare(
+        "UPDATE watch_progress SET thumb_url = ?, updated_at = ? WHERE owner_id = ? AND movie_slug = ? AND episode_id = ?",
+      ).bind(state.thumb, upgradedAt, identity.ownerId, row.movie_slug, row.episode_id).run();
+    }));
+    return json({
+      success: true,
+      items: sourceRows.map((row, index) => ({
+        slug: row.movie_slug,
+        episodeId: row.episode_id,
+        name: row.movie_name,
+        epName: row.episode_name,
+        thumb: thumbStates[index].thumb,
+        currentTime: Number(row.current_seconds),
+        duration: Number(row.duration_seconds),
+        progressPercent: Number(row.progress_percent),
+        updatedAt: thumbStates[index].persist ? upgradedAt : row.updated_at,
+      })),
+    });
+  }
+
+  if (request.method === "DELETE") {
+    await env.DB.prepare("DELETE FROM watch_progress WHERE owner_id = ?").bind(identity.ownerId).run();
+    return json({ success: true, cleared: true });
+  }
+
+  const body = await parseBody(request);
+  const source = Array.isArray(body.items) ? body.items.slice(0, 10) : body.item ? [body.item] : [];
+  const requestOrigin = new URL(request.url).origin;
+  const items = source.map((item) => normalizeWatchProgressItem(item, requestOrigin));
+  if (!items.length || items.some((item) => !item)) {
+    return textError("Dữ liệu xem tiếp không hợp lệ.", 400, "INVALID_WATCH_PROGRESS");
+  }
+  const timestamp = now();
+  for (const item of items) {
+    await env.DB.prepare(
+      "DELETE FROM watch_progress WHERE owner_id = ? AND movie_slug = ? AND episode_id <> ?",
+    ).bind(identity.ownerId, item.slug, item.episodeId).run();
+    if (item.progressPercent >= 98) {
+      await env.DB.prepare(
+        "DELETE FROM watch_progress WHERE owner_id = ? AND movie_slug = ?",
+      ).bind(identity.ownerId, item.slug).run();
+      continue;
+    }
+    await env.DB.prepare(
+      "INSERT INTO watch_progress (owner_id, movie_slug, episode_id, movie_name, episode_name, thumb_url, current_seconds, duration_seconds, progress_percent, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(owner_id, movie_slug, episode_id) DO UPDATE SET movie_name = excluded.movie_name, episode_name = excluded.episode_name, thumb_url = CASE WHEN excluded.thumb_url = '' THEN watch_progress.thumb_url ELSE excluded.thumb_url END, current_seconds = excluded.current_seconds, duration_seconds = excluded.duration_seconds, progress_percent = excluded.progress_percent, updated_at = excluded.updated_at",
+    ).bind(identity.ownerId, item.slug, item.episodeId, item.name, item.epName, item.thumb, item.currentTime, item.duration, item.progressPercent, timestamp).run();
+  }
+  await env.DB.prepare(
+    "DELETE FROM watch_progress WHERE owner_id = ? AND rowid NOT IN (SELECT rowid FROM watch_progress WHERE owner_id = ? ORDER BY updated_at DESC LIMIT 10)",
+  ).bind(identity.ownerId, identity.ownerId).run();
+  return json({ success: true, saved: items.length, updatedAt: timestamp }, 202);
 }
 
 function dbUnavailable(env) {
@@ -450,6 +767,29 @@ async function getForceUpdate(db, version) {
   } catch (_error) {
     return { forceUpdate: false, isLatest: true, message: "Bạn đang dùng phiên bản mới nhất." };
   }
+}
+
+async function getVerifiedAdminUpdate(db, request, forceStatus) {
+  if (forceStatus.forceUpdate) return forceStatus;
+
+  const platform = requestPlatform(request);
+  const currentVersion = appVersion(request);
+  if (!platform || !/^\d+(?:\.\d+){1,3}$/.test(currentVersion)) return forceStatus;
+
+  const release = await queryOne(db, "SELECT url, version FROM downloads WHERE platform = ?", platform);
+  const releaseVersion = String(release?.version || "").trim();
+  if (!release || !validDownloadUrl(release.url) || !/^\d+(?:\.\d+){1,3}$/.test(releaseVersion)) return forceStatus;
+  if (compareAppVersions(currentVersion, releaseVersion) >= 0) return forceStatus;
+
+  return {
+    ...forceStatus,
+    forceUpdate: true,
+    isLatest: false,
+    latestVersion: releaseVersion,
+    minVersion: releaseVersion,
+    downloadUrl: release.url,
+    message: `Có bản ${releaseVersion}. Hãy tải đúng bản dành cho thiết bị này để cập nhật.`,
+  };
 }
 
 export function normalizeAnnouncementSetting(raw, timestamp = Date.now()) {
@@ -517,44 +857,63 @@ async function handleAnnouncementAdmin(request, env) {
   return json({ success: true, message: "Đã ghim thông báo cho người dùng.", announcement: normalizeAnnouncementSetting(announcement) });
 }
 
+async function freeAccessEnabled(db) {
+  const row = await queryOne(db, 'SELECT setting_value FROM app_settings WHERE setting_key = ?', 'free_access');
+  return row?.setting_value === 'true';
+}
+
+async function accessPolicy(request, env) {
+  if (request.method === 'POST') {
+    const denied = await requireVerifiedAdmin(request, env);
+    if (denied) return denied;
+    const body = await parseBody(request);
+    if (typeof body.freeAccess !== 'boolean') return textError('Trạng thái không hợp lệ.', 400, 'INVALID_ACCESS_POLICY');
+    await env.DB.prepare('INSERT INTO app_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?) ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = excluded.updated_at').bind('free_access', String(body.freeAccess), now()).run();
+    await logEvent(env.DB, 'admin_access_policy_updated', {actorTelegramId: requestTelegram(request), detail: `freeAccess=${body.freeAccess}`});
+  }
+  return json({success: true, freeAccess: await freeAccessEnabled(env.DB)});
+}
+
 async function activationStatus({ db, key, telegramId, deviceId, request, env, activation }) {
-  if (!key || !telegramId || !deviceId) return textError("Thiếu key, Telegram ID hoặc mã thiết bị.", 400, "MISSING_LICENSE_DATA");
-  if (!validTelegramId(telegramId)) return textError("Telegram ID is invalid.", 400, "INVALID_TELEGRAM_ID");
+  if (!deviceId) return textError('Thiếu mã thiết bị.', 400, 'MISSING_LICENSE_DATA');
+  if (!key) {
+    if (!await freeAccessEnabled(db)) return textError('Vui lòng nhập key để tiếp tục.', 401, 'KEY_REQUIRED');
+    return json({success: true, active: true, isAdmin: false, freeAccess: true, plan: 'MIỄN KEY', expiresAt: null, ...await getForceUpdate(db, appVersion(request))});
+  }
   if (await verifyMasterKey(key, env, db)) {
     if (!await verifyAdminIdentity(key, telegramId, env, db)) {
       return textError("Master key is restricted to the configured administrator Telegram ID.", 403, "ADMIN_TELEGRAM_REQUIRED");
     }
-    const force = await getForceUpdate(db, appVersion(request));
-    return json({ success: true, active: true, isAdmin: true, plan: "MASTER", expiresAt: null, ...(activation ? { key, telegramId } : {}), ...force });
+    const force = await getVerifiedAdminUpdate(db, request, await getForceUpdate(db, appVersion(request)));
+    // The client already supplied these credentials. Never echo the raw master
+    // key or administrator identity back in an API response.
+    return json({ success: true, active: !force.forceUpdate, isAdmin: true, plan: "MASTER", expiresAt: null, ...force });
   }
   if (!validKey(key)) return textError("Định dạng key không hợp lệ.", 400, "INVALID_KEY_FORMAT");
-
-  const ban = await queryOne(db, "SELECT reason FROM bans WHERE telegram_id = ?", telegramId);
-  if (ban) return textError(ban.reason || "Tài khoản Telegram này đã bị khóa.", 403, "USER_BANNED");
 
   const record = await queryOne(db, "SELECT * FROM license_keys WHERE license_key = ?", key);
   if (!record) return textError("Key không tồn tại.", 404, "KEY_NOT_FOUND");
   if (!record.active) return textError("Key đã bị vô hiệu hóa.", 403, "KEY_DISABLED");
   if (isExpired(record.expires_at)) return textError("Key đã hết hạn.", 403, "KEY_EXPIRED");
-  if (record.assigned_telegram_id && record.assigned_telegram_id !== telegramId) {
-    return textError("Key này được gán cho Telegram khác.", 403, "TELEGRAM_MISMATCH");
-  }
-  if (record.activated_telegram_id && record.activated_telegram_id !== telegramId) {
-    return textError("Key đã được kích hoạt với Telegram khác.", 403, "TELEGRAM_MISMATCH");
-  }
+  const owner = record.activated_telegram_id || record.assigned_telegram_id;
+  if (owner && await queryOne(db, 'SELECT reason FROM bans WHERE telegram_id = ?', owner)) return textError('Tài khoản đã bị khóa.', 403, 'USER_BANNED');
   if (record.device_id && record.device_id !== deviceId) {
     return textError("Key đã được khóa với thiết bị khác. Liên hệ quản trị để reset.", 403, "DEVICE_MISMATCH");
   }
 
-  if (activation && (!record.activated_telegram_id || !record.device_id)) {
+  if (activation && !record.device_id) {
     await db.prepare(
-      "UPDATE license_keys SET activated_telegram_id = COALESCE(activated_telegram_id, ?), device_id = COALESCE(device_id, ?), updated_at = ? WHERE license_key = ?",
-    ).bind(telegramId, deviceId, now(), key).run();
-    await logEvent(db, "license_activated", { targetKey: key, targetTelegramId: telegramId, detail: `version=${appVersion(request)}` });
+      "UPDATE license_keys SET device_id = ?, updated_at = ? WHERE license_key = ? AND device_id IS NULL AND active = 1",
+    ).bind(deviceId, now(), key).run();
+    await logEvent(db, "license_activated", { detail: `key=${maskedValue(key)} version=${appVersion(request)}` });
   }
 
+  const bound = await queryOne(db, 'SELECT * FROM license_keys WHERE license_key = ?', key);
+  if (!bound?.active || isExpired(bound.expires_at)) return textError('Key không còn hiệu lực.', 403, 'KEY_DISABLED');
+  if (bound.device_id !== deviceId) return textError('Key chưa kích hoạt trên máy này hoặc đã gắn máy khác.', 403, 'DEVICE_MISMATCH');
+
   const force = await getForceUpdate(db, appVersion(request));
-  return json({ success: true, active: true, isAdmin: false, plan: record.plan, expiresAt: record.expires_at || null, ...(activation ? { key, telegramId } : {}), ...force });
+  return json({ success: true, active: true, isAdmin: false, keyOnly: true, plan: bound.plan, expiresAt: bound.expires_at || null, ...force });
 }
 
 async function ensureDeviceAccessTable(db) {
@@ -926,7 +1285,7 @@ async function handleContentStatus(request, env) {
   let catalogStatus = "READY";
   let itemCount = 0;
   try {
-    const data = await fetchCatalogJson("/danh-sach/phim-moi-cap-nhat?page=1");
+    const data = await fetchProtectedCatalogJson("/danh-sach/phim-moi-cap-nhat?page=1", env);
     itemCount = catalogItems(data).length;
     if (!itemCount) catalogStatus = "EMPTY";
   } catch (_error) {
@@ -934,7 +1293,7 @@ async function handleContentStatus(request, env) {
   }
   const jellyfin = await probeJellyfin(env);
   return json({
-    source: "PhimAPI metadata",
+    source: "Cloudflare protected catalog",
     status: catalogStatus,
     itemCount,
     checkedAt: now(),
@@ -942,7 +1301,7 @@ async function handleContentStatus(request, env) {
     cacheActive: true,
     cacheTtlSeconds: 30,
     providers: [
-      { id: "catalog", label: "PhimAPI metadata", status: catalogStatus, purpose: "Danh mục, mô tả và poster" },
+      { id: "catalog", label: "Kho phim được bảo vệ", status: catalogStatus, purpose: "Danh mục, mô tả và poster qua Cloudflare" },
       jellyfin,
     ],
     ads: { sdkEmbedded: false, mode: "NO_AD_SDK" },
@@ -955,7 +1314,7 @@ async function handleMovieRefresh(request, env) {
   const path = "/danh-sach/phim-moi-cap-nhat?page=1";
   const cache = typeof caches !== "undefined" ? caches.default : null;
   if (cache) await cache.delete(catalogCacheKey(path));
-  const data = await fetchCatalogJson(path, { force: true });
+  const data = await fetchProtectedCatalogJson(path, env, { force: true });
   const itemCount = catalogItems(data).length;
   await logEvent(env.DB, "admin_catalog_refreshed", {
     actorTelegramId: requestTelegram(request),
@@ -1046,48 +1405,6 @@ export function validDownloadUrl(value) {
   catch (_) { return false; }
 }
 
-async function handleMovieFallback(request) {
-  // Movie data remains a client-side fallback. The licensing backend deliberately
-  // does not implement an open proxy, which would otherwise allow SSRF abuse.
-  return textError("Nguồn phim không được proxy bởi backend bản quyền.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
-}
-
-async function handleMovieImage(request) {
-  const requestUrl = new URL(request.url);
-  const rawTarget = String(requestUrl.searchParams.get("url") || "").trim();
-  let target;
-  try {
-    target = new URL(rawTarget);
-  } catch (_error) {
-    return textError("URL anh khong hop le.", 400, "INVALID_IMAGE_URL");
-  }
-
-  const safePath = target.pathname.startsWith("/upload/") || target.pathname.startsWith("/uploads/");
-  if (target.protocol !== "https:" || target.username || target.password || target.port || !MOVIE_IMAGE_HOSTS.has(target.hostname) || !safePath) {
-    return textError("Nguon anh khong duoc phep.", 400, "IMAGE_HOST_NOT_ALLOWED");
-  }
-  target.hash = "";
-
-  const upstream = await fetch(target.href, {
-    headers: { accept: "image/avif,image/webp,image/jpeg,image/png,image/*;q=0.8" },
-    redirect: "manual",
-    cf: { cacheEverything: true, cacheTtl: 86400 },
-  });
-  if (!upstream.ok) return textError("Khong tai duoc anh phim.", 502, "IMAGE_UPSTREAM_ERROR");
-  const contentType = String(upstream.headers.get("content-type") || "").toLowerCase();
-  if (!contentType.startsWith("image/")) return textError("Nguon tra ve khong phai anh.", 502, "INVALID_IMAGE_RESPONSE");
-  const contentLength = Number.parseInt(upstream.headers.get("content-length") || "0", 10) || 0;
-  if (contentLength > 6 * 1024 * 1024) return textError("Anh vuot qua gioi han kich thuoc.", 413, "IMAGE_TOO_LARGE");
-
-  const headers = new Headers(CORS_HEADERS);
-  headers.set("content-type", contentType);
-  headers.set("cache-control", "public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800");
-  headers.set("x-content-type-options", "nosniff");
-  const etag = upstream.headers.get("etag");
-  if (etag) headers.set("etag", etag);
-  return new Response(upstream.body, { status: 200, headers });
-}
-
 function catalogPage(value) {
   const parsed = Number.parseInt(String(value || "1"), 10);
   return Number.isInteger(parsed) && parsed >= 1 && parsed <= 100 ? parsed : 1;
@@ -1102,129 +1419,345 @@ function catalogItems(data) {
   return Array.isArray(data?.items) ? data.items : (Array.isArray(data?.data?.items) ? data.data.items : []);
 }
 
+function homeCatalogPaths(year) {
+  const suffix = `?page=1&limit=64&year=${year}&sort_field=modified.time&sort_type=desc`;
+  return [
+    '/danh-sach/phim-moi-cap-nhat?page=1',
+    ...['phim-chieu-rap', 'phim-le', 'phim-bo'].map((category) => `/v1/api/danh-sach/${category}${suffix}`),
+  ];
+}
+
 function catalogCacheKey(path) {
   return new Request(`https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/__catalog_cache${path}`);
 }
 
-async function fetchCatalogJson(path, { force = false } = {}) {
+async function handleProtectedMovieImage(request, env) {
+  let ticket;
+  try {
+    ticket = await openMediaTicket(new URL(request.url).searchParams.get("t"), env, "image");
+  } catch (error) {
+    const expired = error.message === "EXPIRED_MEDIA_TICKET";
+    return textError(expired ? "Vé ảnh đã hết hạn." : "Vé ảnh không hợp lệ.", expired ? 410 : 400, expired ? "IMAGE_TICKET_EXPIRED" : "INVALID_IMAGE_TICKET");
+  }
+  const target = safePublicHttpsUrl(ticket.url);
+  const hosts = configuredImageHosts(env);
+  const safePath = target && (target.pathname.startsWith("/upload/") || target.pathname.startsWith("/uploads/"));
+  if (!target || !hosts.has(target.hostname.toLowerCase()) || !safePath) return textError("Nguồn ảnh không được phép.", 400, "IMAGE_HOST_NOT_ALLOWED");
+  const upstream = await fetch(target.href, {
+    headers: { accept: "image/avif,image/webp,image/jpeg,image/png,image/*;q=0.8" },
+    redirect: "manual",
+    cf: { cacheEverything: true, cacheTtl: 86400 },
+  });
+  if (!upstream.ok) return textError("Không tải được ảnh phim.", 502, "IMAGE_UPSTREAM_ERROR");
+  const contentType = String(upstream.headers.get("content-type") || "").toLowerCase();
+  if (!contentType.startsWith("image/")) return textError("Nguồn trả về không phải ảnh.", 502, "INVALID_IMAGE_RESPONSE");
+  const contentLength = Number.parseInt(upstream.headers.get("content-length") || "0", 10) || 0;
+  if (contentLength > 6 * 1024 * 1024) return textError("Ảnh vượt quá giới hạn kích thước.", 413, "IMAGE_TOO_LARGE");
+  const headers = new Headers(CORS_HEADERS);
+  headers.set("content-type", contentType);
+  headers.set("cache-control", "public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800");
+  headers.set("x-content-type-options", "nosniff");
+  const etag = upstream.headers.get("etag");
+  if (etag) headers.set("etag", etag);
+  return new Response(upstream.body, { status: 200, headers });
+}
+
+async function fetchProtectedCatalogJson(path, env, { force = false, ttl = 30 } = {}) {
+  const origin = configuredCatalogOrigin(env);
+  if (!origin || !path.startsWith("/") || path.startsWith("//") || path.includes("\\") || path.includes("#")) {
+    throw new Error("CATALOG_NOT_CONFIGURED");
+  }
   const cache = typeof caches !== "undefined" ? caches.default : null;
   const cacheKey = catalogCacheKey(path);
   if (cache && !force) {
     try {
       const cached = await cache.match(cacheKey);
       if (cached) return await cached.json();
-    } catch (_error) {
-      // A cache miss must never prevent the catalog from loading.
-    }
+    } catch (_error) {}
   }
-  const response = await fetch(`${MOVIE_CATALOG_ORIGIN}${path}`, {
+  const response = await fetch(`${origin.href.replace(/\/$/, "")}${path}`, {
     headers: { accept: "application/json" },
-    cf: { cacheEverything: true, cacheTtl: 30 },
+    signal: AbortSignal.timeout(5000),
+    redirect: "manual",
+    cf: { cacheEverything: true, cacheTtl: ttl },
   });
-  if (!response.ok) throw new Error(`catalog HTTP ${response.status}`);
-  const contentType = response.headers.get("content-type") || "";
-  if (!contentType.includes("application/json")) throw new Error("catalog returned non-JSON data");
+  if (!response.ok || !String(response.headers.get("content-type") || "").includes("application/json")) {
+    throw new Error(`catalog HTTP ${response.status}`);
+  }
   const payload = await response.json();
   if (cache) {
     try {
       await cache.put(cacheKey, new Response(JSON.stringify(payload), {
-        headers: {
-          "content-type": "application/json; charset=utf-8",
-          "cache-control": "public, max-age=30, s-maxage=30, stale-while-revalidate=30",
-        },
+        headers: { "content-type": "application/json; charset=utf-8", "cache-control": `public, max-age=${ttl}, s-maxage=${ttl}` },
       }));
-    } catch (_error) {
-      // Cache is an optimization only; the successful upstream response stays valid.
-    }
+    } catch (_error) {}
   }
   return payload;
 }
 
-async function handleMovieCatalog(request) {
+async function protectImageValue(value, request, env, expiresAt, extra = {}) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const hosts = configuredImageHosts(env);
+  let target = safePublicHttpsUrl(raw);
+  if (!target && !/^[a-z][a-z0-9+.-]*:/i.test(raw)) {
+    const [host] = hosts;
+    if (host) target = safePublicHttpsUrl(`https://${host}/${raw.replace(/^\/+/, "")}`);
+  }
+  if (!target || !hosts.has(target.hostname.toLowerCase())) return "";
+  if (!target.pathname.startsWith("/upload/") && !target.pathname.startsWith("/uploads/")) return "";
+  return protectedMediaUrl(request, env, target.href, "image", expiresAt, extra);
+}
+
+async function protectCatalogImages(value, request, env, expiresAt = Math.floor(Date.now() / 1000) + IMAGE_TICKET_TTL_SECONDS) {
+  if (Array.isArray(value)) return Promise.all(value.map((item) => protectCatalogImages(item, request, env, expiresAt)));
+  if (!value || typeof value !== "object") return value;
+  const output = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (key === "poster_url" || key === "thumb_url") output[key] = await protectImageValue(child, request, env, expiresAt);
+    else output[key] = await protectCatalogImages(child, request, env, expiresAt);
+  }
+  return output;
+}
+
+async function protectMovieDetail(data, request, env, slug) {
+  const output = await protectCatalogImages(data, request, env);
+  if (output?.movie && typeof output.movie === "object") delete output.movie.trailer_url;
+  const servers = Array.isArray(output?.episodes) ? output.episodes : [];
+  output.episodes = servers.map((server, serverIndex) => ({
+    server_name: cleanProgressText(server?.server_name, 100) || `Server ${serverIndex + 1}`,
+    server_data: (Array.isArray(server?.server_data) ? server.server_data : []).map((episode, episodeIndex) => ({
+      name: cleanProgressText(episode?.name, 120) || `Tập ${episodeIndex + 1}`,
+      slug: cleanProgressText(episode?.slug, 160),
+      filename: cleanProgressText(episode?.filename, 160),
+      stream_ref: { movie: slug, server: serverIndex, episode: episodeIndex },
+    })),
+  }));
+  return output;
+}
+
+async function handleProtectedMovieCatalog(request, env) {
+  const identity = await verifyTelemetryViewer(request, env);
+  if (identity.error) return identity.error;
   const url = new URL(request.url);
   const { pathname } = url;
 
   if (pathname === "/api/movies/home") {
-    // One upstream request avoids the catalog's rate limit during app startup.
-    const latest = await fetchCatalogJson("/danh-sach/phim-moi-cap-nhat?page=1");
-    const latestItems = catalogItems(latest);
-    const movies = latestItems.filter((item) => item?.type === "single").slice(0, 16);
-    const series = latestItems.filter((item) => item?.type === "series").slice(0, 16);
-    const animation = latestItems.filter((item) => item?.type === "hoathinh").slice(0, 16);
-    return json({
-      updatedAt: now(),
-      hero: latestItems.slice(0, 8),
-      sections: [
-        { id: "latest", title: "Phim moi cap nhat", items: latestItems.slice(0, 18) },
-        { id: "movies", title: "Phim le", items: movies.length ? movies : latestItems.slice(0, 16) },
-        { id: "series", title: "Phim bo", items: series.length ? series : latestItems.slice(8, 24) },
-        { id: "animation", title: "Hoat hinh", items: animation.length ? animation : latestItems.slice(16, 32) },
-      ],
-    }, 200, { "cache-control": "public, max-age=30, s-maxage=30, stale-while-revalidate=30" });
+    const paths = homeCatalogPaths(new Date().getUTCFullYear());
+    const results = await Promise.allSettled(paths.map((path, index) => fetchProtectedCatalogJson(path, env, { ttl: index ? 300 : 30 })));
+    const items = results.flatMap((result) => result.status === "fulfilled" ? catalogItems(result.value) : []);
+    if (!items.length) return textError("Nguồn danh mục tạm thời không khả dụng.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
+    return json(await protectCatalogImages(HomeCuration.build(items), request, env));
   }
 
   if (pathname === "/api/movies/filter") {
     const genre = String(url.searchParams.get("genre") || "").trim().toLowerCase();
     const country = String(url.searchParams.get("country") || "").trim().toLowerCase();
-    if (!genre && !country) return textError("Thieu bo loc phim.", 400, "MISSING_MOVIE_FILTER");
-    if (genre && !MOVIE_FILTER_GENRES.has(genre)) return textError("The loai khong hop le.", 400, "INVALID_GENRE_FILTER");
-    if (country && !MOVIE_FILTER_COUNTRIES.has(country)) return textError("Quoc gia khong hop le.", 400, "INVALID_COUNTRY_FILTER");
-
+    if (!genre && !country) return textError("Thiếu bộ lọc phim.", 400, "MISSING_MOVIE_FILTER");
+    if (genre && !MOVIE_FILTER_GENRES.has(genre)) return textError("Thể loại không hợp lệ.", 400, "INVALID_GENRE_FILTER");
+    if (country && !MOVIE_FILTER_COUNTRIES.has(country)) return textError("Quốc gia không hợp lệ.", 400, "INVALID_COUNTRY_FILTER");
     const page = catalogPage(url.searchParams.get("page"));
-    let target;
-    if (genre === "hoat-hinh") {
-      target = `/v1/api/danh-sach/hoat-hinh?page=${page}&limit=24`;
-    } else if (genre) {
-      target = `/v1/api/the-loai/${genre}?page=${page}&limit=24`;
-    } else {
-      target = `/v1/api/quoc-gia/${country}?page=${page}&limit=24`;
-    }
+    let target = genre === "hoat-hinh"
+      ? `/v1/api/danh-sach/hoat-hinh?page=${page}&limit=24`
+      : genre ? `/v1/api/the-loai/${genre}?page=${page}&limit=24` : `/v1/api/quoc-gia/${country}?page=${page}&limit=24`;
     if (country && genre) target += `&country=${encodeURIComponent(country)}`;
-    const data = await fetchCatalogJson(target);
-    return json({
-      filters: { genre, country },
-      items: catalogItems(data),
-      pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1, totalItems: 0 },
-    }, 200, { "cache-control": "public, max-age=300, s-maxage=300" });
+    const data = await fetchProtectedCatalogJson(target, env);
+    return json({ filters: { genre, country }, items: await protectCatalogImages(catalogItems(data), request, env), pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1, totalItems: 0 } });
   }
 
   const categoryMatch = pathname.match(/^\/api\/movies\/category\/([a-z0-9-]+)$/);
   if (categoryMatch) {
     const category = categoryMatch[1];
-    if (!MOVIE_CATALOG_CATEGORIES.has(category)) return textError("Danh muc phim khong hop le.", 400, "INVALID_CATEGORY");
+    if (!MOVIE_CATALOG_CATEGORIES.has(category)) return textError("Danh mục phim không hợp lệ.", 400, "INVALID_CATEGORY");
     const page = catalogPage(url.searchParams.get("page"));
-    const target = category === "phim-moi-cap-nhat"
-      ? `/danh-sach/phim-moi-cap-nhat?page=${page}`
-      : `/v1/api/danh-sach/${category}?page=${page}&limit=24`;
-    const data = await fetchCatalogJson(target);
-    return json({
-      title: category,
-      items: catalogItems(data),
-      pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1 },
-    }, 200, { "cache-control": "public, max-age=120, s-maxage=120" });
+    const target = category === "phim-moi-cap-nhat" ? `/danh-sach/phim-moi-cap-nhat?page=${page}` : `/v1/api/danh-sach/${category}?page=${page}&limit=24`;
+    const data = await fetchProtectedCatalogJson(target, env);
+    return json({ title: category, items: await protectCatalogImages(catalogItems(data), request, env), pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1 } });
   }
 
   if (pathname === "/api/movies/search") {
     const query = String(url.searchParams.get("q") || "").trim().slice(0, 100);
-    if (!query) return textError("Thieu tu khoa tim kiem.", 400, "MISSING_QUERY");
+    if (!query) return textError("Thiếu từ khóa tìm kiếm.", 400, "MISSING_QUERY");
     const page = catalogPage(url.searchParams.get("page"));
-    const data = await fetchCatalogJson(`/v1/api/tim-kiem?keyword=${encodeURIComponent(query)}&page=${page}&limit=24`);
-    return json({
-      query,
-      items: catalogItems(data),
-      pagination: data.data?.params?.pagination || { currentPage: page, totalPages: 1 },
-    }, 200, { "cache-control": "public, max-age=120, s-maxage=120" });
+    const data = await fetchProtectedCatalogJson(`/v1/api/tim-kiem?keyword=${encodeURIComponent(query)}&page=${page}&limit=24`, env);
+    return json({ query, items: await protectCatalogImages(catalogItems(data), request, env), pagination: data.data?.params?.pagination || { currentPage: page, totalPages: 1 } });
   }
 
   const detailMatch = pathname.match(/^\/api\/movies\/detail\/([^/]+)$/);
   if (detailMatch) {
     const slug = catalogSlug(detailMatch[1]);
-    if (!slug) return textError("Ma phim khong hop le.", 400, "INVALID_MOVIE_SLUG");
-    const data = await fetchCatalogJson(`/phim/${slug}`);
-    return json(data, 200, { "cache-control": "public, max-age=120, s-maxage=120" });
+    if (!slug) return textError("Mã phim không hợp lệ.", 400, "INVALID_MOVIE_SLUG");
+    const data = await fetchProtectedCatalogJson(`/phim/${slug}`, env, { ttl: 120 });
+    return json(await protectMovieDetail(data, request, env, slug));
   }
+  return textError("Không tìm thấy dữ liệu phim.", 404, "MOVIE_NOT_FOUND");
+}
 
-  return textError("Khong tim thay du lieu phim.", 404, "MOVIE_NOT_FOUND");
+async function handleMoviePlayback(request, env) {
+  const identity = await verifyTelemetryViewer(request, env);
+  if (identity.error) return identity.error;
+  const body = await parseBody(request);
+  const slug = catalogSlug(body?.movie);
+  const serverIndex = Number(body?.server);
+  const episodeIndex = Number(body?.episode);
+  if (!slug || !Number.isInteger(serverIndex) || serverIndex < 0 || serverIndex > 50 || !Number.isInteger(episodeIndex) || episodeIndex < 0 || episodeIndex > 5000) {
+    return textError("Tham chiếu tập phim không hợp lệ.", 400, "INVALID_STREAM_REFERENCE");
+  }
+  const data = await fetchProtectedCatalogJson(`/phim/${slug}`, env, { ttl: 120 });
+  const episode = data?.episodes?.[serverIndex]?.server_data?.[episodeIndex];
+  const hls = safePublicHttpsUrl(episode?.link_m3u8);
+  const embedded = safePublicHttpsUrl(episode?.link_embed);
+  const directEmbed = embedded && /\.(?:m3u8|mp4|m4v|mov)(?:$|[?#])/i.test(embedded.href) ? embedded : null;
+  const target = hls || directEmbed;
+  if (!target) return textError("Server này không có luồng phát trực tiếp tương thích.", 404, "STREAM_NOT_AVAILABLE");
+  const expiresAt = Math.floor(Date.now() / 1000) + (env.MEDIA_RELAY_FALLBACK === "redirect" ? 15 * 60 : STREAM_TICKET_TTL_SECONDS);
+  const isHls = Boolean(hls) || /\.m3u8(?:$|[?#])/i.test(target.href);
+  return json({ success: true, streamUrl: await protectedMediaUrl(request, env, target.href, "stream", expiresAt, { format: isHls ? "hls" : "media" }), isHls, expiresAt: new Date(expiresAt * 1000).toISOString() });
+}
+
+async function fetchVpsRelay(initialUrl, request, env, mediaFormat = "media") {
+  const target = safePublicHttpsUrl(initialUrl);
+  const relay = configuredRelayOrigin(env);
+  if (!target || !relay) throw new Error("VPS_RELAY_NOT_CONFIGURED");
+  // AVPlayer may probe even an HLS manifest with Range: bytes=0-1. Forwarding
+  // that range produces a two-byte partial playlist which can never begin with
+  // #EXTM3U, so always fetch manifests in full. Media segments still preserve
+  // Range for seeking and bandwidth efficiency.
+  const format = mediaFormat === "hls" ? "hls" : "media";
+  const range = format === "hls" ? "" : String(request.headers.get("range") || "");
+  if (range && !/^bytes=\d*-\d*$/.test(range)) throw new Error("INVALID_MEDIA_RANGE");
+  const catalogOrigin = configuredCatalogOrigin(env);
+  const payload = JSON.stringify({
+    v: 1,
+    url: target.href,
+    range,
+    format,
+    referer: catalogOrigin ? `${catalogOrigin.origin}/` : `${target.origin}/`,
+  });
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const nonce = bytesToBase64Url(crypto.getRandomValues(new Uint8Array(18)));
+  const signature = await signRelayRequest(payload, timestamp, nonce, env);
+  const response = await fetch(`${relay.origin}/v1/media`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-phim4k-relay-timestamp": timestamp,
+      "x-phim4k-relay-nonce": nonce,
+      "x-phim4k-relay-signature": signature,
+    },
+    body: payload,
+    redirect: "manual",
+  });
+  let finalTarget = target;
+  const encodedFinalUrl = response.headers.get("x-phim4k-relay-final");
+  if (encodedFinalUrl) {
+    const decoded = safePublicHttpsUrl(decodeBase64UrlText(encodedFinalUrl));
+    if (!decoded) throw new Error("INVALID_RELAY_FINAL_URL");
+    finalTarget = decoded;
+  }
+  return { response, target: finalTarget };
+}
+
+async function fetchProtectedUpstream(initialUrl, request, env, mediaFormat = "media", maxRedirects = 4) {
+  const format = mediaFormat === "hls" ? "hls" : "media";
+  if (configuredRelayOrigin(env)) return fetchVpsRelay(initialUrl, request, env, format);
+  let target = safePublicHttpsUrl(initialUrl);
+  if (!target) throw new Error("UNSAFE_MEDIA_TARGET");
+  for (let attempt = 0; attempt <= maxRedirects; attempt += 1) {
+    const catalogOrigin = configuredCatalogOrigin(env);
+    const headers = new Headers({
+      accept: "*/*",
+      "accept-language": "vi,en-US;q=0.8,en;q=0.6",
+      "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148",
+    });
+    if (catalogOrigin) headers.set("referer", `${catalogOrigin.origin}/`);
+    const range = format === "hls" ? "" : request.headers.get("range");
+    if (range && /^bytes=\d*-\d*$/.test(range)) headers.set("range", range);
+    const response = await fetch(target.href, { headers, redirect: "manual" });
+    if (![301, 302, 303, 307, 308].includes(response.status)) return { response, target };
+    if (attempt === maxRedirects) throw new Error("MEDIA_REDIRECT_LIMIT");
+    const location = response.headers.get("location");
+    target = location ? safePublicHttpsUrl(new URL(location, target).href) : null;
+    if (!target) throw new Error("UNSAFE_MEDIA_REDIRECT");
+  }
+  throw new Error("MEDIA_REDIRECT_LIMIT");
+}
+
+async function protectHlsReference(reference, baseUrl, request, env, expiresAt) {
+  const value = String(reference || "").trim();
+  if (!value || value.startsWith("data:")) throw new Error("UNSAFE_HLS_REFERENCE");
+  const target = safePublicHttpsUrl(new URL(value, baseUrl).href);
+  if (!target) throw new Error("UNSAFE_HLS_REFERENCE");
+  return protectedMediaUrl(request, env, target.href, "stream", expiresAt, { format: /\.m3u8(?:$|[?#])/i.test(target.href) ? "hls" : "media" });
+}
+
+async function rewriteHlsLine(line, baseUrl, request, env, expiresAt) {
+  const trimmed = line.trim();
+  if (!trimmed) return line;
+  if (!trimmed.startsWith("#")) return protectHlsReference(trimmed, baseUrl, request, env, expiresAt);
+  const matches = [...line.matchAll(/URI="([^"]+)"/g)];
+  if (!matches.length) return line;
+  let output = "";
+  let offset = 0;
+  for (const match of matches) {
+    output += line.slice(offset, match.index);
+    output += `URI="${await protectHlsReference(match[1], baseUrl, request, env, expiresAt)}"`;
+    offset = match.index + match[0].length;
+  }
+  return output + line.slice(offset);
+}
+
+async function handleMovieStream(request, env) {
+  let ticket;
+  try {
+    ticket = await openMediaTicket(new URL(request.url).searchParams.get("t"), env, "stream");
+  } catch (error) {
+    const expired = error.message === "EXPIRED_MEDIA_TICKET";
+    return textError(expired ? "Vé phát đã hết hạn." : "Vé phát không hợp lệ.", expired ? 410 : 400, expired ? "STREAM_TICKET_EXPIRED" : "INVALID_STREAM_TICKET");
+  }
+  // Compatibility mode is retained only for emergency rollback. Production
+  // uses the authenticated VPS relay, so the provider URL never reaches the
+  // client or appears in a browser-visible redirect.
+  if (env.MEDIA_RELAY_FALLBACK === "redirect") {
+    return new Response(null, {
+      status: 307,
+      headers: { ...CORS_HEADERS, location: ticket.url, "cache-control": "private, no-store", "referrer-policy": "no-referrer" },
+    });
+  }
+  let upstream;
+  let target;
+  try {
+    ({ response: upstream, target } = await fetchProtectedUpstream(ticket.url, request, env, ticket.format));
+  } catch (_error) {
+    return textError("Không kết nối được luồng phim.", 502, "STREAM_UPSTREAM_ERROR");
+  }
+  if (!upstream.ok && upstream.status !== 206) return textError("Luồng phim tạm thời không phản hồi.", 502, `STREAM_UPSTREAM_HTTP_${upstream.status}`);
+  const contentType = String(upstream.headers.get("content-type") || "").toLowerCase();
+  const isHls = ticket.format === "hls" || /(?:mpegurl|x-mpegurl)/.test(contentType) || /\.m3u8(?:$|[?#])/i.test(target.href);
+  if (isHls) {
+    const declaredLength = Number.parseInt(upstream.headers.get("content-length") || "0", 10) || 0;
+    if (declaredLength > MAX_HLS_MANIFEST_BYTES) return textError("Danh sách phát vượt giới hạn.", 413, "HLS_MANIFEST_TOO_LARGE");
+    const bytes = new Uint8Array(await upstream.arrayBuffer());
+    if (bytes.byteLength > MAX_HLS_MANIFEST_BYTES) return textError("Danh sách phát vượt giới hạn.", 413, "HLS_MANIFEST_TOO_LARGE");
+    const manifest = new TextDecoder().decode(bytes);
+    if (!manifest.trimStart().startsWith("#EXTM3U")) return textError("Danh sách phát không hợp lệ.", 502, "INVALID_HLS_MANIFEST");
+    try {
+      const lines = await Promise.all(manifest.split(/\r?\n/).map((line) => rewriteHlsLine(line, target.href, request, env, ticket.exp)));
+      return new Response(lines.join("\n"), { status: 200, headers: { ...CORS_HEADERS, "content-type": "application/vnd.apple.mpegurl; charset=utf-8", "cache-control": "private, no-store", "x-content-type-options": "nosniff" } });
+    } catch (_error) {
+      return textError("Danh sách phát chứa liên kết không an toàn.", 502, "UNSAFE_HLS_MANIFEST");
+    }
+  }
+  if (!/^(?:video\/|audio\/|application\/(?:octet-stream|mp2t))/.test(contentType)) return textError("Nguồn phát trả về nội dung không hợp lệ.", 502, "INVALID_STREAM_RESPONSE");
+  const headers = new Headers(CORS_HEADERS);
+  headers.set("content-type", contentType || "application/octet-stream");
+  headers.set("cache-control", "private, no-store");
+  headers.set("x-content-type-options", "nosniff");
+  for (const name of ["accept-ranges", "content-length", "content-range"]) {
+    const value = upstream.headers.get(name);
+    if (value) headers.set(name, value);
+  }
+  return new Response(upstream.body, { status: upstream.status, headers });
 }
 
 export default {
@@ -1249,14 +1782,15 @@ export default {
       if (request.method === "GET" && pathname === "/api/health") {
         return json({ ready: Boolean(env.DB), service: "phim4k-license-api" });
       }
-      if (request.method === "GET" && pathname === "/api/media/image") {
-        return await handleMovieImage(request);
-      }
-      if (request.method === "GET" && pathname.startsWith("/api/movies/")) {
-        return await handleMovieCatalog(request);
-      }
+      if (request.method === "GET" && pathname === "/api/media/image") return await handleProtectedMovieImage(request, env);
+      if (request.method === "GET" && pathname === "/api/media/stream") return await handleMovieStream(request, env);
+      if (request.method === "POST" && pathname === "/api/movies/play") return await handleMoviePlayback(request, env);
+      if (request.method === "GET" && pathname.startsWith("/api/movies/")) return await handleProtectedMovieCatalog(request, env);
       const missing = dbUnavailable(env);
       if (missing) return missing;
+
+      if (request.method === 'GET' && pathname === '/api/app/access-policy') return await accessPolicy(request, env);
+      if (request.method === 'POST' && pathname === '/api/admin/access-policy') return await accessPolicy(request, env);
 
       if (request.method === "POST" && pathname === "/api/auth/activate") {
         const body = await parseBody(request);
@@ -1270,8 +1804,7 @@ export default {
       if (request.method === "GET" && (pathname === "/api/app/check-update" || pathname === "/api/app/version")) {
         const version = url.searchParams.get('version') || appVersion(request);
         const status = await getForceUpdate(env.DB, version);
-        const ua = request.headers.get('user-agent') || '';
-        const platform = url.searchParams.get('platform') || (/Phim4KTV/.test(ua) ? 'android_tv' : /Android/.test(ua) ? 'android' : /iPhone|iPad/.test(ua) ? 'ios' : /Windows/.test(ua) ? 'windows' : 'web');
+        const platform = url.searchParams.get('platform') || requestPlatform(request) || 'web';
         if (!status.forceUpdate && ['ios', 'android', 'android_tv', 'windows'].includes(platform)) {
           const release = await queryOne(env.DB, 'SELECT * FROM downloads WHERE platform = ?', platform);
           if (release && validDownloadUrl(release.url)) {
@@ -1287,6 +1820,7 @@ export default {
       }
       if (request.method === "GET" && pathname === "/api/app/announcement") return json(await getAnnouncement(env.DB));
       if (request.method === "POST" && pathname === "/api/telemetry") return await handleTelemetry(request, env);
+      if (["GET", "POST", "DELETE"].includes(request.method) && pathname === "/api/watch-progress") return await handleWatchProgress(request, env);
       if ((request.method === "GET" || request.method === "POST") && pathname === "/api/app/downloads") return await handleDownloads(request, env);
       if (request.method === "POST" && pathname === "/api/admin/update-downloads") return await handleDownloads(request, env);
       if (request.method === "GET" && pathname === "/api/admin/keys") return await listKeys(request, env);
@@ -1308,7 +1842,6 @@ export default {
       if (request.method === "POST" && pathname === "/api/admin/refresh-movies") return await handleMovieRefresh(request, env);
       if (request.method === "POST" && pathname === "/api/admin/announcement") return await handleAnnouncementAdmin(request, env);
       if (request.method === "POST" && pathname === "/api/admin/set-force-update") return await handleForceUpdate(request, env);
-      if (pathname === "/api/stream/proxy") return await handleMovieFallback(request);
       return textError("Không tìm thấy endpoint.", 404, "NOT_FOUND");
     } catch (error) {
       if (error.message === 'REQUEST_TOO_LARGE') return textError('Request body is too large.', 413, 'REQUEST_TOO_LARGE');

@@ -7,6 +7,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 const projectRoot = resolve(import.meta.dirname, '..');
 const webRoot = resolve(projectRoot, 'ios', 'App', 'App', 'public');
+const sourceWebRoot = resolve(projectRoot, 'public');
+const qaMediaPaths = new Set(['/media/qa-original.mp4', '/media/qa-seek.mp4']);
 const screenshotPath = resolve(projectRoot, 'data', 'qa', 'phim4k-detail-smoke.png');
 const homeScreenshotPath = resolve(projectRoot, 'data', 'qa', 'phim4k-home-smoke.png');
 const playerScreenshotPath = resolve(projectRoot, 'data', 'qa', 'phim4k-player-smoke.png');
@@ -57,8 +59,9 @@ const staticServer = createServer((request, response) => {
     return;
   }
   const requested = pathname === '/' ? '/index.html' : pathname;
-  const target = normalize(resolve(webRoot, `.${requested}`));
-  if (!(target === webRoot || target.startsWith(`${webRoot}${sep}`)) || !existsSync(target)) {
+  const targetRoot = qaMediaPaths.has(requested) ? sourceWebRoot : webRoot;
+  const target = normalize(resolve(targetRoot, `.${requested}`));
+  if (!(target === targetRoot || target.startsWith(`${targetRoot}${sep}`)) || !existsSync(target)) {
     response.writeHead(404).end('Not found');
     return;
   }
@@ -126,6 +129,7 @@ const requestUrls = new Map();
 const failedRequests = [];
 const expectedMediaCancellations = [];
 let releasingFixture = false;
+let originalFixtureDecoded = false;
 const badResponses = [];
 
 socket.addEventListener('message', (event) => {
@@ -160,6 +164,12 @@ socket.addEventListener('message', (event) => {
     // assertions remain mandatory. Never exempt production URLs or HTTP errors.
     if (message.params.canceled && message.params.errorText === 'net::ERR_ABORTED' && url === `http://127.0.0.1:${webPort}/media/qa-seek.mp4`) {
       expectedMediaCancellations.push({url,duringAction:releasingFixture,reason:'local seek fixture lifecycle; decode/seek/resume asserted separately'}); return;
+    }
+    // Closing the decoded local trailer / reload video also cancels its range
+    // preload. Only this exact fixture and browser cancellation are exempt;
+    // real URLs, HTTP failures, decode and lifecycle checks still fail the run.
+    if ((originalFixtureDecoded || url.endsWith('/media/qa-original.mp4?ticket=qa')) && message.params.canceled && message.params.errorText === 'net::ERR_ABORTED' && url.startsWith(`http://127.0.0.1:${webPort}/media/qa-original.mp4`)) {
+      expectedMediaCancellations.push({url,reason:'decoded original trailer/reload fixture deliberately unloaded'}); return;
     }
     if (/127\.0\.0\.1|phim4k-license-api|phimimg\.com/.test(url)) failedRequests.push({ url, error: message.params.errorText });
   }
@@ -223,6 +233,20 @@ try {
     userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148',
     platform: 'iPhone',
   });
+  await send('Page.addScriptToEvaluateOnNewDocument', {source:`(() => {
+    const original = window.fetch;
+    window.fetch = (input, options) => {
+      const path = String(input);
+      if (path.includes('/api/auth/status')) {
+        return Promise.resolve(new Response(JSON.stringify({active:false,code:'KEY_REQUIRED'}),{status:401,headers:{'content-type':'application/json'}}));
+      }
+      if (path.includes('/api/watch-progress')) {
+        const payload = options?.method === 'DELETE' ? {success:true,cleared:true} : options?.method === 'POST' ? {success:true,saved:1} : {success:true,items:[]};
+        return Promise.resolve(new Response(JSON.stringify(payload),{status:200,headers:{'content-type':'application/json'}}));
+      }
+      return original(input, options);
+    };
+  })();`});
   await send('Page.navigate', { url: `http://127.0.0.1:${webPort}/` });
   process.stderr.write('[qa] loading iPhone web bundle\n');
   await waitFor('document.readyState === "complete"', 'Document did not finish loading');
@@ -231,7 +255,72 @@ try {
   // The telemetry endpoint's authentication and sanitization are covered by
   // the Worker integration test with a server-side fixture database.
   await evaluate('window.API.trackUsage = () => {}');
+  // Browser QA is deterministic and never relies on a production license or
+  // discloses a production provider. Worker integration tests cover the real
+  // authenticated catalogue and encrypted media-ticket boundary separately.
+  await evaluate(`(() => {
+    const year = new Date().getUTCFullYear();
+    const artwork = location.origin + '/media/killer_shop_4k.jpg';
+    const movies = Array.from({length: 60}, (_, index) => ({
+      name: index === 0 ? 'Tuyet The Chien Hon' : 'QA Movie ' + (index + 1),
+      origin_name: 'QA Original ' + (index + 1),
+      slug: index === 0 ? 'tuyet-the-chien-hon' : 'qa-movie-' + (index + 1),
+      poster_url: artwork, thumb_url: artwork, year, chieurap: true,
+      quality: 'FHD', lang: 'Vietsub', episode_current: 'Full', type: 'series',
+      category: [{name:'Hanh Dong'}], country: [{name:'Trung Quoc'}],
+      content: 'Du lieu kiem thu giao dien cuc bo.'
+    }));
+    const page = (number) => ({
+      items: movies.slice((number - 1) * 24, number * 24),
+      pagination: {currentPage:number,totalPages:3,totalItems:60}
+    });
+    API.getHomeFeed = async () => ({
+      hero: movies.slice(0, 6),
+      sections: [
+        {id:'cinema-new',title:'Phim chieu rap moi',items:movies.slice(0,12)},
+        {id:'series-new',title:'Phim bo moi',items:movies.slice(12,24)},
+        {id:'movies-new',title:'Phim le moi',items:movies.slice(24,36)},
+        {id:'animation-new',title:'Hoat hinh moi',items:movies.slice(36,48)},
+        {id:'recent-interest',title:'Dang duoc quan tam',items:movies.slice(48,60)}
+      ],
+      offline: false,
+      updatedAt: new Date().toISOString()
+    });
+    API.getFilteredCatalog = async (_filters, number = 1) => page(number);
+    API.getCategory = async (_category, number = 1) => ({title:'QA', ...page(number)});
+    API.search = async (_query, number = 1) => ({query:'qa', ...page(number)});
+    API.getDetail = async (slug) => ({
+      movie: {...(movies.find(movie => movie.slug === slug) || movies[0]), trailer_url:'https://ignored.invalid/trailer'},
+      episodes: [{server_name:'QA Server',server_data:[{name:'Tap 1',slug:'tap-1',filename:'tap-1',stream_ref:{movie:slug,server:0,episode:0}}]}]
+    });
+    API.getPlaybackTicket = async ref => ({
+      streamUrl: location.origin + (ref?.movie === 'qa-touch' ? '/media/qa-seek.mp4' : '/media/qa-original.mp4?ticket=qa'),
+      isHls: ref?.movie !== 'qa-touch'
+    });
+  })()`);
   // Use an original local trailer fixture, never a substitute in production.
+  // This journey uses mocked license identities. Never send their periodic
+  // status checks to production while exercising the live public catalogue.
+  await evaluate("window.Auth.startHeartbeat = () => { clearInterval(window.Auth.heartbeatTimer); window.Auth.heartbeatTimer=null; }");
+  const accessFlow = await evaluate(`(async()=>{
+    const activate=API.activate, status=API.checkStatus;
+    const hiddenTelegram=!document.getElementById('adminLoginFields').open && !document.getElementById('telegramInput').required;
+    let submitted;
+    API.activate=async(key,telegram,device)=>{submitted={telegram,device}; return {success:true,active:true,keyOnly:true,isAdmin:false,plan:'TEST'};};
+    document.getElementById('keyInput').value='P4K-KEY-ONLY-QA';
+    await handleActivation({preventDefault(){}});
+    await new Promise(r=>setTimeout(r,650));
+    renderAccountTab();
+    const keyOnly=Auth.activeKeyData.keyOnly && submitted.telegram==='' && document.getElementById('accPlan').textContent==='TEST';
+    Auth.clearStoredSession();
+    API.checkStatus=async()=>({active:true,freeAccess:true,isAdmin:false,plan:'MIỄN KEY'});
+    await Auth.init();
+    const guest=Auth.activeKeyData.freeAccess && document.getElementById('activationGate').classList.contains('hidden') && document.getElementById('accAdminBtn').classList.contains('hidden');
+    Auth.clearStoredSession(); API.activate=activate; API.checkStatus=status; Auth.triggerLock();
+    return {hiddenTelegram,keyOnly,guest};
+  })()`);
+  if (Object.values(accessFlow).some(value=>!value)) throw new Error('Key-only/free access UI failed: '+JSON.stringify(accessFlow));
+  console.log('[qa] key-only and guest UI passed', JSON.stringify(accessFlow));
   await evaluate(`(() => { const original = API.getDetail.bind(API); API.getDetail = async (...args) => { const data = await original(...args); return {...data, movie: {...data.movie, trailer_url: location.origin + '/media/qa-original.mp4'}}; }; })()`);
 
   process.stderr.write('[qa] checking key-only device approval unlock\n');
@@ -258,13 +347,15 @@ try {
     return state;
   })()`);
 
-  await evaluate(`window.Auth.unlockApp({
+  await evaluate(`(async()=>{ window.Auth.unlockApp({
     key: 'P4K-QA-LOCAL', telegramId: '10000', plan: 'QA',
     expiresAt: new Date(Date.now() + 60000).toISOString(), isAdmin: false
-  });`);
+  }); await window.App.loadHomeFeed(); })()`);
   process.stderr.write('[qa] checking home catalogue and posters\n');
+  await waitFor('!window.App.homeFeedLoading && !window.App.homeFeedOffline && window.App.homeSections[0]?.id === "cinema-new"', 'Live new-cinema feed did not replace the bundled catalogue');
   await waitFor('document.querySelectorAll(".movie-card").length >= 6', 'Home catalogue did not render');
   await waitFor('[...document.querySelectorAll(".movie-card img")].some((img) => img.complete && img.naturalWidth > 0)', 'No movie poster loaded');
+  await waitFor('document.querySelector(".coverflow-card.center img")?.naturalWidth > 0', 'Live cinema hero poster did not load');
 
   const homeState = await evaluate(`(() => {
     const images = [...document.querySelectorAll('.movie-card img')].slice(0, 8);
@@ -274,6 +365,9 @@ try {
       brokenImages: images.filter((img) => img.complete && img.naturalWidth === 0).length,
       heroHasImage: Boolean(document.querySelector('.coverflow-card.center img')?.naturalWidth > 0),
       version: window.API.getVersion(),
+      heroYears: window.App.heroList.map(m=>Number(m.year)),
+      firstHeroCinema: window.App.heroList[0]?.chieurap === true,
+      firstSection: window.App.homeSections[0]?.id,
     };
   })()`);
 
@@ -367,8 +461,8 @@ try {
   await waitFor('document.querySelectorAll("#episodesList .ep-btn").length > 0', 'Movie detail did not load episodes');
   await waitFor('document.getElementById("detailPoster").complete && document.getElementById("detailPoster").naturalWidth > 0', 'Detail poster did not load');
   await waitFor("getComputedStyle(document.getElementById('detailBackdrop')).backgroundImage !== 'none'", 'Detail backdrop did not load');
-  await waitFor("document.querySelector('#detailTrailerMedia video')?.videoWidth > 0", 'Original trailer did not decode');
-  const trailerState = await evaluate("({ decoded: document.querySelector('#detailTrailerMedia video').videoWidth > 0, muted: document.querySelector('#detailTrailerMedia video').muted })");
+  const trailerState = await evaluate("({ disabled: !document.querySelector('#movieModal video, #movieModal iframe, #detailTrailer'), posterLoaded: document.getElementById('detailPoster').naturalWidth > 0 })");
+  if (!trailerState.disabled || !trailerState.posterLoaded) throw new Error('Movie detail must show only images, even when the source supplies a trailer');
   const detailState = await evaluate(`(() => ({
     title: document.getElementById('detailName').textContent,
     episodes: document.querySelectorAll('#episodesList .ep-btn').length,
@@ -389,11 +483,11 @@ try {
   })()`);
   await waitFor("document.getElementById('movieModal').classList.contains('hidden')", 'Movie detail close button did not work');
   trailerState.stoppedOnClose = await evaluate("!document.querySelector('#detailTrailerMedia video, #detailTrailerMedia iframe')");
-  if (!trailerState.stoppedOnClose || !trailerState.muted) throw new Error('Trailer lifecycle regression');
+  if (!trailerState.stoppedOnClose) throw new Error('Unexpected trailer after closing details');
   await evaluate("window.App.openMovieDetail('tuyet-the-chien-hon')");
   await waitFor('document.querySelectorAll("#episodesList .ep-btn").length > 0', 'Movie detail did not reopen');
 
-  const nativePlayerState = await evaluate(`(() => {
+  const nativePlayerState = await evaluate(`(async () => {
     window.Capacitor = {
       isNativePlatform: () => true,
       getPlatform: () => 'ios',
@@ -402,9 +496,10 @@ try {
     const server = window.App.activeMovieDetail.episodes[0];
     const episode = server.server_data[0];
     Player.open(window.App.activeMovieDetail.movie, episode, server.server_data, 0, window.App.activeMovieDetail.episodes, 0);
+    await new Promise(resolve => setTimeout(resolve, 120));
     return {
       nativeHls: Player.usingNativeHls,
-      sourceIsHls: document.getElementById('videoPlayer').src.includes('.m3u8'),
+      ticketResolved: document.getElementById('videoPlayer').src.endsWith('/media/qa-original.mp4?ticket=qa'),
       quality: document.getElementById('btnQuality').textContent,
       playerVisible: !document.getElementById('playerModal').classList.contains('hidden'),
     };
@@ -417,16 +512,33 @@ try {
   process.stderr.write('[qa] checking real video touch controls and edge-to-edge landscape\n');
   await send('Emulation.setDeviceMetricsOverride', { width: 844, height: 390, screenWidth: 844, screenHeight: 390, deviceScaleFactor: 1, mobile: true });
   await evaluate(`(() => {
-    localStorage.removeItem('phim4k-player-fit');
+    localStorage.setItem('phim4k-player-fit', 'cover');
+    localStorage.removeItem('phim4k-player-fit-v2');
     Player.video.muted = true; Player.video.loop = true;
-    Player.open({ name: 'Original QA', slug: 'qa-touch' }, { name: 'QA', link_embed: location.origin + '/media/qa-seek.mp4' });
+    Player.open({ name: 'Original QA', slug: 'qa-touch' }, { name: 'QA', stream_ref: {movie:'qa-touch',server:0,episode:0} });
     return Player.enterCinemaFullscreen();
   })()`);
   await waitFor('!Player.video.paused && Player.video.currentTime > 0.1', 'Original QA video did not play');
+  await evaluate('Player.resetInactivityTimer(); Player.updateSubtitleSafeArea()');
+  const subtitleDefault = await evaluate(`(() => {
+    const v=Player.video, r=v.getBoundingClientRect(), c=document.getElementById('playerControls').getBoundingClientRect();
+    const shown=getComputedStyle(v).objectFit==='contain' && r.bottom<=c.top-8;
+    Player.wrapper.classList.add('inactive');
+    const hidden=getComputedStyle(v).objectFit==='contain' && v.getBoundingClientRect().bottom<=innerHeight;
+    Player.resetInactivityTimer();
+    return {shown,hidden,legacyCropIgnored:Player.aspectMode==='contain'};
+  })()`);
+  if (!subtitleDefault.shown || !subtitleDefault.hidden || !subtitleDefault.legacyCropIgnored) throw new Error('Subtitle-safe fullscreen default regressed: '+JSON.stringify(subtitleDefault));
+  const safeShot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+  writeFileSync(resolve(projectRoot,'data/qa/fullscreen-subtitle-safe.png'),Buffer.from(safeShot.data,'base64'));
+  // Also retain coverage for a deliberate opt-in to crop, never the default.
+  await evaluate('Player.toggleAspectRatio()');
+  await delay(250);
   const playerInteractionState = await evaluate(`(() => {
     const v = Player.video, r = v.getBoundingClientRect();
-    return { fill: getComputedStyle(v).objectFit === 'cover', width: r.width, height: r.height, viewportWidth: innerWidth, viewportHeight: innerHeight };
+    return { fill: getComputedStyle(v).objectFit === 'cover', width: r.width, height: r.height, viewportWidth: innerWidth, viewportHeight: innerHeight, classes:Player.wrapper.className };
   })()`);
+  playerInteractionState.subtitleDefault = subtitleDefault;
   await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 180, y: 150 }] });
   await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await delay(300);
@@ -438,12 +550,18 @@ try {
   await evaluate("Player.wrapper.classList.add('inactive')");
   releasingFixture = true; // Pausing may cancel the in-flight preload range; playback is asserted below.
   await send('Input.dispatchTouchEvent', {type:'touchStart',touchPoints:[centerTarget]});
+  await delay(100);
+  const centerHeld=await evaluate(`(()=>{const r=document.getElementById('btnCenterPlayPause').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);
+  if(Math.abs(centerHeld.x-centerTarget.x)>1||Math.abs(centerHeld.y-centerTarget.y)>1) throw new Error('Press feedback moved center pause target: '+JSON.stringify({centerTarget,centerHeld}));
   await send('Input.dispatchTouchEvent', {type:'touchEnd',touchPoints:[]});
   await delay(400);
   playerInteractionState.centerPauses = await evaluate('Player.video.paused');
   playerInteractionState.clockVisible = await evaluate(`(() => { const el=document.querySelector('.time-display'), r=el.getBoundingClientRect(), p=document.getElementById('progressContainer').getBoundingClientRect(); return getComputedStyle(el).display!=='none' && r.height>0 && r.top>=p.bottom && r.bottom<innerHeight && document.getElementById('durationTime').textContent!=='00:00'; })()`);
   if (!playerInteractionState.clockVisible) throw new Error('Landscape playback time missing below seek bar');
-  if (await evaluate("Player.wrapper.classList.contains('inactive') || !Player.video.paused")) throw new Error('Delayed surface tap hid explicit pause controls');
+  if (await evaluate("Player.wrapper.classList.contains('inactive') || !Player.video.paused")) {
+    const state=await evaluate(`(() => {const b=document.getElementById('btnCenterPlayPause'),r=b.getBoundingClientRect();return {paused:Player.video.paused,classes:Player.wrapper.className,rect:{x:r.x,y:r.y,w:r.width,h:r.height},hit:document.elementFromPoint(${centerTarget.x},${centerTarget.y})?.outerHTML?.slice(0,200),oldTarget:${JSON.stringify(centerTarget)}};})()`);
+    throw new Error('Delayed surface tap hid explicit pause controls: '+JSON.stringify(state));
+  }
   await evaluate("document.getElementById('btnPlayPause').click()");
   await waitFor('!Player.video.paused', 'Bottom play control failed');
   playerInteractionState.bottomResumes = true;
@@ -481,9 +599,10 @@ try {
   writeFileSync(resolve(projectRoot, 'data/qa/phim4k-player-fill.png'), Buffer.from(fillScreenshot.data, 'base64'));
   if (!playerInteractionState.fill || Math.abs(playerInteractionState.width - playerInteractionState.viewportWidth) > 1 || Math.abs(playerInteractionState.height - playerInteractionState.viewportHeight) > 1 || !playerInteractionState.outsideDoesNotPause || !playerInteractionState.centerPauses || !playerInteractionState.fitPreferenceSurvivesResize) throw new Error('Player interaction/fullscreen regression: ' + JSON.stringify(playerInteractionState));
   releasingFixture = true;
-  await evaluate("Player.close(); Player.video.loop = false; localStorage.removeItem('phim4k-player-fit')");
-  await evaluate("Player.video.muted=true; Player.open({name:'QA reload',slug:'qa-reload'}, {name:'QA',link_embed:location.origin+'/media/qa-original.mp4'})");
+  await evaluate("Player.close(); Player.video.loop = false; localStorage.removeItem('phim4k-player-fit-v2')");
+  await evaluate("Player.video.muted=true; Player.open({name:'QA reload',slug:'qa-reload'}, {name:'QA',stream_ref:{movie:'qa-reload',server:0,episode:0}})");
   await waitFor('!Player.video.paused && Player.video.currentTime > .1','Video did not recover after audio graph disposal');
+  originalFixtureDecoded = true;
   await evaluate('Player.close()');
   releasingFixture = false;
   await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, screenWidth: 390, screenHeight: 844, deviceScaleFactor: 3, mobile: true });
@@ -494,6 +613,10 @@ try {
     window.__qaOriginalFetch = originalFetch;
     window.fetch = (url, options) => {
       const path = String(url);
+      if (path.includes('/api/app/access-policy') || path.includes('/api/admin/access-policy')) {
+        if (options?.method === 'POST') window.__qaFreeAccess = JSON.parse(options.body).freeAccess;
+        return Promise.resolve(new Response(JSON.stringify({success:true,freeAccess:!!window.__qaFreeAccess}),{status:200,headers:{'content-type':'application/json'}}));
+      }
       if (path.includes('/api/admin/device-access-requests')) {
         return Promise.resolve(new Response(JSON.stringify({ requests: [] }), { status: 200, headers: { 'content-type': 'application/json' } }));
       }
@@ -507,7 +630,7 @@ try {
         return Promise.resolve(new Response(JSON.stringify({ logs: [{
           id: 91, timestamp: new Date().toISOString(), action: 'usage_movie_open', type: 'USER',
           details: '', context: { movie: 'Phim QA', episode: 'Tập 1', device: 'device••••qa', session: 's-qa', runtime: 'iOS app', network: '4g', watched: 125 },
-          account: { telegramId: '5992662564', deviceHash: 'device••••qa' }
+          account: { telegramId: '1000000001', deviceHash: 'device••••qa' }
         }], hasMore: true, nextCursor: 91 }), { status: 200, headers: { 'content-type': 'application/json' } }));
       }
       if (path.includes('/api/admin/content-status')) {
@@ -538,7 +661,7 @@ try {
       }
       return originalFetch(url, options);
     };
-    window.Auth.activeKeyData = { isAdmin: true, telegramId: '5992662564', key: 'P4K-QA-LOCAL', active: true };
+    window.Auth.activeKeyData = { isAdmin: true, telegramId: '1000000001', key: 'P4K-QA-LOCAL', active: true };
     window.Admin.open();
     await window.Admin.switchTab('logs');
     const logPanelVisible = !document.getElementById('adminTabLogs').classList.contains('hidden');
@@ -602,6 +725,51 @@ try {
       ),
     };
   })()`);
+  await evaluate("window.Admin.switchTab('keys'); document.querySelector('.admin-dialog').scrollTop=0");
+  // Measure final tap targets, not the opening animation's temporary 0.96 scale.
+  await waitFor("document.querySelector('.admin-dialog').getAnimations().every(a=>a.playState==='finished')", 'Admin opening animation did not settle');
+  const adminQuick = await evaluate(`(()=>{
+    const entries=['adminReadLogsBtn','adminGetUpdateBtn'].map(id=>{
+      const b=document.getElementById(id);b.scrollIntoView({block:'center',behavior:'instant'});
+      const r=b.getBoundingClientRect(),h=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
+      return {id,height:r.height,hittable:h===b||b.contains(h),textFits:b.scrollWidth<=b.clientWidth+1};
+    });
+    return {entries,version:document.getElementById('adminBuildVersion').textContent};
+  })()`);
+  if(adminQuick.entries.some(b=>b.height<48||!b.hittable||!b.textFits)||!adminQuick.version.includes('3.4.28')) throw new Error('Admin shortcuts not accessible: '+JSON.stringify(adminQuick));
+  await evaluate("document.getElementById('adminReadLogsBtn').click()");
+  await waitFor("Admin.currentTab==='logs'&&!document.getElementById('adminTabLogs').classList.contains('hidden')", 'Admin log shortcut failed');
+  await evaluate("document.getElementById('adminGetUpdateBtn').click()");
+  await waitFor("!document.getElementById('downloadAppModal').classList.contains('hidden')", 'Admin download shortcut failed');
+  await evaluate("hideDownloadModal(); Admin.switchTab('keys'); document.querySelector('.admin-dialog').scrollTop=0");
+  const accessPolicyUI=await evaluate(`(async()=>{
+    document.getElementById('adminAccessPolicyBtn').click();
+    await Admin.loadAccessPolicy();
+    const toggle=document.getElementById('adminFreeAccess');
+    const initiallyOff=!toggle.checked && !toggle.disabled;
+    toggle.checked=true; await Admin.saveAccessPolicy();
+    const enabled=toggle.checked && window.__qaFreeAccess===true;
+    toggle.checked=false; await Admin.saveAccessPolicy();
+    const disabled=!toggle.checked && window.__qaFreeAccess===false;
+    Admin.showTab('keys');
+    return {initiallyOff,enabled,disabled};
+  })()`);
+  if(Object.values(accessPolicyUI).some(value=>!value)) throw new Error('Admin access policy UI failed: '+JSON.stringify(accessPolicyUI));
+  console.log('[qa] admin access policy UI passed',JSON.stringify(accessPolicyUI));
+  adminCloseState.quickActions=adminQuick;
+  const adminLayout = await evaluate(`(() => {
+    const dialog=document.querySelector('.admin-dialog'), nav=dialog.querySelector('.admin-tabs-nav');
+    const rows=[...nav.querySelectorAll('button')];
+    const tabs=rows.map(b=>{b.scrollIntoView({block:'nearest',inline:'center'});const r=b.getBoundingClientRect();const hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return {height:r.height,textFits:b.scrollWidth<=b.clientWidth+1,visible:r.top>=0&&r.bottom<=innerHeight,hittable:hit===b||b.contains(hit)};});
+    const range=dialog.scrollHeight-dialog.clientHeight; dialog.scrollTop=range;
+    const reachesBottom=Math.abs(dialog.scrollTop-range)<2;
+    dialog.scrollTop=0; nav.scrollLeft=0;
+    return {tabs,navHeight:nav.getBoundingClientRect().height,reachesBottom,range};
+  })()`);
+  if (!adminLayout.reachesBottom || adminLayout.range<=0 || adminLayout.navHeight<56 || adminLayout.tabs.some(t=>t.height<44||!t.visible||!t.hittable||!t.textFits)) throw new Error('Admin tabs collapsed/obstructed: '+JSON.stringify(adminLayout));
+  adminCloseState.layout=adminLayout;
+  const adminShot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+  writeFileSync(resolve(projectRoot,'data/qa/admin-tabs-unclipped.png'),Buffer.from(adminShot.data,'base64'));
   await evaluate("window.Admin.switchTab('content')");
   const announcementScreenshot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
   writeFileSync(announcementScreenshotPath, Buffer.from(announcementScreenshot.data, 'base64'));
@@ -615,11 +783,55 @@ try {
   })()`);
   await waitFor("document.getElementById('adminModal').classList.contains('hidden')", 'Admin close button did not work');
 
+  console.log('[qa] checking visible iPhone download entry, scrolling and safe close');
+  // The earlier player checks leave its parent details dialog open. Return to
+  // the app through the real close action before testing the account tab.
+  await evaluate("document.querySelector('#movieModal .modal-close-btn').click()");
+  await waitFor("document.getElementById('movieModal').classList.contains('hidden')", 'Details remained above account tab');
+  await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await evaluate("window.PHIM4K_PLATFORM='ios'; switchTab('account')");
+  await delay(600); // Let tab navigation's smooth scroll finish before targeting the account control.
+  await evaluate("document.getElementById('accDownloadBtn').scrollIntoView({block:'center',behavior:'instant'})");
+  await delay(100);
+  const accountDownloadShot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+  writeFileSync(resolve(projectRoot,'data/qa/iphone-account-download.png'),Buffer.from(accountDownloadShot.data,'base64'));
+  const phoneDownloads = await evaluate(`(async()=>{
+    const button=document.getElementById('accDownloadBtn'),r=button.getBoundingClientRect();
+    const hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
+    const entryVisible=r.height>=44&&r.top>=0&&r.bottom<=innerHeight&&(hit===button||button.contains(hit));
+    button.click(); await refreshPublicDownloads();
+    return {entryVisible, entryRect:{top:r.top,bottom:r.bottom,height:r.height},hitId:hit?.id, status:document.getElementById('downloadReleaseStatus').textContent,
+      safeLink:Phim4KPlatform.safeUrl(document.getElementById('btnDownloadIpa').href).length>0};
+  })()`);
+  await delay(300);
+  Object.assign(phoneDownloads,await evaluate(`(()=>{
+    const d=document.querySelector('.download-dialog'); d.scrollTop=d.scrollHeight;
+    const close=d.querySelector('.modal-close-btn'),r=close.getBoundingClientRect();
+    const hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
+    return {scrolls:d.scrollTop>100,atBottom:Math.abs(d.scrollHeight-d.clientHeight-d.scrollTop)<2,
+      closeHittable:r.height>=44&&r.top>=0&&r.bottom<=innerHeight&&(hit===close||close.contains(hit)),
+      noOverflow:d.scrollWidth<=d.clientWidth+1};
+  })()`));
+  const phoneDownloadShot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+  writeFileSync(resolve(projectRoot,'data/qa/iphone-download-modal.png'),Buffer.from(phoneDownloadShot.data,'base64'));
+  await evaluate("document.querySelector('#downloadAppModal .modal-close-btn').click()");
+  phoneDownloads.closed=await evaluate("document.getElementById('downloadAppModal').classList.contains('hidden')");
+  // The public download screen must work from the locked gate too, never unlock it.
+  Object.assign(phoneDownloads,await evaluate(`(async()=>{
+    document.getElementById('activationGate').classList.remove('hidden');
+    document.body.classList.add('activation-locked');
+    document.getElementById('gateDownloadBtn').click(); await refreshPublicDownloads();
+    return {gateStillLocked:document.body.classList.contains('activation-locked'),
+      aboveGate:Number(getComputedStyle(document.getElementById('downloadAppModal')).zIndex)>Number(getComputedStyle(document.getElementById('activationGate')).zIndex)};
+  })()`));
+  await evaluate("hideDownloadModal(); document.getElementById('activationGate').classList.add('hidden'); document.body.classList.remove('activation-locked'); switchTab('home')");
+  if(!phoneDownloads.entryVisible||!phoneDownloads.safeLink||!phoneDownloads.scrolls||!phoneDownloads.atBottom||!phoneDownloads.closeHittable||!phoneDownloads.noOverflow||!phoneDownloads.closed||!phoneDownloads.gateStillLocked||!phoneDownloads.aboveGate) throw new Error('iPhone downloads failed: '+JSON.stringify(phoneDownloads));
+  console.log('[qa] iPhone downloads passed',JSON.stringify(phoneDownloads));
   console.log('[qa] checking Windows download layout and Android TV remote');
   await send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
   const windowsDownloads = await evaluate(`(async () => {
     const saved = API.fetchJson;
-    API.fetchJson = async () => ({ windows: { url: 'https://example.com/app.exe', version: '3.4.17' }, android_tv: { url: 'https://example.com/tv.apk', version: '3.4.17' } });
+    API.fetchJson = async () => ({ windows: { url: 'https://example.com/app.exe', version: '3.4.28' }, android_tv: { url: 'https://example.com/tv.apk', version: '3.4.28' } });
     window.PHIM4K_PLATFORM = 'windows';
     openDownloadModal(); await refreshPublicDownloads();
     const enabled = document.getElementById('btnDownloadExe').getAttribute('aria-disabled') === 'false';
@@ -645,7 +857,11 @@ try {
   const backClosed = await evaluate("Phim4KTV.back() && document.getElementById('downloadAppModal').classList.contains('hidden')");
   if (!windowsDownloads.enabled || !windowsDownloads.missingDisabled || !windowsDownloads.unsafe || !tvState.active || !tvState.focusedInModal || tvState.horizontalOverflow || !backClosed) throw new Error('Windows/TV downloads or remote smoke failed: ' + JSON.stringify({ windowsDownloads, tvState, backClosed }));
   console.log('[qa] Windows downloads and TV focus/back passed');
-  const checksPassed = homeState.version === '3.4.17'
+  const checksPassed = homeState.version === '3.4.28'
+    && homeState.heroYears.length > 0
+    && homeState.heroYears.every(year=>year===new Date().getUTCFullYear())
+    && homeState.firstHeroCinema
+    && homeState.firstSection === 'cinema-new'
     && deviceApprovalState.unlocked
     && deviceApprovalState.deviceOnly
     && deviceApprovalState.telegramEmpty
@@ -679,7 +895,7 @@ try {
     && detailCloseState.height >= 44
     && detailCloseState.hittable
     && nativePlayerState.nativeHls
-    && nativePlayerState.sourceIsHls
+    && nativePlayerState.ticketResolved
     && nativePlayerState.quality === 'Tự động'
     && nativePlayerState.playerVisible
     && adminCloseState.width >= 44
@@ -708,6 +924,7 @@ try {
 
   result = {
     passed: checksPassed,
+    phoneDownloads,
     deviceApproval: deviceApprovalState,
     playerInteraction: playerInteractionState,
     trailer: trailerState,

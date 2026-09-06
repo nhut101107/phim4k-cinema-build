@@ -1,4 +1,5 @@
-// API Client with automatic Telegram ID, License Key & Direct Client-Side Standalone Fallback
+// API Client with automatic license/device identity. Movie providers are only
+// reachable through the configured Cloudflare Worker.
 
 const API = {
   movieCache: new Map(),
@@ -21,7 +22,7 @@ const API = {
   },
 
   getVersion() {
-    return '3.4.17';
+    return '3.4.28';
   },
 
   getSessionId() {
@@ -248,17 +249,33 @@ const API = {
     return this.fetchJson('/api/app/announcement', {}, 10000);
   },
 
+  async getWatchProgress() {
+    return this.request('/api/watch-progress');
+  },
+
+  async saveWatchProgress(items, { keepalive = false } = {}) {
+    const list = Array.isArray(items) ? items.slice(0, 10) : [items];
+    return this.request('/api/watch-progress', {
+      method: 'POST',
+      keepalive,
+      body: JSON.stringify({ items: list })
+    });
+  },
+
+  async clearWatchProgress() {
+    return this.request('/api/watch-progress', { method: 'DELETE' });
+  },
+
+  async getPlaybackTicket(streamRef) {
+    return this.request('/api/movies/play', {
+      method: 'POST',
+      body: JSON.stringify(streamRef || {})
+    });
+  },
+
   getBundledHomeFeed() {
     const items = Array.isArray(window.PHIM4K_CATALOG_FALLBACK) ? window.PHIM4K_CATALOG_FALLBACK : [];
-    return {
-      updatedAt: new Date().toISOString(),
-      hero: items.slice(0, 5),
-      sections: [
-        { id: 'latest', title: 'Phim moi cap nhat', items },
-        { id: 'movies', title: 'Phim de cu', items: items.slice(0, 6) },
-        { id: 'series', title: 'Phim bo va hoat hinh', items: items.slice(2) }
-      ]
-    };
+    return Phim4KHome.build(items, { offline: true, updatedAt: null });
   },
 
   getBundledMovie(slug) {
@@ -266,76 +283,19 @@ const API = {
     return items.find((item) => item.slug === slug) || null;
   },
 
-  // Movies: Direct standalone fallback to live public movie API
+  // Movies: server-protected catalog with metadata-only bundled fallback.
   async getHomeFeed() {
     try {
       return await this.cachedMovieRequest('/api/movies/home', 25000);
-    } catch (err) {
-      // Capacitor cannot use the catalog directly because it has no CORS
-      // permission.  Do not leave the screen spinning while a rate-limited
-      // relay recovers; render the bundled metadata immediately instead.
-      if (window.Phim4KRuntime?.apiBaseUrl) return this.getBundledHomeFeed();
-      console.log('Fetching live movie feed directly from phimapi.com...');
-      const [latestRes, movieRes, seriesRes, animeRes] = await Promise.allSettled([
-        this.fetchJson('https://phimapi.com/danh-sach/phim-moi-cap-nhat?page=1'),
-        this.fetchJson('https://phimapi.com/v1/api/danh-sach/phim-le?page=1&limit=16'),
-        this.fetchJson('https://phimapi.com/v1/api/danh-sach/phim-bo?page=1&limit=16'),
-        this.fetchJson('https://phimapi.com/v1/api/danh-sach/hoat-hinh?page=1&limit=16')
-      ]);
-
-      const latestItems = latestRes.status === 'fulfilled' ? latestRes.value.items || [] : [];
-      const movieItems = movieRes.status === 'fulfilled' ? movieRes.value.data?.items || [] : [];
-      const seriesItems = seriesRes.status === 'fulfilled' ? seriesRes.value.data?.items || [] : [];
-      const animeItems = animeRes.status === 'fulfilled' ? animeRes.value.data?.items || [] : [];
-
-      if (!latestItems.length) return this.getBundledHomeFeed();
-
-      // Hero banner items
-      const hero = latestItems.slice(0, 8).map(m => ({
-        name: m.name,
-        slug: m.slug,
-        origin_name: m.origin_name,
-        poster_url: m.poster_url,
-        thumb_url: m.thumb_url,
-        year: m.year,
-        quality: m.quality || '4K Ultra HD',
-        episode_current: m.episode_current || 'Bản Chiếu Rạp'
-      }));
-
-      return {
-        hero,
-        sections: [
-          { id: 'latest', title: '🔥 Phim Mới Cập Nhật Hôm Nay', items: latestItems.slice(0, 18) },
-          { id: 'movies', title: '🎬 Phim Lẻ Chiếu Rạp (4K Ultra HD)', items: movieItems },
-          { id: 'series', title: '📺 Phim Bộ Đang Thịnh Hành', items: seriesItems },
-          { id: 'anime', title: '✨ Anime & Hoạt Hình Hot', items: animeItems }
-        ]
-      };
-    }
+    } catch (_error) { return this.getBundledHomeFeed(); }
   },
 
   async getCategory(category, page = 1) {
     try {
       return await this.cachedMovieRequest(`/api/movies/category/${category}?page=${page}`, 60000);
-    } catch (err) {
-      if (window.Phim4KRuntime?.apiBaseUrl) {
-        return { title: category, items: this.getBundledHomeFeed().sections.flatMap((section) => section.items), pagination: { currentPage: 1, totalPages: 1 } };
-      }
-      const url = category === 'phim-moi-cap-nhat' 
-        ? `https://phimapi.com/danh-sach/phim-moi-cap-nhat?page=${page}`
-        : `https://phimapi.com/v1/api/danh-sach/${category}?page=${page}&limit=24`;
-      let data;
-      try {
-        data = await this.fetchJson(url);
-      } catch (_error) {
-        const items = this.getBundledHomeFeed().sections.flatMap((section) => section.items);
-        return { title: category, items, pagination: { currentPage: 1, totalPages: 1 } };
-      }
-      return {
-        title: category,
-        items: data.items || data.data?.items || [],
-        pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 10 }
-      };
+    } catch (_error) {
+      const items = this.getBundledHomeFeed().sections.flatMap((section) => section.items);
+      return { title: category, items, pagination: { currentPage: 1, totalPages: 1 } };
     }
   },
 
@@ -349,43 +309,20 @@ const API = {
   async search(query, page = 1) {
     try {
       return await this.cachedMovieRequest(`/api/movies/search?q=${encodeURIComponent(query)}&page=${page}`, 30000);
-    } catch (err) {
-      if (window.Phim4KRuntime?.apiBaseUrl) {
-        const term = String(query || '').toLocaleLowerCase();
-        const items = this.getBundledHomeFeed().sections[0].items.filter((item) => `${item.name} ${item.origin_name}`.toLocaleLowerCase().includes(term));
-        return { query, items, pagination: { currentPage: 1, totalPages: 1 } };
-      }
-      let data;
-      try {
-        data = await this.fetchJson(`https://phimapi.com/v1/api/tim-kiem?keyword=${encodeURIComponent(query)}&page=${page}&limit=24`);
-      } catch (_error) {
-        const term = String(query || '').toLocaleLowerCase();
-        const items = this.getBundledHomeFeed().sections[0].items.filter((item) => `${item.name} ${item.origin_name}`.toLocaleLowerCase().includes(term));
-        return { query, items, pagination: { currentPage: 1, totalPages: 1 } };
-      }
-      return {
-        query,
-        items: data.data?.items || [],
-        pagination: data.data?.params?.pagination || { currentPage: page, totalPages: 1 }
-      };
+    } catch (_error) {
+      const term = String(query || '').toLocaleLowerCase();
+      const items = this.getBundledHomeFeed().sections[0].items.filter((item) => `${item.name} ${item.origin_name}`.toLocaleLowerCase().includes(term));
+      return { query, items, pagination: { currentPage: 1, totalPages: 1 } };
     }
   },
 
   async getDetail(slug) {
     try {
       return await this.cachedMovieRequest(`/api/movies/detail/${slug}`, 300000);
-    } catch (err) {
-      if (window.Phim4KRuntime?.apiBaseUrl) {
-        const movie = this.getBundledMovie(slug);
-        if (movie) return { movie, episodes: [] };
-      }
-      try {
-        return await this.fetchJson(`https://phimapi.com/phim/${slug}`);
-      } catch (_error) {
-        const movie = this.getBundledMovie(slug);
-        if (movie) return { movie, episodes: [] };
-        throw _error;
-      }
+    } catch (_error) {
+      const movie = this.getBundledMovie(slug);
+      if (movie) return { movie, episodes: [] };
+      throw _error;
     }
   }
 };

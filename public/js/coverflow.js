@@ -81,14 +81,14 @@ const Coverflow = {
     const catEl = document.getElementById('cfCategories');
     const synEl = document.getElementById('cfSynopsis');
 
-    if (titleEl) titleEl.textContent = cur.name || 'Người Nhện: Khởi Đầu Mới';
-    if (subEl) subEl.textContent = cur.origin_name || 'Spider-Man: Brand New Day';
-    if (qualityEl) qualityEl.textContent = cur.quality || 'CAM';
-    if (yearEl) yearEl.textContent = cur.year || '2026';
-    if (statusEl) statusEl.textContent = cur.episode_current || 'Full';
+    if (titleEl) titleEl.textContent = cur.name || 'Đang cập nhật tên phim';
+    if (subEl) subEl.textContent = cur.origin_name || '';
+    if (qualityEl) qualityEl.textContent = cur.quality || 'Theo nguồn';
+    if (yearEl) yearEl.textContent = cur.year || 'Chưa rõ năm';
+    if (statusEl) statusEl.textContent = cur.episode_current || 'Xem danh sách tập';
 
     if (catEl) {
-      const cats = cur.category || ['Phim Hành Động', 'Phim Khoa Học Viễn Tưởng'];
+      const cats = cur.category || [];
       catEl.textContent = Array.isArray(cats) 
         ? cats.map(c => typeof c === 'object' ? c.name : c).join(', ')
         : cats;
@@ -97,7 +97,7 @@ const Coverflow = {
     if (synEl) {
       synEl.textContent = cur.content 
         ? cur.content.replace(/<[^>]*>?/gm, '').trim()
-        : 'Không còn Tony Stark, MJ hay Ned kề cận, Peter buộc phải đứng dậy bảo vệ thành phố một lần nữa...';
+        : 'Bấm Thông tin để xem nội dung và danh sách tập của phim này.';
     }
   },
 
@@ -203,9 +203,79 @@ const Coverflow = {
 // ==========================================
 const ContinueWatching = {
   storageKey: 'phim4k_continue_watching',
+  clearPendingKey: 'phim4k_continue_clear_pending',
+  syncTimer: null,
+  syncInFlight: null,
+  pendingItems: new Map(),
+  posterRefreshes: new Map(),
 
   getDefaultSeed() {
     return [];
+  },
+
+  parseClock(value) {
+    const parts = String(value || '').trim().split(':').map(Number);
+    if (!parts.length || parts.some(part => !Number.isFinite(part))) return 0;
+    return parts.reduce((total, part) => total * 60 + part, 0);
+  },
+
+  formatSec(value) {
+    const total = Math.max(0, Math.floor(Number(value) || 0));
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const seconds = total % 60;
+    return hours
+      ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+      : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  },
+
+  normalizeItem(item) {
+    if (!item || typeof item !== 'object') return null;
+    const slug = String(item.slug || '').trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9-]{0,159}$/.test(slug)) return null;
+    const clocks = String(item.timeText || '').split('/');
+    const currentTime = Number.isFinite(Number(item.currentTime)) ? Number(item.currentTime) : this.parseClock(clocks[0]);
+    const duration = Number.isFinite(Number(item.duration)) ? Number(item.duration) : this.parseClock(clocks[1]);
+    if (!Number.isFinite(currentTime) || !Number.isFinite(duration) || duration < 5) return null;
+    const name = String(item.name || slug).replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 160);
+    const epName = String(item.epName || 'Tập 1').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 120);
+    const episodeId = String(item.episodeId || epName).replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 160);
+    const safeCurrent = Math.max(0, Math.min(currentTime, duration));
+    return {
+      slug,
+      name,
+      epName,
+      episodeId,
+      currentTime: safeCurrent,
+      duration,
+      timeText: `${this.formatSec(safeCurrent)} / ${this.formatSec(duration)}`,
+      progressPercent: Math.max(0, Math.min(100, Number(item.progressPercent) || Math.round((safeCurrent / duration) * 100))),
+      thumb: String(item.thumb || '').slice(0, 500),
+      updatedAt: item.updatedAt || 0
+    };
+  },
+
+  itemTimestamp(item) {
+    const parsed = Date.parse(String(item?.updatedAt || ''));
+    if (Number.isFinite(parsed)) return parsed;
+    const numeric = Number(item?.updatedAt);
+    return Number.isFinite(numeric) ? numeric : 0;
+  },
+
+  getSavedTime(movieSlug, episodeId, episodeName = '') {
+    const slug = String(movieSlug || '').trim().toLowerCase();
+    const id = String(episodeId || '').trim().toLowerCase();
+    const name = String(episodeName || '').trim().toLowerCase();
+    const item = this.getItems().find(candidate => candidate.slug === slug
+      && (String(candidate.episodeId || '').toLowerCase() === id || String(candidate.epName || '').toLowerCase() === name));
+    const seconds = Number(item?.currentTime);
+    return Number.isFinite(seconds) ? seconds : 0;
+  },
+
+  writeItems(items) {
+    const clean = (Array.isArray(items) ? items : []).map(item => this.normalizeItem(item)).filter(Boolean).slice(0, 10);
+    localStorage.setItem(this.storageKey, JSON.stringify(clean));
+    return clean;
   },
 
   getItems() {
@@ -214,43 +284,172 @@ const ContinueWatching = {
       if (raw) {
         const parsed = JSON.parse(raw);
         const legacyDemoSlugs = new Set(['cua-hang-sat-thu', 'the-boys-season-2', 'sieu-anh-hung']);
-        const cleaned = Array.isArray(parsed) ? parsed.filter((item) => !legacyDemoSlugs.has(item?.slug)) : [];
-        if (cleaned.length !== parsed.length) localStorage.setItem(this.storageKey, JSON.stringify(cleaned));
+        const cleaned = Array.isArray(parsed)
+          ? parsed.map(item => this.normalizeItem(item)).filter(item => item && !legacyDemoSlugs.has(item.slug)).slice(0, 10)
+          : [];
+        localStorage.setItem(this.storageKey, JSON.stringify(cleaned));
         return cleaned;
       }
     } catch (e) {}
     return this.getDefaultSeed();
   },
 
-  saveItem(movie, epName, currentTime, duration) {
-    if (!movie || !duration) return;
+  saveItem(movie, epName, currentTime, duration, episodeId = '') {
+    if (!movie || !Number.isFinite(Number(duration)) || Number(duration) < 5) return;
     let list = this.getItems();
     list = list.filter(item => item.slug !== movie.slug);
-
-    const percent = Math.min(100, Math.round((currentTime / duration) * 100));
-    const formatSec = (s) => {
-      const m = Math.floor(s / 60);
-      const sec = Math.floor(s % 60);
-      return `${m < 10 ? '0' : ''}${m}:${sec < 10 ? '0' : ''}${sec}`;
-    };
-
-    list.unshift({
+    const item = this.normalizeItem({
       slug: movie.slug,
       name: movie.name,
       epName: epName || 'Tập 1',
-      timeText: `${formatSec(currentTime)} / ${formatSec(duration)}`,
-      progressPercent: percent,
-      thumb: movie.thumb_url || movie.poster_url || ''
+      episodeId: episodeId || epName || 'tap-1',
+      currentTime,
+      duration,
+      thumb: movie.thumb_url || movie.poster_url || '',
+      updatedAt: Date.now()
     });
-
-    if (list.length > 10) list = list.slice(0, 10);
-    localStorage.setItem(this.storageKey, JSON.stringify(list));
+    if (!item) return;
+    list.unshift(item);
+    this.writeItems(list);
+    this.queueSync(item);
     this.render();
   },
 
+  queueSync(item) {
+    const normalized = this.normalizeItem(item);
+    if (!normalized) return;
+    this.pendingItems.set(normalized.slug, normalized);
+    if (this.syncTimer) return;
+    this.syncTimer = window.setTimeout(() => void this.flushSync(), 7000);
+  },
+
+  async flushSync({ keepalive = false } = {}) {
+    if (this.syncTimer) window.clearTimeout(this.syncTimer);
+    this.syncTimer = null;
+    if (this.syncInFlight) return this.syncInFlight;
+    const queued = [...this.pendingItems.values()];
+    this.pendingItems.clear();
+    const clearPending = localStorage.getItem(this.clearPendingKey) === '1';
+    if (!queued.length && !clearPending) return;
+    this.syncInFlight = (async () => {
+      try {
+        if (clearPending) {
+          await API.clearWatchProgress();
+          localStorage.removeItem(this.clearPendingKey);
+        }
+        if (queued.length) await API.saveWatchProgress(queued, { keepalive });
+      } catch (_error) {
+        queued.forEach(item => this.pendingItems.set(item.slug, item));
+      } finally {
+        this.syncInFlight = null;
+        if (this.pendingItems.size && !this.syncTimer) {
+          this.syncTimer = window.setTimeout(() => void this.flushSync(), 12000);
+        }
+      }
+    })();
+    return this.syncInFlight;
+  },
+
+  async syncFromServer() {
+    if (this.syncInFlight) return this.syncInFlight;
+    this.syncInFlight = (async () => {
+      try {
+        if (localStorage.getItem(this.clearPendingKey) === '1') {
+          await API.clearWatchProgress();
+          localStorage.removeItem(this.clearPendingKey);
+        }
+        const localItems = this.getItems();
+        const response = await API.getWatchProgress();
+        const remoteItems = (response?.items || []).map(item => this.normalizeItem(item)).filter(Boolean);
+        const merged = new Map();
+        for (const item of [...remoteItems, ...localItems]) {
+          const previous = merged.get(item.slug);
+          if (!previous || this.itemTimestamp(item) >= this.itemTimestamp(previous)) merged.set(item.slug, item);
+        }
+        const items = [...merged.values()].sort((a, b) => this.itemTimestamp(b) - this.itemTimestamp(a)).slice(0, 10);
+        this.writeItems(items);
+        for (const item of items) {
+          localStorage.setItem(`watch_${item.slug}_${item.episodeId}`, Number(item.currentTime).toFixed(1));
+        }
+        this.render();
+
+        const remoteByMovie = new Map(remoteItems.map(item => [item.slug, item]));
+        const upload = localItems.filter(item => {
+          const remote = remoteByMovie.get(item.slug);
+          return !remote || this.itemTimestamp(item) > this.itemTimestamp(remote);
+        });
+        if (upload.length) await API.saveWatchProgress(upload);
+      } catch (_error) {
+        this.render();
+      } finally {
+        this.syncInFlight = null;
+      }
+    })();
+    return this.syncInFlight;
+  },
+
   clearAll() {
-    localStorage.setItem(this.storageKey, JSON.stringify([]));
+    const items = this.getItems();
+    for (const item of items) localStorage.removeItem(`watch_${item.slug}_${item.episodeId}`);
+    localStorage.setItem(this.storageKey, '[]');
+    localStorage.setItem(this.clearPendingKey, '1');
+    this.pendingItems.clear();
+    void this.flushSync();
     this.render();
+  },
+
+  findFreshMovie(slug) {
+    const normalizedSlug = String(slug || '').trim().toLowerCase();
+    if (!normalizedSlug) return null;
+    const candidates = [
+      ...(Array.isArray(window.App?.homeCatalog) ? window.App.homeCatalog : []),
+      ...(Array.isArray(window.App?.heroList) ? window.App.heroList : []),
+    ];
+    return candidates.find(movie => String(movie?.slug || '').trim().toLowerCase() === normalizedSlug) || null;
+  },
+
+  posterSource(item) {
+    const freshMovie = this.findFreshMovie(item?.slug);
+    return freshMovie?.thumb_url || freshMovie?.poster_url || item?.thumb || '';
+  },
+
+  cacheFreshPoster(slug, source) {
+    const cleanSlug = String(slug || '').trim().toLowerCase();
+    const cleanSource = String(source || '').trim().slice(0, 500);
+    if (!cleanSlug || !cleanSource) return;
+    const items = this.getItems();
+    let changed = false;
+    for (const item of items) {
+      if (item.slug === cleanSlug && item.thumb !== cleanSource) {
+        item.thumb = cleanSource;
+        changed = true;
+      }
+    }
+    if (changed) this.writeItems(items);
+  },
+
+  async refreshPoster(item, image) {
+    const slug = String(item?.slug || '').trim().toLowerCase();
+    if (!slug || !image) return;
+    image.dataset.movieSlug = slug;
+
+    let request = this.posterRefreshes.get(slug);
+    if (!request) {
+      request = Promise.resolve()
+        .then(() => API.getDetail(slug))
+        .then(data => data?.movie?.thumb_url || data?.movie?.poster_url || '')
+        .catch(() => '')
+        .finally(() => this.posterRefreshes.delete(slug));
+      this.posterRefreshes.set(slug, request);
+    }
+
+    const source = await request;
+    if (!source || !image.isConnected || image.dataset.movieSlug !== slug) return;
+    const resolved = App.resolveImageUrl(source);
+    if (resolved === App.posterFallbackUrl()) return;
+    this.cacheFreshPoster(slug, source);
+    delete image.dataset.posterFallback;
+    image.src = resolved;
   },
 
   render() {
@@ -270,18 +469,25 @@ const ContinueWatching = {
       card.className = 'cw-card';
       card.onclick = () => App.openMovieDetail(item.slug, true);
 
+      const posterSource = this.posterSource(item);
+      const posterUrl = App.resolveImageUrl(posterSource);
+
       card.innerHTML = `
         <div class="cw-thumb-wrapper">
-          <img src="${App.resolveImageUrl(item.thumb)}" class="cw-thumb" alt="${item.name}" loading="lazy" decoding="async" />
+          <img src="${posterUrl}" class="cw-thumb" alt="${App.escapeHtml(item.name)}" loading="lazy" decoding="async" />
           <div class="cw-progress-bar">
-            <div class="cw-progress-fill" style="width: ${item.progressPercent || 30}%"></div>
+            <div class="cw-progress-fill" style="width: ${Number.isFinite(Number(item.progressPercent)) ? Number(item.progressPercent) : 0}%"></div>
           </div>
         </div>
         <div class="cw-meta">${item.epName} • ${item.timeText}</div>
         <div class="cw-name">${item.name}</div>
       `;
 
-      App.attachPosterFallback(card.querySelector('.cw-thumb'));
+      const image = card.querySelector('.cw-thumb');
+      image.dataset.movieSlug = item.slug;
+      image.addEventListener('error', () => void this.refreshPoster(item, image), { once: true });
+      App.attachPosterFallback(image);
+      if (posterUrl === App.posterFallbackUrl()) void this.refreshPoster(item, image);
       row.appendChild(card);
     });
   }
@@ -326,10 +532,10 @@ function switchTab(tabId) {
 
 function renderAccountTab() {
   const session = window.Auth?.activeKeyData;
-  const isAuthenticated = Boolean(session?.active !== false && session?.key && (session?.telegramId || session?.deviceOnly));
-  const teleId = isAuthenticated ? (session.deviceOnly ? 'Thiết bị được Admin duyệt' : String(session.telegramId)) : 'Chưa đăng nhập';
+  const isAuthenticated = Boolean(session?.active !== false && (session?.freeAccess || (session?.key && (session?.telegramId || session?.deviceOnly || session?.keyOnly))));
+  const teleId = isAuthenticated ? (session.freeAccess ? 'Không cần key' : session.keyOnly ? 'Thiết bị đã gắn key' : session.deviceOnly ? 'Thiết bị được Admin duyệt' : String(session.telegramId)) : 'Chưa đăng nhập';
   const plan = isAuthenticated ? (session.isAdmin ? 'SUPER ADMIN' : (session.plan || 'VIP')) : 'Chưa kích hoạt';
-  const key = isAuthenticated ? `${String(session.key).slice(0, 4)}••••${String(session.key).slice(-4)}` : 'Chưa có key';
+  const key = session?.freeAccess ? 'Không yêu cầu' : isAuthenticated ? `${String(session.key).slice(0, 4)}••••${String(session.key).slice(-4)}` : 'Chưa có key';
   const isSuperAdmin = Boolean(isAuthenticated && session.isAdmin);
 
   const teleEl = document.getElementById('accTelegramId');
@@ -341,11 +547,12 @@ function renderAccountTab() {
   if (planEl) planEl.textContent = isSuperAdmin ? '👑 SUPER ADMIN' : plan;
   if (keyEl) keyEl.textContent = key;
   const versionEl = document.getElementById('accAppVersion');
-  if (versionEl) versionEl.textContent = `v${window.API?.getVersion?.() || '3.4.17'}`;
+  if (versionEl) versionEl.textContent = `v${window.API?.getVersion?.() || '3.4.28'}`;
 
   if (adminBtn) {
     adminBtn.classList.toggle('hidden', !isSuperAdmin);
   }
+  document.getElementById('accLogsBtn')?.classList.toggle('hidden', !isSuperAdmin);
 }
 
 function filterByGenre(genre) {

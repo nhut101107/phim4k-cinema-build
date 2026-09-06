@@ -26,12 +26,21 @@ test('double taps seek only on the same side within the gesture window', () => {
   assert.equal(doubleTapSeek({x:.8,time:100},{x:.8,time:421}),0);
   assert.equal(doubleTapSeek(null,{x:.8,time:250}),0);
 });
-test('landscape defaults to cover but explicit fit preference survives resize/fullscreen', () => {
-  const p = fixture(); p.showAlert = () => {}; p.applyPreferredAspect(); assert.equal(p.aspectMode,'cover');
-  p.toggleAspectRatio(); p.isCinemaFullscreen=true; p.applyPreferredAspect(); assert.equal(p.aspectMode,'contain');
+test('fullscreen preserves subtitles by default; cropping requires explicit choice', () => {
+  const p = fixture(); p.showAlert = () => {}; p.applyPreferredAspect(); assert.equal(p.aspectMode,'contain');
+  p.isCinemaFullscreen=true; p.applyPreferredAspect(); assert.equal(p.aspectMode,'contain');
+  p.toggleAspectRatio(); p.applyPreferredAspect(); assert.equal(p.aspectMode,'cover');
+  p.toggleAspectRatio(); p.applyPreferredAspect(); assert.equal(p.aspectMode,'contain');
 });
 test('center and bottom controls explicitly toggle playback', () => {
   const html = fs.readFileSync('public/index.html','utf8');
   for(const id of ['btnCenterPlayPause','btnPlayPause']) assert.match(html,new RegExp('id="'+id+'"[^>]*onclick="togglePlayPause\\(\\)"'));
   const p = fixture(); p.togglePlayPause(); assert.equal(p.video.paused,true);
+});
+
+test('paused playback is still persisted when pause or close explicitly flushes', () => {
+  const source = fs.readFileSync('public/js/player.js','utf8');
+  assert.match(source, /this\.saveProgressNow\(\{ flush: true \}\)/);
+  assert.match(source, /this\.video\.paused && !flush/);
+  assert.doesNotMatch(source, /!this\.video \|\| this\.video\.paused \|\| this\.video\.currentTime <= 3/);
 });

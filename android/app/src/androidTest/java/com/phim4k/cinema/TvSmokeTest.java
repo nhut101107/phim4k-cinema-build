@@ -47,7 +47,7 @@ public class TvSmokeTest {
                 Thread.sleep(500);
             }
             assertTrue("Original video could not be decoded", decoded);
-            assertEquals("true", js(activity, "Player.aspectMode==='cover' && getComputedStyle(qaVideo).objectFit==='cover' && qaVideo.getBoundingClientRect().width===innerWidth && qaVideo.getBoundingClientRect().height===innerHeight"));
+            assertEquals("true", js(activity, "Player.aspectMode==='contain' && getComputedStyle(qaVideo).objectFit==='contain' && qaVideo.getBoundingClientRect().width<=innerWidth && qaVideo.getBoundingClientRect().bottom<=innerHeight"));
             js(activity, "qaVideo.click(); true");
             assertEquals("false", js(activity, "qaVideo.paused"));
             js(activity, "Player.resetInactivityTimer(); document.getElementById('btnCenterPlayPause').click(); true");
