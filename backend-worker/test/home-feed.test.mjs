@@ -22,13 +22,18 @@ test('a failing cinema source does not blank the new series feed; requests are b
     assert.deepEqual(data.hero.map(m=>m.slug),['new-series']);
     const imageTicket=await openMediaTicket(new URL(data.hero[0].poster_url).searchParams.get('t'),env,'image');
     assert.equal(imageTicket.url,'https://images.example/uploads/movies/poster.webp');
-    assert.equal(calls.length,9);
+    assert.equal(calls.length,18);
     assert.ok(calls.every(c=>c.url.origin==='https://catalog.example'&&c.options.signal&&c.options.redirect==='manual'));
     const newest=calls.filter(c=>c.url.pathname==='/danh-sach/phim-moi-cap-nhat');
-    assert.deepEqual(newest.map(c=>c.url.searchParams.get('page')),['1','2','3','4']);
+    assert.deepEqual(newest.map(c=>c.url.searchParams.get('page')),['1','2','3','4','5','6','7','8']);
     const categories=calls.filter(c=>c.url.pathname.startsWith('/v1/api/danh-sach/'));
-    assert.equal(categories.length,5);
+    assert.equal(categories.length,10);
     assert.ok(categories.every(c=>c.url.searchParams.get('year')===String(new Date().getUTCFullYear())&&c.url.searchParams.get('limit')==='64'));
+    for (const category of ['phim-chieu-rap', 'phim-le', 'phim-bo', 'hoat-hinh', 'tv-shows']) {
+      assert.deepEqual(categories.filter(c=>c.url.pathname.endsWith(`/${category}`)).map(c=>c.url.searchParams.get('page')),['1','2']);
+    }
+    const repeatedPosters = [data.hero[0], ...data.sections.flatMap(section => section.items)].map(movie=>movie.poster_url).filter(Boolean);
+    assert.equal(new Set(repeatedPosters).size,1,'the same source image must reuse one protected URL throughout a feed response');
   } finally {globalThis.fetch=original;}
 });
 test('all sources failing produces a retryable error, not invented movie recommendations',async()=>{

@@ -1492,11 +1492,11 @@ function normalizedCatalogItems(data, env) {
 }
 
 function homeCatalogPaths(year) {
-  const suffix = `?page=1&limit=64&year=${year}&sort_field=modified.time&sort_type=desc`;
   return [
-    ...[1, 2, 3, 4].map((page) => `/danh-sach/phim-moi-cap-nhat?page=${page}`),
+    ...[1, 2, 3, 4, 5, 6, 7, 8].map((page) => `/danh-sach/phim-moi-cap-nhat?page=${page}`),
     ...['phim-chieu-rap', 'phim-le', 'phim-bo', 'hoat-hinh', 'tv-shows']
-      .map((category) => `/v1/api/danh-sach/${category}${suffix}`),
+      .flatMap((category) => [1, 2].map((page) =>
+        `/v1/api/danh-sach/${category}?page=${page}&limit=64&year=${year}&sort_field=modified.time&sort_type=desc`)),
   ];
 }
 
@@ -1504,7 +1504,12 @@ function catalogCacheKey(path) {
   return new Request(`https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/__catalog_cache${path}`);
 }
 
-async function handleProtectedMovieImage(request, env) {
+async function protectedImageCacheKey(request, target) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(target.href));
+  return new Request(`${new URL(request.url).origin}/__image_cache/${toHex(digest)}`);
+}
+
+async function handleProtectedMovieImage(request, env, executionContext) {
   let ticket;
   try {
     ticket = await openMediaTicket(new URL(request.url).searchParams.get("t"), env, "image");
@@ -1516,17 +1521,27 @@ async function handleProtectedMovieImage(request, env) {
   const hosts = configuredImageHosts(env);
   const safePath = target && (target.pathname.startsWith("/upload/") || target.pathname.startsWith("/uploads/"));
   if (!target || !hosts.has(target.hostname.toLowerCase()) || !safePath) return textError("Nguồn ảnh không được phép.", 400, "IMAGE_HOST_NOT_ALLOWED");
-  const catalogOrigin = configuredCatalogOrigin(env);
-  const upstream = await fetch(target.href, {
-    headers: {
-      accept: "image/avif,image/webp,image/jpeg,image/png,image/*;q=0.8",
-      "accept-language": "vi,en-US;q=0.8,en;q=0.6",
-      "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36",
-      ...(catalogOrigin ? { referer: `${catalogOrigin.origin}/` } : {}),
-    },
-    redirect: "manual",
-    cf: { cacheEverything: true, cacheTtl: 86400 },
-  });
+  const cache = typeof caches !== "undefined" ? caches.default : null;
+  const cacheKey = cache ? await protectedImageCacheKey(request, target) : null;
+  if (cache && cacheKey) {
+    try {
+      const cached = await cache.match(cacheKey);
+      if (cached) return cached;
+    } catch (_error) {}
+  }
+
+  let upstream;
+  let finalTarget;
+  try {
+    ({ response: upstream, target: finalTarget } = await fetchProtectedUpstream(target.href, request, env, "media"));
+  } catch (_error) {
+    return textError("Không tải được ảnh phim.", 502, "IMAGE_UPSTREAM_ERROR");
+  }
+  const finalSafePath = finalTarget && (finalTarget.pathname.startsWith("/upload/") || finalTarget.pathname.startsWith("/uploads/"));
+  if (!finalTarget || !hosts.has(finalTarget.hostname.toLowerCase()) || !finalSafePath) {
+    try { await upstream.body?.cancel(); } catch (_error) {}
+    return textError("Nguồn ảnh chuyển hướng không được phép.", 502, "IMAGE_REDIRECT_NOT_ALLOWED");
+  }
   if (!upstream.ok) return textError("Không tải được ảnh phim.", 502, "IMAGE_UPSTREAM_ERROR");
   const contentType = String(upstream.headers.get("content-type") || "").toLowerCase();
   if (!contentType.startsWith("image/")) return textError("Nguồn trả về không phải ảnh.", 502, "INVALID_IMAGE_RESPONSE");
@@ -1538,7 +1553,11 @@ async function handleProtectedMovieImage(request, env) {
   headers.set("x-content-type-options", "nosniff");
   const etag = upstream.headers.get("etag");
   if (etag) headers.set("etag", etag);
-  return new Response(upstream.body, { status: 200, headers });
+  const response = new Response(upstream.body, { status: 200, headers });
+  if (cache && cacheKey && executionContext?.waitUntil) {
+    executionContext.waitUntil(cache.put(cacheKey, response.clone()).catch(() => {}));
+  }
+  return response;
 }
 
 async function fetchProtectedCatalogJson(path, env, { force = false, ttl = 30 } = {}) {
@@ -1588,13 +1607,16 @@ async function protectImageValue(value, request, env, expiresAt, extra = {}) {
   return protectedMediaUrl(request, env, target.href, "image", expiresAt, extra);
 }
 
-async function protectCatalogImages(value, request, env, expiresAt = Math.floor(Date.now() / 1000) + IMAGE_TICKET_TTL_SECONDS) {
-  if (Array.isArray(value)) return Promise.all(value.map((item) => protectCatalogImages(item, request, env, expiresAt)));
+async function protectCatalogImages(value, request, env, expiresAt = Math.floor(Date.now() / 1000) + IMAGE_TICKET_TTL_SECONDS, ticketPromises = new Map()) {
+  if (Array.isArray(value)) return Promise.all(value.map((item) => protectCatalogImages(item, request, env, expiresAt, ticketPromises)));
   if (!value || typeof value !== "object") return value;
   const output = {};
   for (const [key, child] of Object.entries(value)) {
-    if (key === "poster_url" || key === "thumb_url") output[key] = await protectImageValue(child, request, env, expiresAt);
-    else output[key] = await protectCatalogImages(child, request, env, expiresAt);
+    if (key === "poster_url" || key === "thumb_url") {
+      const source = String(child || "").trim();
+      if (!ticketPromises.has(source)) ticketPromises.set(source, protectImageValue(source, request, env, expiresAt));
+      output[key] = await ticketPromises.get(source);
+    } else output[key] = await protectCatalogImages(child, request, env, expiresAt, ticketPromises);
   }
   return output;
 }
@@ -1841,7 +1863,7 @@ async function handleMovieStream(request, env) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, executionContext) {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
     const url = new URL(request.url);
     const { pathname } = url;
@@ -1862,7 +1884,7 @@ export default {
       if (request.method === "GET" && pathname === "/api/health") {
         return json({ ready: Boolean(env.DB), service: "phim4k-license-api" });
       }
-      if (request.method === "GET" && pathname === "/api/media/image") return await handleProtectedMovieImage(request, env);
+      if (request.method === "GET" && pathname === "/api/media/image") return await handleProtectedMovieImage(request, env, executionContext);
       if (request.method === "GET" && pathname === "/api/media/stream") return await handleMovieStream(request, env);
       if (request.method === "POST" && pathname === "/api/movies/play") return await handleMoviePlayback(request, env);
       if (request.method === "GET" && pathname.startsWith("/api/movies/")) return await handleProtectedMovieCatalog(request, env);

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import worker, { auditTypeForAction, compareAppVersions, createRateLimiter, json, normalizeAnnouncementSetting, normalizeTelemetryEvents, sealMediaTicket } from "../src/worker.mjs";
 
 const MEDIA_SECRET = "fixture-media-ticket-secret-at-least-32-characters";
@@ -65,7 +66,7 @@ test("movie metadata is authenticated and relayed only through the configured se
     assert.equal(payload.sections.length, 5);
     assert.equal(payload.sections[0].id, 'cinema-new');
     assert.equal(home.headers.get("access-control-allow-origin"), "*");
-    assert.equal(requests.length, 9);
+    assert.equal(requests.length, 18);
     assert.ok(requests.every((target) => target.startsWith("https://catalog.example/")));
 
     const filtered = await worker.fetch(viewerRequest("/api/movies/filter?genre=hanh-dong&country=trung-quoc&page=2"), env);
@@ -77,7 +78,7 @@ test("movie metadata is authenticated and relayed only through the configured se
 
     const invalid = await worker.fetch(viewerRequest("/api/movies/category/not-allowed"), env);
     assert.equal(invalid.status, 400);
-    assert.equal(requests.length, 10);
+    assert.equal(requests.length, 19);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -119,6 +120,96 @@ test("image relay accepts only an opaque encrypted capability for the configured
     assert.equal(requests.length, 1);
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test("image relay uses the authenticated VPS path when it is configured", async () => {
+  const relayEnv = freeViewerEnv({
+    VPS_RELAY_ORIGIN: "https://relay.example",
+    VPS_RELAY_SECRET: "fixture-vps-relay-secret-at-least-32-characters",
+  });
+  const source = "https://images.example/uploads/movies/fixture.webp";
+  const originalFetch = globalThis.fetch;
+  let relayCalls = 0;
+  globalThis.fetch = async (input, options = {}) => {
+    assert.equal(String(input), "https://relay.example/v1/media");
+    relayCalls += 1;
+    const body = String(options.body);
+    const timestamp = options.headers["x-phim4k-relay-timestamp"];
+    const nonce = options.headers["x-phim4k-relay-nonce"];
+    const expected = crypto.createHmac("sha256", relayEnv.VPS_RELAY_SECRET)
+      .update(`phim4k-vps-relay-v1\n${timestamp}\n${nonce}\n${body}`)
+      .digest("base64url");
+    assert.equal(options.headers["x-phim4k-relay-signature"], expected);
+    assert.deepEqual(JSON.parse(body), {
+      v: 1,
+      url: source,
+      range: "",
+      format: "media",
+      referer: "https://catalog.example/",
+    });
+    return new Response(new Uint8Array([0x52, 0x49, 0x46, 0x46]), {
+      status: 200,
+      headers: {
+        "content-type": "image/webp",
+        "x-phim4k-relay-final": Buffer.from(source).toString("base64url"),
+      },
+    });
+  };
+  try {
+    const token = await sealMediaTicket({ kind: "image", url: source, exp: Math.floor(Date.now() / 1000) + 300 }, relayEnv);
+    const response = await worker.fetch(new Request(`https://example.workers.dev/api/media/image?t=${token}`), relayEnv);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "image/webp");
+    assert.equal(relayCalls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("image cache is stable across newly encrypted tickets without exposing the source URL", async () => {
+  const source = "https://images.example/uploads/movies/cache-fixture.webp";
+  const originalFetch = globalThis.fetch;
+  const originalCaches = globalThis.caches;
+  let upstreamCalls = 0;
+  let stored = null;
+  let firstCacheKey = "";
+  globalThis.fetch = async () => {
+    upstreamCalls += 1;
+    return new Response(new Uint8Array([0x52, 0x49, 0x46, 0x46]), {
+      status: 200,
+      headers: { "content-type": "image/webp" },
+    });
+  };
+  globalThis.caches = {
+    default: {
+      async match(key) {
+        firstCacheKey ||= String(key.url || key);
+        return stored?.clone();
+      },
+      async put(key, response) {
+        assert.equal(String(key.url || key), firstCacheKey);
+        stored = response.clone();
+      },
+    },
+  };
+  try {
+    const tokenA = await sealMediaTicket({ kind: "image", url: source, exp: Math.floor(Date.now() / 1000) + 300 }, freeViewerEnv());
+    const tokenB = await sealMediaTicket({ kind: "image", url: source, exp: Math.floor(Date.now() / 1000) + 300 }, freeViewerEnv());
+    assert.notEqual(tokenA, tokenB);
+    const pending = [];
+    const executionContext = { waitUntil(promise) { pending.push(promise); } };
+    const first = await worker.fetch(new Request(`https://example.workers.dev/api/media/image?t=${tokenA}`), freeViewerEnv(), executionContext);
+    assert.equal(first.status, 200);
+    await Promise.all(pending);
+    const second = await worker.fetch(new Request(`https://example.workers.dev/api/media/image?t=${tokenB}`), freeViewerEnv(), executionContext);
+    assert.equal(second.status, 200);
+    assert.equal(upstreamCalls, 1);
+    assert.doesNotMatch(firstCacheKey, /images\.example|cache-fixture|uploads/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalCaches === undefined) delete globalThis.caches;
+    else globalThis.caches = originalCaches;
   }
 });
 
