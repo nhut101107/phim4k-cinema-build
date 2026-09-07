@@ -23,7 +23,7 @@ const API = {
   },
 
   getVersion() {
-    return '3.4.34';
+    return '3.4.35';
   },
 
   getSessionId() {

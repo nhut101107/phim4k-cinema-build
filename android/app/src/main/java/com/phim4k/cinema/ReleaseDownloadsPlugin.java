@@ -53,9 +53,9 @@ public class ReleaseDownloadsPlugin extends Plugin {
             if (manager() == null) { call.reject("Thiết bị không có dịch vụ tải hệ thống. Hãy tải APK bằng trình duyệt rồi cài thủ công."); return; }
             JSObject existing = state();
             if (raw.equals(prefs().getString("url", "")) && ("complete".equals(existing.getString("status")) || "downloading".equals(existing.getString("status")))) { call.resolve(existing); return; }
-            String name = "Phim4K-update-" + UUID.randomUUID() + ".apk";
+            String name = "4K-update-" + UUID.randomUUID() + ".apk";
             DownloadManager.Request request = new DownloadManager.Request(uri)
-                .setTitle("Cập nhật Phim4K " + ("android_tv".equals(BuildConfig.PHIM4K_PLATFORM) ? "TV" : "Android"))
+                .setTitle("Cập nhật 4K " + ("android_tv".equals(BuildConfig.PHIM4K_PLATFORM) ? "TV" : "Android"))
                 .setMimeType("application/vnd.android.package-archive")
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 .setDestinationInExternalFilesDir(getContext(), Environment.DIRECTORY_DOWNLOADS, name);
@@ -84,7 +84,7 @@ public class ReleaseDownloadsPlugin extends Plugin {
             if (!"complete".equals(state().getString("status"))) { call.reject("APK chưa tải xong."); return; }
             File directory = getContext().getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
             File file = new File(directory, prefs().getString("file", "missing"));
-            if (directory == null || !file.getCanonicalPath().startsWith(directory.getCanonicalPath() + File.separator) || !sameSigner(file)) { call.reject("APK không đúng Phim4K hoặc chữ ký không khớp. Không cài file này."); return; }
+            if (directory == null || !file.getCanonicalPath().startsWith(directory.getCanonicalPath() + File.separator) || !sameSigner(file)) { call.reject("APK không đúng ứng dụng 4K hoặc chữ ký không khớp. Không cài file này."); return; }
             if (Build.VERSION.SDK_INT >= 26 && !getContext().getPackageManager().canRequestPackageInstalls()) {
                 getActivity().startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + getContext().getPackageName())));
                 call.resolve(new JSObject().put("needsPermission", true)); return;

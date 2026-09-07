@@ -12,6 +12,8 @@ test('native runtime has an HTTPS API base and a bundled catalog fallback', () =
   assert.match(config, /apiBaseUrl:\s*"https:\/\//);
   assert.ok(index.indexOf('/js/catalog-fallback.js') < index.indexOf('/js/api.js'));
   assert.match(fallback, /PHIM4K_CATALOG_FALLBACK/);
+  assert.match(index, /<title>4K<\/title>/);
+  assert.match(index, /Content-Security-Policy/);
 });
 
 test('activation gate does not prefill a cached Telegram identity', () => {
@@ -26,6 +28,9 @@ test('activation gate does not prefill a cached Telegram identity', () => {
   assert.match(index, /Key người xem không cần Telegram ID/);
   assert.doesNotMatch(api, /Không thể xác thực key hoặc Telegram ID/);
   assert.match(index, /media\/phim4k-avatar\.png/);
+  assert.match(index, /class="account-avatar"[^>]*phim4k-avatar\.png/);
+  assert.match(index, /class="account-default-name">4K</);
+  assert.doesNotMatch(auth, /function setPersistentCookie/);
 });
 
 test('free-access policy is checked before a saved key and users can refresh app state', () => {
@@ -55,7 +60,7 @@ test('account version and a verified session do not fall back to stale WebView s
   const auth = read('../public/js/auth.js');
   assert.match(api, /window\.API = API/);
   assert.match(auth, /window\.Auth = Auth/);
-  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.34'/);
+  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.35'/);
   assert.match(auth, /const verifiedSession = \{ \.\.\.res, key, telegramId \}/);
   assert.match(auth, /Auth\.unlockApp\(verifiedSession\)/);
 });
@@ -82,10 +87,15 @@ test('web, iOS and Windows release versions stay aligned', () => {
   const iosProject = read('../ios/App/App.xcodeproj/project.pbxproj');
   const desktop = JSON.parse(read('../electron-builder.json'));
   const webVersion = api.match(/return '(\d+\.\d+\.\d+)'/)?.[1];
-  assert.equal(webVersion, '3.4.34');
+  assert.equal(webVersion, '3.4.35');
   assert.equal(desktop.extraMetadata.version, webVersion);
   assert.deepEqual([...iosProject.matchAll(/MARKETING_VERSION = ([^;]+);/g)].map((match) => match[1]), [webVersion, webVersion]);
-  assert.deepEqual([...iosProject.matchAll(/CURRENT_PROJECT_VERSION = ([^;]+);/g)].map((match) => match[1]), ['34', '34']);
+  assert.deepEqual([...iosProject.matchAll(/CURRENT_PROJECT_VERSION = ([^;]+);/g)].map((match) => match[1]), ['35', '35']);
+  assert.equal(JSON.parse(read('../capacitor.config.json')).appName, '4K');
+  assert.equal(desktop.productName, '4K');
+  assert.match(read('../desktop/main.cjs'), /setPath\('userData',[\s\S]*?'Phim4K Cinema'/);
+  assert.match(read('../ios/App/App/Info.plist'), /<key>CFBundleDisplayName<\/key>\s*<string>4K<\/string>/);
+  assert.match(read('../android/app/src/main/res/values/strings.xml'), /<string name="app_name">4K<\/string>/);
 });
 
 test('Android phone and TV are separate optimized release flavors', () => {
@@ -98,8 +108,8 @@ test('Android phone and TV are separate optimized release flavors', () => {
   const styles = read('../public/css/style.css');
   const player = read('../public/js/player.js');
 
-  assert.match(gradle, /versionCode 34/);
-  assert.match(gradle, /versionName "3\.4\.34"/);
+  assert.match(gradle, /versionCode 35/);
+  assert.match(gradle, /versionName "3\.4\.35"/);
   assert.match(gradle, /phone\s*\{[\s\S]*?applicationId "com\.phim4k\.cinema"[\s\S]*?PHIM4K_PLATFORM[^\n]*android/);
   assert.match(gradle, /tv\s*\{[\s\S]*?applicationId "com\.phim4k\.cinema\.tv"[\s\S]*?PHIM4K_PLATFORM[^\n]*android_tv/);
   assert.match(gradle, /debug\.assets\.srcDir\(layout\.buildDirectory\.dir\('generated\/qaAssets'\)\)/);
@@ -111,6 +121,10 @@ test('Android phone and TV are separate optimized release flavors', () => {
   assert.match(activity, /Phim4KAndroid/);
   assert.match(activity, /Phim4KTV/);
   assert.match(activity, /getOnBackPressedDispatcher/);
+  assert.match(activity, /RELEASE_CERT_SHA256/);
+  assert.match(activity, /Debug\.isDebuggerConnected\(\)/);
+  assert.match(activity, /\/proc\/self\/maps/);
+  assert.match(activity, /com\.phim4k\.cinema\.tv/);
   assert.match(platform, /platform-\$\{current\.replace\('_', '-'\)\}/);
   assert.match(navigation, /window\.Phim4KNavigation/);
   assert.match(styles, /\.platform-android \.cinema-rail/);
@@ -125,17 +139,19 @@ test('Android CI builds, signs and device-tests the correct flavor', () => {
   assert.match(phoneWorkflow, /connectedPhoneDebugAndroidTest/);
   assert.match(phoneWorkflow, /package: name='com\.phim4k\.cinema'/);
   assert.match(phoneWorkflow, /apksigner" verify/);
+  assert.match(phoneWorkflow, /ABAFDA2EAD9478B2540328C98774B4B0A9432014F7B31CBF40FB3EF1F6FECBC8/);
   assert.match(tvWorkflow, /assembleTvRelease/);
   assert.match(tvWorkflow, /connectedTvDebugAndroidTest/);
   assert.match(tvWorkflow, /package: name='com\.phim4k\.cinema\.tv'/);
+  assert.match(tvWorkflow, /ABAFDA2EAD9478B2540328C98774B4B0A9432014F7B31CBF40FB3EF1F6FECBC8/);
 });
 
 test('iOS entry point cache-busts every bundled script and stylesheet', () => {
   const html = read('../public/index.html');
   const localAssets = [...html.matchAll(/(?:src|href)="\/(?:js|css|vendor)\/[^"?]+(?:\?[^" ]+)?"/g)].map(match => match[0]);
   assert.ok(localAssets.length >= 20);
-  assert.ok(localAssets.every(asset => asset.includes('?v=3.4.34')), localAssets.join('\n'));
-  assert.match(html, /3\.4\.34[^<]*BẢO TRÌ \+ BĂNG PHIM MƯỢT/);
+  assert.ok(localAssets.every(asset => asset.includes('?v=3.4.35')), localAssets.join('\n'));
+  assert.match(html, /4K 3\.4\.35[^<]*BẢN ĐỒNG BỘ ĐA THIẾT BỊ/);
 });
 
 test('movie modal is scrollable and sized for a phone viewport', () => {
@@ -180,7 +196,7 @@ test('native catalog falls back immediately instead of leaving the UI loading', 
   vm.runInContext(read('../public/js/home-curation.js'), sandbox);
   sandbox.Phim4KHome = sandbox.window.Phim4KHome;
   vm.runInContext(`${read('../public/js/api.js')}\nglobalThis.__api = API;`, sandbox);
-  assert.equal(sandbox.window.API.getVersion(), '3.4.34');
+  assert.equal(sandbox.window.API.getVersion(), '3.4.35');
   const home = await sandbox.__api.getHomeFeed();
   const detail = await sandbox.__api.getDetail(home.hero[0].slug);
   assert.ok(home.hero.length > 0);

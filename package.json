@@ -1,6 +1,6 @@
 {
   "name": "phim4k-app",
-  "version": "1.0.0",
+  "version": "3.4.35",
   "description": "Phim4K Streaming App with License Key Gate and Ad-Free HLS Player",
   "main": "server.js",
   "overrides": {

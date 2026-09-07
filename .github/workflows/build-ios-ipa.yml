@@ -1,10 +1,10 @@
-name: Build Phim4K unsigned IPA
+name: Build 4K unsigned IPA
 
 on:
   workflow_dispatch:
     inputs:
       api_base_url:
-        description: Public HTTPS origin of the Phim4K API (for example https://api.example.com)
+        description: Public HTTPS origin of the 4K API (for example https://api.example.com)
         required: true
         type: string
 
@@ -72,17 +72,20 @@ jobs:
           app_path="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/App.app"
           test -d "$app_path"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Info.plist")" = "com.phim4k.cinema"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$app_path/Info.plist")" = "4K"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_path/Info.plist")" = "3.4.35"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app_path/Info.plist")" = "35"
           package_dir="$RUNNER_TEMP/phim4k-ipa"
           mkdir -p "$package_dir/Payload"
           cp -R "$app_path" "$package_dir/Payload/App.app"
-          (cd "$package_dir" && /usr/bin/zip -qry "$GITHUB_WORKSPACE/Phim4K-Cinema-unsigned.ipa" Payload)
-          /usr/bin/unzip -t "$GITHUB_WORKSPACE/Phim4K-Cinema-unsigned.ipa"
-          python3 scripts/package_ios_web_update.py --audit-only "$GITHUB_WORKSPACE/Phim4K-Cinema-unsigned.ipa"
+          (cd "$package_dir" && /usr/bin/zip -qry "$GITHUB_WORKSPACE/4K-iOS-3.4.35-unsigned.ipa" Payload)
+          /usr/bin/unzip -t "$GITHUB_WORKSPACE/4K-iOS-3.4.35-unsigned.ipa"
+          python3 scripts/package_ios_web_update.py --audit-only "$GITHUB_WORKSPACE/4K-iOS-3.4.35-unsigned.ipa"
 
       - name: Upload unsigned IPA for ESign
         uses: actions/upload-artifact@v4
         with:
-          name: Phim4K-Cinema-unsigned-ipa
-          path: Phim4K-Cinema-unsigned.ipa
+          name: 4K-iOS-3.4.35-unsigned
+          path: 4K-iOS-3.4.35-unsigned.ipa
           if-no-files-found: error
           retention-days: 7

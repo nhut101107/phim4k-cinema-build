@@ -6,6 +6,9 @@ const { Readable } = require('node:stream');
 const { resolveAsset, allowedExternal } = require('./policy.cjs');
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'phim4k', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
+// Keep the existing storage location while the visible application name is
+// standardized to 4K, so upgrading does not erase local viewing progress.
+app.setPath('userData', path.join(app.getPath('appData'), 'Phim4K Cinema'));
 if (!app.requestSingleInstanceLock()) app.quit();
 else app.whenReady().then(async () => {
   const root = path.join(app.isPackaged ? app.getAppPath() : path.resolve(__dirname, '..'), 'public');
@@ -44,7 +47,7 @@ else app.whenReady().then(async () => {
   win.webContents.on('will-attach-webview', event => event.preventDefault());
   app.on('second-instance', () => { if (win.isMinimized()) win.restore(); win.show(); win.focus(); });
   let failed = false;
-  win.webContents.on('render-process-gone', () => { failed = true; if (!smoke) dialog.showErrorBox('Phim4K', 'Trình phát đã dừng. Hãy mở lại ứng dụng.'); });
+  win.webContents.on('render-process-gone', () => { failed = true; if (!smoke) dialog.showErrorBox('4K', 'Trình phát đã dừng. Hãy mở lại ứng dụng.'); });
   await win.loadURL('phim4k://app/index.html');
   if (smoke) {
     const report = await win.webContents.executeJavaScript(`({ title: document.title, keyGate: !!document.querySelector('#activationGate:not(.hidden)'), nodeExposed: typeof require !== 'undefined', platform: Phim4KPlatform.detect(navigator.userAgent), downloadFunction: typeof refreshPublicDownloads === 'function' })`);
@@ -81,5 +84,5 @@ else app.whenReady().then(async () => {
     fs.writeFileSync(path.join(app.getPath('userData'), 'qa', 'desktop-smoke.json'), JSON.stringify(report, null, 2));
     app.exit(report.pass ? 0 : 1);
   }
-}).catch(() => { if (!process.argv.includes('--smoke-test')) dialog.showErrorBox('Phim4K', 'Không thể khởi động ứng dụng. Vui lòng tải lại bản chính thức.'); app.exit(1); });
+}).catch(() => { if (!process.argv.includes('--smoke-test')) dialog.showErrorBox('4K', 'Không thể khởi động ứng dụng. Vui lòng tải lại bản chính thức.'); app.exit(1); });
 app.on('window-all-closed', () => app.quit());

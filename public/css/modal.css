@@ -1100,6 +1100,19 @@
   color: var(--text-muted);
 }
 
+.download-device-pill {
+  width: fit-content;
+  max-width: 100%;
+  margin: 12px auto 0;
+  padding: 7px 12px;
+  border: 1px solid rgba(52, 211, 153, 0.28);
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.08);
+  color: #a7f3d0;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .download-cards-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -1130,6 +1143,20 @@
   border-color: var(--accent-gold) !important;
   background: linear-gradient(180deg, rgba(245, 158, 11, 0.08), rgba(255, 255, 255, 0.02));
   box-shadow: 0 0 20px rgba(245, 158, 11, 0.15);
+}
+
+.download-card.current-release::after {
+  content: "MỚI NHẤT";
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.16);
+  color: #6ee7b7;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
 }
 
 .featured-tag {

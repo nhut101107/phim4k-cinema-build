@@ -8,18 +8,16 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>Phim 4K - Cinema Ultra HD & VIP Master</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://phim4k-license-api.phim4k-pwdbhdz.workers.dev; media-src 'self' blob: https://phim4k-license-api.phim4k-pwdbhdz.workers.dev; connect-src 'self' https://phim4k-license-api.phim4k-pwdbhdz.workers.dev; worker-src 'self' blob:">
+  <title>4K</title>
   
   <!-- HLS.js for streaming m3u8 -->
-  <script src="/vendor/hls.min.js?v=3.4.34"></script>
+  <script src="/vendor/hls.min.js?v=3.4.35"></script>
 
-  <link rel="stylesheet" href="/css/style.css?v=3.4.34">
-  <link rel="stylesheet" href="/css/modal.css?v=3.4.34">
-  <link rel="stylesheet" href="/css/player.css?v=3.4.34">
-  <link rel="stylesheet" href="/css/tv.css?v=3.4.34">
+  <link rel="stylesheet" href="/css/style.css?v=3.4.35">
+  <link rel="stylesheet" href="/css/modal.css?v=3.4.35">
+  <link rel="stylesheet" href="/css/player.css?v=3.4.35">
+  <link rel="stylesheet" href="/css/tv.css?v=3.4.35">
 </head>
 <body class="activation-locked">
 
@@ -29,9 +27,9 @@
   <div id="activationGate" class="gate-overlay">
     <div class="gate-card">
       <div class="gate-logo">
-        <img src="/media/phim4k-avatar.png?v=3.4.34" class="app-avatar" alt="Biểu tượng Phim 4K" width="88" height="88">
+        <img src="/media/phim4k-avatar.png?v=3.4.35" class="app-avatar" alt="Biểu tượng 4K" width="88" height="88">
         <div class="gate-brand-copy">
-          <div class="logo-badge">PHIM 4K</div>
+          <div class="logo-badge">4K</div>
           <span class="pro-tag">CINEMA 4K PRO</span>
         </div>
       </div>
@@ -117,8 +115,8 @@
     <header class="navbar" id="navbar">
       <div class="nav-left">
         <a href="#" class="brand-logo" onclick="switchCategory('home')">
-          <img src="/media/phim4k-avatar.png?v=3.4.34" class="brand-avatar" alt="" width="38" height="38">
-          <span class="logo-gradient">PHIM 4K</span>
+          <img src="/media/phim4k-avatar.png?v=3.4.35" class="brand-avatar" alt="Biểu tượng 4K" width="38" height="38">
+          <span class="logo-gradient">4K</span>
           <span class="badge-noads">CINEMA 4K</span>
         </a>
         <nav class="nav-links">
@@ -301,14 +299,14 @@
       <footer class="footer">
         <div class="footer-content">
           <div class="footer-brand">
-            <span class="logo-gradient">PHIM 4K</span>
+            <span class="logo-gradient">4K</span>
             <p>Nền tảng streaming điện ảnh chất lượng 4K chuẩn rạp, bảo vệ phụ đề trọn vẹn và tự động cập nhật liên tục.</p>
           </div>
           <div class="footer-meta">
             <p>Quyền truy cập: <span id="footerTeleBadge">-</span></p>
             <p>Key kích hoạt: <span id="footerKeyBadge">Đang hoạt động</span></p>
             <p>Hạn sử dụng: <span id="footerExpiryBadge">Đang kiểm tra</span></p>
-            <p>© 2026 Phim4K VIP Engine (by mnhut).</p>
+            <p>© 2026 4K VIP Engine (by mnhut).</p>
           </div>
         </div>
       </footer>
@@ -350,7 +348,8 @@
     <!-- ================= TAB 4: TÀI KHOẢN (ACCOUNT) ================= -->
     <div id="accountTabContent" class="tab-content hidden account-tab-view">
       <div class="account-card">
-        <div class="account-avatar">👑</div>
+        <img class="account-avatar" src="/media/phim4k-avatar.png?v=3.4.35" alt="Avatar mặc định 4K" width="76" height="76">
+        <div class="account-default-name">4K</div>
         <h2 id="accPlan">Chưa kích hoạt</h2>
         <div class="account-details-list">
           <div class="acc-detail-item">
@@ -367,7 +366,7 @@
           </div>
           <div class="acc-detail-item">
             <span>Phiên bản ứng dụng:</span>
-            <span id="accAppVersion">v3.4.34</span>
+            <span id="accAppVersion">v3.4.35</span>
           </div>
         </div>
 
@@ -648,7 +647,7 @@
           <button class="admin-close-action" type="button" onclick="hideAdminModal()">Đóng</button>
         </div>
         <p class="admin-desc">Quản lý toàn diện: Cấp phát key, Quản lý & Ban người dùng, Tường lửa chống DDoS và Nhật ký hoạt động.</p>
-        <p id="adminBuildVersion" class="admin-build-version">BẢN MỚI 3.4.34 · BẢO TRÌ + BĂNG PHIM MƯỢT</p>
+        <p id="adminBuildVersion" class="admin-build-version">4K 3.4.35 · BẢN ĐỒNG BỘ ĐA THIẾT BỊ</p>
         <div class="admin-quick-actions">
           <button type="button" id="adminReadLogsBtn" class="btn-primary" onclick="Admin.showTab('logs')">📜 Đọc log người dùng</button>
           <button type="button" id="adminGetUpdateBtn" class="btn-secondary" onclick="openDownloadModal()">📥 Tải phiên bản mới</button>
@@ -1063,7 +1062,7 @@
             </div>
 
             <div class="download-link-row">
-              <label>Android TV — link APK HTTPS<input id="adminDownloadTvInput" type="url" placeholder="https://.../Phim4K-TV.apk" /></label>
+              <label>Android TV — link APK HTTPS<input id="adminDownloadTvInput" type="url" placeholder="https://.../4K-TV.apk" /></label>
               <label>Phiên bản TV<input id="adminVersionTvInput" type="text" placeholder="3.4.18" /></label>
             </div>
             <div id="adminDownloadsAlert" class="gate-message hidden" style="margin-top: 12px;"></div>
@@ -1126,8 +1125,9 @@
       <button type="button" class="modal-close-btn" aria-label="Đóng cửa sổ tải ứng dụng" onclick="hideDownloadModal()">✕</button>
       <div class="download-modal-header">
         <div class="download-icon">📥</div>
-        <h2 id="downloadTitle">Tải phiên bản Phim4K</h2>
+        <h2 id="downloadTitle">Tải phiên bản 4K mới nhất</h2>
         <p class="download-sub">Chọn đúng phiên bản thiết bị của bạn để tải về và cập nhật ngay trong app:</p>
+        <p id="downloadDetectedDevice" class="download-device-pill">Đang nhận diện thiết bị…</p>
         <p id="downloadReleaseStatus" class="download-release-status" role="status" aria-live="polite">Đang lấy danh sách bản phát hành…</p>
         <button type="button" id="downloadRetryBtn" class="btn-secondary hidden" onclick="refreshPublicDownloads()">Thử tải lại danh sách</button>
 
@@ -1173,13 +1173,12 @@
             Tải File .EXE
           </a>
         </div>
-      </div>
-
-      <div class="download-card">
-        <div class="card-os-icon">📺</div><h3>Android TV / Google TV</h3>
-        <p>Android 7 trở lên · Điều khiển bằng remote · Màn hình ngang.</p>
-        <span class="card-meta" id="metaTvVer">Chưa phát hành</span>
-        <a id="btnDownloadTv" class="btn-download-action btn-apk" aria-disabled="true">Chưa phát hành</a>
+        <div class="download-card">
+          <div class="card-os-icon">📺</div><h3>Android TV / Google TV</h3>
+          <p>Android 7 trở lên · Điều khiển bằng remote · Màn hình ngang.</p>
+          <span class="card-meta" id="metaTvVer">Chưa phát hành</span>
+          <a id="btnDownloadTv" class="btn-download-action btn-apk" aria-disabled="true">Chưa phát hành</a>
+        </div>
       </div>
       <div class="download-guide-box">
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
@@ -1293,21 +1292,21 @@
   </div>
 
   <!-- Scripts -->
-  <script src="/js/mobile-config.js?v=3.4.34"></script>
-  <script src="/js/runtime-config.js?v=3.4.34"></script>
-  <script src="/js/catalog-fallback.js?v=3.4.34"></script>
-  <script src="/js/home-curation.js?v=3.4.34"></script>
-  <script src="/js/api.js?v=3.4.34"></script>
-  <script src="/js/platform.js?v=3.4.34"></script>
-  <script src="/js/native-downloads.js?v=3.4.34"></script>
-  <script src="/js/auth.js?v=3.4.34"></script>
-  <script src="/js/admin.js?v=3.4.34"></script>
-  <script src="/js/player-core.js?v=3.4.34"></script>
-  <script src="/js/audio-enhancer.js?v=3.4.34"></script>
-  <script src="/js/player.js?v=3.4.34"></script>
-  <script src="/js/coverflow.js?v=3.4.34"></script>
-  <script src="/js/app.js?v=3.4.34"></script>
-  <script src="/js/tv.js?v=3.4.34"></script>
-  <script src="/js/diagnostics.js?v=3.4.34"></script>
+  <script src="/js/mobile-config.js?v=3.4.35"></script>
+  <script src="/js/runtime-config.js?v=3.4.35"></script>
+  <script src="/js/catalog-fallback.js?v=3.4.35"></script>
+  <script src="/js/home-curation.js?v=3.4.35"></script>
+  <script src="/js/api.js?v=3.4.35"></script>
+  <script src="/js/platform.js?v=3.4.35"></script>
+  <script src="/js/native-downloads.js?v=3.4.35"></script>
+  <script src="/js/auth.js?v=3.4.35"></script>
+  <script src="/js/admin.js?v=3.4.35"></script>
+  <script src="/js/player-core.js?v=3.4.35"></script>
+  <script src="/js/audio-enhancer.js?v=3.4.35"></script>
+  <script src="/js/player.js?v=3.4.35"></script>
+  <script src="/js/coverflow.js?v=3.4.35"></script>
+  <script src="/js/app.js?v=3.4.35"></script>
+  <script src="/js/tv.js?v=3.4.35"></script>
+  <script src="/js/diagnostics.js?v=3.4.35"></script>
 </body>
 </html>

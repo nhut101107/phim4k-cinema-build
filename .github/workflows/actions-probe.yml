@@ -8,7 +8,7 @@ on:
         required: false
         type: string
       auth_status_url:
-        description: Optional harmless license-status URL expected to return KEY_NOT_FOUND
+        description: Optional auth status endpoint without credentials in its URL
         required: false
         type: string
 
@@ -34,6 +34,9 @@ jobs:
         run: |
           set -euo pipefail
           response_file="$(mktemp)"
-          status="$(curl --silent --show-error --max-time 20 --output "$response_file" --write-out '%{http_code}' "$AUTH_STATUS_URL")"
+          status="$(curl --silent --show-error --max-time 20 --output "$response_file" --write-out '%{http_code}' \
+            --header 'x-license-key: P4K-ACTIONS-PROBE' \
+            --header 'x-device-id: github-actions-probe' \
+            "$AUTH_STATUS_URL")"
           test "$status" = "404"
           grep -q '"code":"KEY_NOT_FOUND"' "$response_file"

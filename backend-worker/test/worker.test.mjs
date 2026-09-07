@@ -32,7 +32,9 @@ test("health reports an unconfigured database without exposing settings", async 
 });
 
 test("auth fails closed when the D1 binding is absent", async () => {
-  const response = await worker.fetch(new Request("https://example.workers.dev/api/auth/status?key=P4K-TEST&telegramId=1&deviceId=2"), {});
+  const response = await worker.fetch(new Request("https://example.workers.dev/api/auth/status", {
+    headers: { "x-license-key": "P4K-TEST", "x-telegram-id": "1", "x-device-id": "2" },
+  }), {});
   assert.equal(response.status, 503);
   const body = await response.json();
   assert.equal(body.code, "DATABASE_NOT_CONFIGURED");
@@ -44,6 +46,19 @@ test("JSON responses include CORS and no-store headers", async () => {
   assert.equal(response.headers.get("access-control-allow-origin"), "*");
   assert.equal(response.headers.get("cache-control"), "no-store");
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+  assert.equal(response.headers.get("x-frame-options"), "DENY");
+  assert.match(response.headers.get("strict-transport-security"), /max-age=31536000/);
+});
+
+test("license credentials in query strings are ignored", async () => {
+  const env = freeViewerEnv();
+  const status = await worker.fetch(new Request("https://example.workers.dev/api/auth/status?key=P4K-LEAK&telegramId=1&deviceId=leaked"), env);
+  assert.equal(status.status, 400);
+  assert.equal((await status.json()).code, "MISSING_LICENSE_DATA");
+
+  const deviceStatus = await worker.fetch(new Request("https://example.workers.dev/api/auth/device-status?key=P4K-LEAK&deviceId=leaked"), env);
+  assert.equal(deviceStatus.status, 400);
+  assert.equal((await deviceStatus.json()).code, "MISSING_DEVICE_LICENSE_DATA");
 });
 
 test("movie metadata is authenticated and relayed only through the configured server origin", async () => {
@@ -296,8 +311,8 @@ test("device-only access stays pending until the verified admin approves that ex
   assert.equal(request.status, 200);
   assert.equal((await request.json()).status, "pending");
 
-  const pending = await worker.fetch(new Request("https://example.workers.dev/api/auth/device-status?key=P4K-DEVICE-TEST&deviceId=device-no-telegram", {
-    headers: { "cf-connecting-ip": "203.0.113.32" },
+  const pending = await worker.fetch(new Request("https://example.workers.dev/api/auth/device-status", {
+    headers: { "cf-connecting-ip": "203.0.113.32", "x-license-key": "P4K-DEVICE-TEST", "x-device-id": "device-no-telegram" },
   }), env);
   assert.equal((await pending.json()).active, false);
 
@@ -314,8 +329,8 @@ test("device-only access stays pending until the verified admin approves that ex
   assert.equal(approved.status, 200);
   assert.equal(state.deviceId, "device-no-telegram");
 
-  const active = await worker.fetch(new Request("https://example.workers.dev/api/auth/device-status?key=P4K-DEVICE-TEST&deviceId=device-no-telegram", {
-    headers: { "cf-connecting-ip": "203.0.113.34", "x-app-version": "3.4.8" },
+  const active = await worker.fetch(new Request("https://example.workers.dev/api/auth/device-status", {
+    headers: { "cf-connecting-ip": "203.0.113.34", "x-app-version": "3.4.8", "x-license-key": "P4K-DEVICE-TEST", "x-device-id": "device-no-telegram" },
   }), env);
   const activeBody = await active.json();
   assert.equal(activeBody.active, true);

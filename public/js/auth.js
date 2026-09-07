@@ -1,14 +1,8 @@
 // License Key & Telegram ID Authentication, Device Binding & Real-time Expiry Watcher
 
-// Cookie helpers for persistent 1-time login across browser reboots
-function setPersistentCookie(name, value, days = 365) {
-  try {
-    const d = new Date();
-    d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000));
-    document.cookie = `${name}=${encodeURIComponent(value)};expires=${d.toUTCString()};path=/;SameSite=Lax`;
-  } catch (e) {}
-}
-
+// Read legacy cookies once so existing installs keep their session, then
+// remove them. Credentials remain in this app's isolated local storage and
+// are no longer copied into HTTP cookie headers.
 function getPersistentCookie(name) {
   try {
     const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
@@ -40,9 +34,9 @@ const Auth = {
     let id = localStorage.getItem('phim4k_device_id') || getPersistentCookie('phim4k_device_id');
     if (!id) {
       id = 'dev_' + crypto.randomUUID();
-      localStorage.setItem('phim4k_device_id', id);
-      setPersistentCookie('phim4k_device_id', id, 365);
     }
+    localStorage.setItem('phim4k_device_id', id);
+    deletePersistentCookie('phim4k_device_id');
     return id;
   },
 
@@ -51,9 +45,14 @@ const Auth = {
   },
 
   async init() {
-    // Persistent login: Read from localStorage or fallback to cookie
+    // Migrate legacy cookie-backed sessions without exposing credentials in
+    // future HTTP cookie headers.
     const savedKey = localStorage.getItem('phim4k_key') || getPersistentCookie('phim4k_key');
     const savedTeleId = localStorage.getItem('phim4k_telegram_id') || getPersistentCookie('phim4k_telegram_id');
+    if (savedKey) localStorage.setItem('phim4k_key', savedKey);
+    if (savedTeleId) localStorage.setItem('phim4k_telegram_id', savedTeleId);
+    deletePersistentCookie('phim4k_key');
+    deletePersistentCookie('phim4k_telegram_id');
     const deviceOnly = localStorage.getItem('phim4k_device_only') === '1';
     const deviceId = this.getDeviceId();
 
@@ -235,13 +234,12 @@ const Auth = {
       deviceRequestButton.textContent = 'Báo Admin duyệt thiết bị này';
     }
     
-    // Save to both localStorage and persistent cookie (365 days)
+    // Capacitor/Electron isolate localStorage per app identifier. Avoid a
+    // duplicate cookie copy because cookies are attached to HTTP requests.
     localStorage.setItem('phim4k_key', keyData.key || '');
-    setPersistentCookie('phim4k_key', keyData.key || '', 365);
 
     if (keyData.telegramId) {
       localStorage.setItem('phim4k_telegram_id', keyData.telegramId);
-      setPersistentCookie('phim4k_telegram_id', keyData.telegramId, 365);
     }
     if (keyData.deviceOnly || keyData.keyOnly || keyData.freeAccess) {
       if (keyData.deviceOnly) localStorage.setItem('phim4k_device_only', '1');
@@ -313,8 +311,8 @@ const Auth = {
   startHeartbeat() {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     this.heartbeatTimer = setInterval(async () => {
-      const key = localStorage.getItem('phim4k_key') || getPersistentCookie('phim4k_key');
-      const teleId = localStorage.getItem('phim4k_telegram_id') || getPersistentCookie('phim4k_telegram_id');
+      const key = localStorage.getItem('phim4k_key');
+      const teleId = localStorage.getItem('phim4k_telegram_id');
       const deviceOnly = localStorage.getItem('phim4k_device_only') === '1';
       if (!key && !this.activeKeyData?.freeAccess) return;
 
@@ -653,16 +651,19 @@ async function refreshPublicDownloads() {
   if (downloadRequest) return downloadRequest;
   const ids = { android: ['Apk', 'APK'], ios: ['Ipa', 'IPA'], windows: ['Exe', 'EXE'], android_tv: ['Tv', 'APK TV'] };
   const platform = Phim4KPlatform.detect(navigator.userAgent, window.PHIM4K_PLATFORM);
+  const detected = document.getElementById('downloadDetectedDevice');
+  if (detected) detected.textContent = `Thiết bị hiện tại: ${Phim4KPlatform.labels[platform] || 'Trình duyệt web'}`;
   const render = (data, failed = false) => {
     for (const [key, [id, format]] of Object.entries(ids)) {
       const entry = Phim4KPlatform.release(data, key);
+      const releaseState = Phim4KPlatform.releaseState(entry, API.getVersion());
       for (const prefix of ['btnDownload', 'forceBtn']) {
         const btn = document.getElementById(prefix + id);
         if (!btn) continue;
         btn.removeAttribute('download');
         btn.removeAttribute('href');
         btn.setAttribute('aria-disabled', entry.url ? 'false' : 'true');
-        const older = key === platform && Phim4KPlatform.releaseState(entry, API.getVersion()) === 'older';
+        const older = key === platform && releaseState === 'older';
         btn.textContent = entry.url ? `Tải ${format}${older ? ' · Bản công khai cũ hơn' : key === platform ? ' · Phù hợp thiết bị này' : ''}` : (failed ? 'Chưa tải được link · Thử lại' : 'Chưa phát hành');
         btn.onclick = null;
         if (entry.url) {
@@ -671,10 +672,14 @@ async function refreshPublicDownloads() {
             btn.onclick = event => { event.preventDefault(); void Phim4KNativeDownloads.open(btn, entry.url); };
           }
         }
-        btn.closest('.download-card')?.classList.toggle('recommended-download', key === platform);
+        const card = btn.closest('.download-card');
+        card?.classList.toggle('recommended-download', key === platform);
+        card?.classList.toggle('current-release', releaseState === 'current');
       }
       const meta = document.getElementById(`meta${id}Ver`);
-      if (meta) meta.textContent = entry.url ? `v${entry.version || '?'} · ${Phim4KPlatform.labels[key]}` : 'Chỉ hiển thị bản đã phát hành';
+      if (meta) meta.textContent = entry.url
+        ? `v${entry.version || '?'} · ${Phim4KPlatform.labels[key]}${releaseState === 'current' ? ' · Mới nhất' : ''}`
+        : 'Chỉ hiển thị bản đã phát hành';
     }
   };
   render({});

@@ -24,6 +24,7 @@ app.use((req, res, next) => {
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'; frame-ancestors 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://phim4k-license-api.phim4k-pwdbhdz.workers.dev; media-src 'self' blob: https://phim4k-license-api.phim4k-pwdbhdz.workers.dev; connect-src 'self' https://phim4k-license-api.phim4k-pwdbhdz.workers.dev; worker-src 'self' blob:");
   next();
 });
 

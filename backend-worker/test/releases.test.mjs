@@ -15,7 +15,7 @@ function fixture() {
   return { db, rows, writes: () => writes };
 }
 test('release URLs reject non-HTTPS and embedded credentials', () => {
-  for (const bad of ['https://', 'http://example.com', 'javascript:alert(1)', 'https://u:p@example.com']) assert.equal(validDownloadUrl(bad), false);
+  for (const bad of ['https://', 'http://example.com', 'javascript:alert(1)', 'https://u:p@example.com', 'https://localhost/app.apk', 'https://127.0.0.1/app.apk', 'https://files.internal/app.apk']) assert.equal(validDownloadUrl(bad), false);
   assert.equal(validDownloadUrl('https://github.com/org/repo/releases/download/v1/a.apk'), true);
 });
 test('downloads admin route is authorized, atomic and compatible with clients', async () => {

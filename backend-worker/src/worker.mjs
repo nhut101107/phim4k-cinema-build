@@ -4,8 +4,10 @@ const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store",
   "x-content-type-options": "nosniff",
+  "x-frame-options": "DENY",
   "referrer-policy": "no-referrer",
   "permissions-policy": "geolocation=(), microphone=(), camera=()",
+  "strict-transport-security": "max-age=31536000; includeSubDomains",
 };
 
 const CORS_HEADERS = {
@@ -1055,9 +1057,10 @@ async function requestDeviceAccess(request, env) {
 }
 
 async function deviceAccessStatus(request, env) {
-  const url = new URL(request.url);
-  const key = requestKey(request) || normalizeKey(url.searchParams.get("key"));
-  const deviceId = normalizeId(request.headers.get('x-device-id')) || normalizeId(url.searchParams.get("deviceId"));
+  // Authentication material is header-only. Query parameters are commonly
+  // retained in browser history, CDN logs and support screenshots.
+  const key = requestKey(request);
+  const deviceId = normalizeId(request.headers.get('x-device-id'));
   if (!validKey(key) || !deviceId) return textError("Thiếu key hoặc mã thiết bị.", 400, "MISSING_DEVICE_LICENSE_DATA");
   const maintenance = await getMaintenance(env.DB);
   if (maintenance.active) return maintenanceError(maintenance);
@@ -1515,8 +1518,7 @@ async function handleDownloads(request, env) {
 }
 
 export function validDownloadUrl(value) {
-  try { const url = new URL(value); return url.protocol === 'https:' && !url.username && !url.password && value.length <= 2048; }
-  catch (_) { return false; }
+  return String(value || '').length <= 2048 && Boolean(safePublicHttpsUrl(value));
 }
 
 function catalogPage(value) {
@@ -1982,7 +1984,7 @@ export default {
         return await activationStatus({ db: env.DB, key: normalizeKey(body.key), telegramId: normalizeId(body.telegramId), deviceId: normalizeId(body.deviceId), request, env, activation: true });
       }
       if (request.method === "GET" && pathname === "/api/auth/status") {
-        return await activationStatus({ db: env.DB, key: requestKey(request) || normalizeKey(url.searchParams.get("key")), telegramId: requestTelegram(request) || normalizeId(url.searchParams.get("telegramId")), deviceId: normalizeId(request.headers.get('x-device-id')) || normalizeId(url.searchParams.get("deviceId")), request, env, activation: false });
+        return await activationStatus({ db: env.DB, key: requestKey(request), telegramId: requestTelegram(request), deviceId: normalizeId(request.headers.get('x-device-id')), request, env, activation: false });
       }
       if (request.method === "POST" && pathname === "/api/auth/request-device-access") return await requestDeviceAccess(request, env);
       if (request.method === "GET" && pathname === "/api/auth/device-status") return await deviceAccessStatus(request, env);

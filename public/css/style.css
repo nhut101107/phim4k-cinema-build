@@ -1917,8 +1917,22 @@ body:not(.activation-locked) {
 }
 
 .account-avatar {
-  font-size: 48px;
-  margin-bottom: 12px;
+  width: 76px;
+  height: 76px;
+  display: block;
+  object-fit: cover;
+  margin: 0 auto 8px;
+  border-radius: 22px;
+  border: 1px solid rgba(245, 158, 11, 0.42);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.35), 0 0 24px rgba(239, 68, 68, 0.16);
+}
+
+.account-default-name {
+  margin-bottom: 5px;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
 }
 
 .account-card h2 {
