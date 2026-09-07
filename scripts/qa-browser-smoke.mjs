@@ -532,12 +532,17 @@ try {
   if (!subtitleDefault.shown || !subtitleDefault.hidden || !subtitleDefault.legacyCropIgnored) throw new Error('Subtitle-safe fullscreen default regressed: '+JSON.stringify(subtitleDefault));
   const safeShot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
   writeFileSync(resolve(projectRoot,'data/qa/fullscreen-subtitle-safe.png'),Buffer.from(safeShot.data,'base64'));
-  // Also retain coverage for a deliberate opt-in to crop, never the default.
+  // The subtitle-safe mode is locked; old builds must not re-enable cropping.
   await evaluate('Player.toggleAspectRatio()');
   await delay(250);
   const playerInteractionState = await evaluate(`(() => {
-    const v = Player.video, r = v.getBoundingClientRect();
-    return { fill: getComputedStyle(v).objectFit === 'cover', width: r.width, height: r.height, viewportWidth: innerWidth, viewportHeight: innerHeight, classes:Player.wrapper.className };
+    const v = Player.video, r = v.getBoundingClientRect(), m=Player.modal.getBoundingClientRect(), vv=window.visualViewport;
+    return {
+      subtitleLocked: Player.aspectMode==='contain' && getComputedStyle(v).objectFit==='contain' && !Player.wrapper.classList.contains('aspect-cover'),
+      videoInsideViewport: r.top>=-1 && r.left>=-1 && r.right<=(vv?.width||innerWidth)+1 && r.bottom<=(vv?.height||innerHeight)+1,
+      modalInsideViewport: m.left>=(vv?.offsetLeft||0)-1 && m.top>=(vv?.offsetTop||0)-1 && m.right<=(vv?.offsetLeft||0)+(vv?.width||innerWidth)+1 && m.bottom<=(vv?.offsetTop||0)+(vv?.height||innerHeight)+1,
+      width: r.width, height: r.height, viewportWidth: innerWidth, viewportHeight: innerHeight, classes:Player.wrapper.className
+    };
   })()`);
   playerInteractionState.subtitleDefault = subtitleDefault;
   await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 180, y: 150 }] });
@@ -596,9 +601,9 @@ try {
   playerInteractionState.subtitleClear = await evaluate("Player.video.getBoundingClientRect().bottom <= document.getElementById('playerControls').getBoundingClientRect().top - 8");
   if (!playerInteractionState.subtitleClear) throw new Error('Fit mode subtitle strip overlaps controls');
   await evaluate("Player.toggleAspectRatio(); Player.resetInactivityTimer()");
-  const fillScreenshot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
-  writeFileSync(resolve(projectRoot, 'data/qa/phim4k-player-fill.png'), Buffer.from(fillScreenshot.data, 'base64'));
-  if (!playerInteractionState.fill || Math.abs(playerInteractionState.width - playerInteractionState.viewportWidth) > 1 || Math.abs(playerInteractionState.height - playerInteractionState.viewportHeight) > 1 || !playerInteractionState.outsideDoesNotPause || !playerInteractionState.centerPauses || !playerInteractionState.fitPreferenceSurvivesResize) throw new Error('Player interaction/fullscreen regression: ' + JSON.stringify(playerInteractionState));
+  const fitScreenshot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+  writeFileSync(resolve(projectRoot, 'data/qa/phim4k-player-fit.png'), Buffer.from(fitScreenshot.data, 'base64'));
+  if (!playerInteractionState.subtitleLocked || !playerInteractionState.videoInsideViewport || !playerInteractionState.modalInsideViewport || !playerInteractionState.outsideDoesNotPause || !playerInteractionState.centerPauses || !playerInteractionState.fitPreferenceSurvivesResize) throw new Error('Player interaction/fullscreen regression: ' + JSON.stringify(playerInteractionState));
   releasingFixture = true;
   await evaluate("Player.close(); Player.video.loop = false; localStorage.removeItem('phim4k-player-fit-v2')");
   await evaluate("Player.video.muted=true; Player.open({name:'QA reload',slug:'qa-reload'}, {name:'QA',stream_ref:{movie:'qa-reload',server:0,episode:0}})");

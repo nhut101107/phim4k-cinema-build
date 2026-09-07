@@ -70,7 +70,13 @@ const Player = {
       if (event.target.closest('button, input, .player-controls')) this.resetInactivityTimer();
     }, { passive: true });
     window.addEventListener('resize', () => {
-      if (!this.modal.classList.contains('hidden')) this.applyPreferredAspect();
+      if (!this.modal.classList.contains('hidden')) {
+        this.syncFullscreenViewport();
+        this.applyPreferredAspect();
+      }
+    });
+    window.visualViewport?.addEventListener('resize', () => {
+      if (!this.modal.classList.contains('hidden')) this.syncFullscreenViewport();
     });
     const progressContainer = document.getElementById('progressContainer');
     if (progressContainer) {
@@ -318,37 +324,58 @@ const Player = {
     if (button) button.classList.toggle('hidden', !(this.episodesList.length > 1 && this.currentEpIndex < this.episodesList.length - 1));
   },
 
-  setAspectRatio(mode, { silent = false } = {}) {
-    this.aspectMode = mode === 'cover' ? 'cover' : 'contain';
-    const fitMode = this.aspectMode === 'contain';
-    this.wrapper.classList.toggle('aspect-contain', fitMode);
-    this.wrapper.classList.toggle('aspect-cover', !fitMode);
+  setAspectRatio(_mode, { silent = false } = {}) {
+    // The upstream Vietsub is burned into the picture on a number of titles.
+    // Cropping even a few pixels therefore removes dialogue permanently. Keep
+    // one subtitle-safe mode on every device instead of remembering a crop.
+    this.aspectMode = 'contain';
+    this.wrapper.classList.add('aspect-contain');
+    this.wrapper.classList.remove('aspect-cover');
     window.requestAnimationFrame?.(() => this.updateSubtitleSafeArea());
     const button = document.getElementById('btnAspectFit');
     if (button) {
-      button.textContent = fitMode ? 'Vừa khung' : 'Lấp đầy';
-      button.title = fitMode ? 'Giữ toàn bộ hình và phụ đề; có thể có viền đen' : 'Lấp đầy không kéo méo; có thể cắt mép hình/phụ đề';
-      button.setAttribute('aria-pressed', String(!fitMode));
+      button.textContent = 'Giữ trọn hình';
+      button.title = 'Luôn giữ toàn bộ hình và phụ đề gốc';
+      button.setAttribute('aria-pressed', 'true');
     }
-    if (!silent) this.showAlert(fitMode ? 'Chế độ Giữ Sub đang bật.' : 'Chế độ Lấp đầy có thể cắt mép phụ đề.');
+    if (!silent) this.showAlert('Đang giữ trọn khung hình để không mất phụ đề.');
   },
 
   applyPreferredAspect() {
-    let preferred;
-    // Retire the old crop-by-default preference. Fullscreen must preserve
-    // burned-in captions, which cannot be repositioned like subtitle tracks.
-    try { preferred = localStorage.getItem('phim4k-player-fit-v2'); } catch (_) {}
-    this.setAspectRatio(preferred === 'cover' ? 'cover' : 'contain', { silent: true });
+    // Remove preferences written by older builds so an old "fill" choice can
+    // never crop burned-in subtitles after an update.
+    try {
+      localStorage.removeItem('phim4k-player-fit');
+      localStorage.removeItem('phim4k-player-fit-v2');
+    } catch (_) {}
+    this.setAspectRatio('contain', { silent: true });
   },
 
   toggleAspectRatio() {
-    this.setAspectRatio(this.aspectMode === 'contain' ? 'cover' : 'contain');
-    try { localStorage.setItem('phim4k-player-fit-v2', this.aspectMode); } catch (_) {}
+    this.setAspectRatio('contain');
   },
 
   updateSubtitleSafeArea() {
     const controls = document.getElementById('playerControls');
     if (controls && this.wrapper) this.wrapper.style.setProperty('--subtitle-safe-area', `${Math.ceil(controls.getBoundingClientRect().height) + 12}px`);
+  },
+
+  syncFullscreenViewport() {
+    if (!this.modal) return;
+    if (!this.isCinemaFullscreen) {
+      for (const property of ['--player-viewport-width', '--player-viewport-height', '--player-viewport-left', '--player-viewport-top']) {
+        this.modal.style.removeProperty(property);
+      }
+      return;
+    }
+    const viewport = window.visualViewport;
+    const width = Math.max(1, Math.round(viewport?.width || document.documentElement?.clientWidth || window.innerWidth));
+    const height = Math.max(1, Math.round(viewport?.height || document.documentElement?.clientHeight || window.innerHeight));
+    this.modal.style.setProperty('--player-viewport-width', `${width}px`);
+    this.modal.style.setProperty('--player-viewport-height', `${height}px`);
+    this.modal.style.setProperty('--player-viewport-left', `${Math.round(viewport?.offsetLeft || 0)}px`);
+    this.modal.style.setProperty('--player-viewport-top', `${Math.round(viewport?.offsetTop || 0)}px`);
+    window.requestAnimationFrame?.(() => this.updateSubtitleSafeArea());
   },
 
   renderInPlayerServerMenu() {
@@ -661,6 +688,11 @@ const Player = {
       console.warn('Unable to lock fullscreen orientation:', error);
       this.showAlert('Không thể khóa xoay trên thiết bị này; vẫn mở khung phát toàn màn.');
     }
+    this.syncFullscreenViewport();
+    // WKWebView reports the portrait visual viewport briefly while the native
+    // orientation lock is settling. Re-read it after both following paints.
+    window.setTimeout(() => this.syncFullscreenViewport(), 80);
+    window.setTimeout(() => this.syncFullscreenViewport(), 280);
     this.resetInactivityTimer();
   },
 
@@ -686,6 +718,7 @@ const Player = {
     this.wrapper?.classList.toggle('cinema-fullscreen', enabled);
     this.modal?.classList.toggle('cinema-fullscreen', enabled);
     document.body.classList.toggle('player-cinema-fullscreen', enabled);
+    this.syncFullscreenViewport();
     this.applyPreferredAspect();
     const button = document.getElementById('btnCinemaFullscreen');
     if (button) {

@@ -76,28 +76,22 @@
   margin-bottom: var(--subtitle-safe-area);
 }
 
-.cinema-player-wrapper.aspect-cover .video-element {
-  object-fit: cover;
-  height: 100%;
-  margin-bottom: 0;
-}
-
 /* Only controls respect safe-area insets; the picture reaches every edge. */
 .player-modal-overlay.cinema-fullscreen {
-  inset: 0;
-  width: 100vw;
-  height: 100dvh;
+  inset: auto;
+  top: var(--player-viewport-top, 0);
+  left: var(--player-viewport-left, 0);
+  width: var(--player-viewport-width, 100%);
+  height: var(--player-viewport-height, 100%);
   padding: 0;
   border-radius: 0;
 }
-.cinema-player-wrapper.cinema-fullscreen.aspect-cover .video-element {
+.cinema-player-wrapper.cinema-fullscreen {
   position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  object-fit: cover;
-  object-position: center;
+  width: auto;
+  height: auto;
+  min-height: 0;
 }
 .player-center-toggle {
   position: absolute;

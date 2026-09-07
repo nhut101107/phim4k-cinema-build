@@ -6,7 +6,7 @@ function fixture() {
   const classes = new Set();
   const storage = new Map();
   const wrapper = { classList: { contains: c => classes.has(c), add: c => classes.add(c), remove: c => classes.delete(c), toggle: (c, on) => on ? classes.add(c) : classes.delete(c) } };
-  const ctx = { document: { readyState: 'loading', addEventListener() {}, getElementById: () => null }, window: { matchMedia: () => ({ matches: true }), setTimeout: () => 1 }, localStorage: { getItem: k => storage.get(k), setItem: (k,v) => storage.set(k,v) }, clearTimeout() {} };
+  const ctx = { document: { readyState: 'loading', addEventListener() {}, getElementById: () => null }, window: { matchMedia: () => ({ matches: true }), setTimeout: () => 1 }, localStorage: { getItem: k => storage.get(k), setItem: (k,v) => storage.set(k,v), removeItem: k => storage.delete(k) }, clearTimeout() {} };
   vm.runInNewContext(fs.readFileSync('public/js/player.js','utf8') + '\nglobalThis.subject=Player;',ctx);
   const p = ctx.subject; p.wrapper = wrapper; p.modal = { classList: { contains: () => false } }; p.video = { paused: false, pause() { this.paused = true; } };
   return p;
@@ -26,10 +26,10 @@ test('double taps seek only on the same side within the gesture window', () => {
   assert.equal(doubleTapSeek({x:.8,time:100},{x:.8,time:421}),0);
   assert.equal(doubleTapSeek(null,{x:.8,time:250}),0);
 });
-test('fullscreen preserves subtitles by default; cropping requires explicit choice', () => {
-  const p = fixture(); p.showAlert = () => {}; p.applyPreferredAspect(); assert.equal(p.aspectMode,'contain');
+test('fullscreen preserves subtitles even after a legacy crop choice', () => {
+  const p = fixture(); p.showAlert = () => {};
+  p.applyPreferredAspect(); assert.equal(p.aspectMode,'contain');
   p.isCinemaFullscreen=true; p.applyPreferredAspect(); assert.equal(p.aspectMode,'contain');
-  p.toggleAspectRatio(); p.applyPreferredAspect(); assert.equal(p.aspectMode,'cover');
   p.toggleAspectRatio(); p.applyPreferredAspect(); assert.equal(p.aspectMode,'contain');
 });
 test('center and bottom controls explicitly toggle playback', () => {

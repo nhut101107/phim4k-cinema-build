@@ -8,10 +8,19 @@ const player = fs.readFileSync(path.join(root, 'public/js/player.js'), 'utf8');
 const index = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'public/css/player.css'), 'utf8');
 
-test('legacy crop preference is retired and fullscreen defaults to contain', () => {
-  assert.match(player, /getItem\('phim4k-player-fit-v2'\)/);
-  assert.doesNotMatch(player, /getItem\('phim4k-player-fit'\)/);
-  assert.match(player, /preferred === 'cover' \? 'cover' : 'contain'/);
+test('all legacy crop preferences are retired and fullscreen is locked to contain', () => {
+  assert.match(player, /removeItem\('phim4k-player-fit'\)/);
+  assert.match(player, /removeItem\('phim4k-player-fit-v2'\)/);
+  assert.doesNotMatch(player, /getItem\('phim4k-player-fit/);
+  assert.match(player, /this\.aspectMode = 'contain'/);
+  assert.doesNotMatch(css, /cinema-fullscreen\.aspect-cover/);
+});
+
+test('fullscreen follows the live visual viewport after native rotation', () => {
+  assert.match(player, /window\.visualViewport\?\.addEventListener\('resize'/);
+  assert.match(player, /syncFullscreenViewport\(\)/);
+  assert.match(css, /width: var\(--player-viewport-width, 100%\)/);
+  assert.match(css, /height: var\(--player-viewport-height, 100%\)/);
 });
 
 test('admin owns a block scroll layout so horizontal tabs cannot flex-shrink away', () => {
