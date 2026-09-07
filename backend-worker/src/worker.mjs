@@ -1493,9 +1493,9 @@ function normalizedCatalogItems(data, env) {
 
 function homeCatalogPaths(year) {
   return [
-    ...[1, 2, 3, 4, 5, 6, 7, 8].map((page) => `/danh-sach/phim-moi-cap-nhat?page=${page}`),
+    ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((page) => `/danh-sach/phim-moi-cap-nhat?page=${page}`),
     ...['phim-chieu-rap', 'phim-le', 'phim-bo', 'hoat-hinh', 'tv-shows']
-      .flatMap((category) => [1, 2].map((page) =>
+      .flatMap((category) => [1, 2, 3].map((page) =>
         `/v1/api/danh-sach/${category}?page=${page}&limit=64&year=${year}&sort_field=modified.time&sort_type=desc`)),
   ];
 }

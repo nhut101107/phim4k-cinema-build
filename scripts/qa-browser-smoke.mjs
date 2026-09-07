@@ -303,7 +303,7 @@ try {
   // status checks to production while exercising the live public catalogue.
   await evaluate("window.Auth.startHeartbeat = () => { clearInterval(window.Auth.heartbeatTimer); window.Auth.heartbeatTimer=null; }");
   const accessFlow = await evaluate(`(async()=>{
-    const activate=API.activate, status=API.checkStatus;
+    const activate=API.activate, status=API.checkStatus, accessPolicy=Auth.getAccessPolicy;
     const hiddenTelegram=!document.getElementById('adminLoginFields').open && !document.getElementById('telegramInput').required;
     let submitted;
     API.activate=async(key,telegram,device)=>{submitted={telegram,device}; return {success:true,active:true,keyOnly:true,isAdmin:false,plan:'TEST'};};
@@ -313,10 +313,11 @@ try {
     renderAccountTab();
     const keyOnly=Auth.activeKeyData.keyOnly && submitted.telegram==='' && document.getElementById('accPlan').textContent==='TEST';
     Auth.clearStoredSession();
+    Auth.getAccessPolicy=async()=>({freeAccess:true});
     API.checkStatus=async()=>({active:true,freeAccess:true,isAdmin:false,plan:'MIỄN KEY'});
     await Auth.init();
     const guest=Auth.activeKeyData.freeAccess && document.getElementById('activationGate').classList.contains('hidden') && document.getElementById('accAdminBtn').classList.contains('hidden');
-    Auth.clearStoredSession(); API.activate=activate; API.checkStatus=status; Auth.triggerLock();
+    Auth.clearStoredSession(); API.activate=activate; API.checkStatus=status; Auth.getAccessPolicy=accessPolicy; Auth.triggerLock();
     return {hiddenTelegram,keyOnly,guest};
   })()`);
   if (Object.values(accessFlow).some(value=>!value)) throw new Error('Key-only/free access UI failed: '+JSON.stringify(accessFlow));
@@ -734,9 +735,9 @@ try {
       const r=b.getBoundingClientRect(),h=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
       return {id,height:r.height,hittable:h===b||b.contains(h),textFits:b.scrollWidth<=b.clientWidth+1};
     });
-    return {entries,version:document.getElementById('adminBuildVersion').textContent};
+    return {entries,version:document.getElementById('adminBuildVersion').textContent,expectedVersion:API.getVersion()};
   })()`);
-  if(adminQuick.entries.some(b=>b.height<48||!b.hittable||!b.textFits)||!adminQuick.version.includes('3.4.28')) throw new Error('Admin shortcuts not accessible: '+JSON.stringify(adminQuick));
+  if(adminQuick.entries.some(b=>b.height<48||!b.hittable||!b.textFits)||!adminQuick.version.includes(adminQuick.expectedVersion)) throw new Error('Admin shortcuts not accessible: '+JSON.stringify(adminQuick));
   await evaluate("document.getElementById('adminReadLogsBtn').click()");
   await waitFor("Admin.currentTab==='logs'&&!document.getElementById('adminTabLogs').classList.contains('hidden')", 'Admin log shortcut failed');
   await evaluate("document.getElementById('adminGetUpdateBtn').click()");
@@ -831,7 +832,7 @@ try {
   await send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
   const windowsDownloads = await evaluate(`(async () => {
     const saved = API.fetchJson;
-    API.fetchJson = async () => ({ windows: { url: 'https://example.com/app.exe', version: '3.4.28' }, android_tv: { url: 'https://example.com/tv.apk', version: '3.4.28' } });
+    API.fetchJson = async () => ({ windows: { url: 'https://example.com/app.exe', version: API.getVersion() }, android_tv: { url: 'https://example.com/tv.apk', version: API.getVersion() } });
     window.PHIM4K_PLATFORM = 'windows';
     openDownloadModal(); await refreshPublicDownloads();
     const enabled = document.getElementById('btnDownloadExe').getAttribute('aria-disabled') === 'false';
@@ -857,7 +858,8 @@ try {
   const backClosed = await evaluate("Phim4KTV.back() && document.getElementById('downloadAppModal').classList.contains('hidden')");
   if (!windowsDownloads.enabled || !windowsDownloads.missingDisabled || !windowsDownloads.unsafe || !tvState.active || !tvState.focusedInModal || tvState.horizontalOverflow || !backClosed) throw new Error('Windows/TV downloads or remote smoke failed: ' + JSON.stringify({ windowsDownloads, tvState, backClosed }));
   console.log('[qa] Windows downloads and TV focus/back passed');
-  const checksPassed = homeState.version === '3.4.28'
+  const activeVersion = await evaluate('API.getVersion()');
+  const checksPassed = homeState.version === activeVersion
     && homeState.heroYears.length > 0
     && homeState.heroYears.every(year=>year===new Date().getUTCFullYear())
     && homeState.firstHeroCinema

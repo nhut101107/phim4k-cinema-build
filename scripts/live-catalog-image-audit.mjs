@@ -1,6 +1,8 @@
 const apiOrigin = 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev';
 const key = String(process.env.PHIM4K_TEST_KEY || '');
 const deviceId = String(process.env.PHIM4K_TEST_DEVICE || '');
+const auditStart = Math.max(0, Number.parseInt(process.env.PHIM4K_AUDIT_START || '0', 10) || 0);
+const auditLimit = Math.max(1, Number.parseInt(process.env.PHIM4K_AUDIT_LIMIT || '280', 10) || 280);
 if (!key || !deviceId) throw new Error('Missing temporary live-test identity');
 
 const headers = {
@@ -24,7 +26,7 @@ const movies = [...new Map(allMovies.filter((movie) => movie?.slug).map((movie) 
 // Match what the home UI actually requests: one preferred card poster per
 // movie, plus the wide artwork used by each hero. This remains below the
 // public per-minute request budget even as the catalogue grows.
-const checks = [
+const allChecks = [
   ...movies.map((movie) => ({
     slug: movie.slug,
     kind: 'card_artwork',
@@ -36,6 +38,7 @@ const checks = [
     url: String(movie.thumb_url || movie.poster_url || ''),
   })),
 ];
+const checks = allChecks.slice(auditStart, auditStart + auditLimit);
 
 const failures = [];
 let okImages = 0;
@@ -67,7 +70,7 @@ await Promise.all(Array.from({ length: 8 }, () => worker()));
 
 const pageCounts = [];
 const inventory = new Set();
-for (let page = 1; page <= 8; page += 1) {
+for (let page = 1; page <= 12; page += 1) {
   const data = await getJson(`/api/movies/category/phim-moi-cap-nhat?page=${page}`);
   const items = Array.isArray(data.items) ? data.items : [];
   items.forEach((movie) => movie?.slug && inventory.add(movie.slug));
@@ -79,6 +82,8 @@ console.log(JSON.stringify({
   hero: home.hero?.length || 0,
   sections: (home.sections || []).map((section) => ({ id: section.id, count: section.items?.length || 0 })),
   uniqueHomeMovies: movies.length,
+  allImageChecks: allChecks.length,
+  imageCheckStart: auditStart,
   imageChecks: checks.length,
   okImages,
   failureCount: failures.length,

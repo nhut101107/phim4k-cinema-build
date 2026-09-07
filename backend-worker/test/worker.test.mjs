@@ -66,7 +66,7 @@ test("movie metadata is authenticated and relayed only through the configured se
     assert.equal(payload.sections.length, 5);
     assert.equal(payload.sections[0].id, 'cinema-new');
     assert.equal(home.headers.get("access-control-allow-origin"), "*");
-    assert.equal(requests.length, 18);
+    assert.equal(requests.length, 27);
     assert.ok(requests.every((target) => target.startsWith("https://catalog.example/")));
 
     const filtered = await worker.fetch(viewerRequest("/api/movies/filter?genre=hanh-dong&country=trung-quoc&page=2"), env);
@@ -78,7 +78,7 @@ test("movie metadata is authenticated and relayed only through the configured se
 
     const invalid = await worker.fetch(viewerRequest("/api/movies/category/not-allowed"), env);
     assert.equal(invalid.status, 400);
-    assert.equal(requests.length, 19);
+    assert.equal(requests.length, 28);
   } finally {
     globalThis.fetch = originalFetch;
   }
