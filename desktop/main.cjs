@@ -47,7 +47,7 @@ else app.whenReady().then(async () => {
   win.webContents.on('will-attach-webview', event => event.preventDefault());
   app.on('second-instance', () => { if (win.isMinimized()) win.restore(); win.show(); win.focus(); });
   let failed = false;
-  win.webContents.on('render-process-gone', () => { failed = true; if (!smoke) dialog.showErrorBox('4K', 'Trình phát đã dừng. Hãy mở lại ứng dụng.'); });
+  win.webContents.on('render-process-gone', () => { failed = true; if (!smoke) dialog.showErrorBox('4K Cinema', 'Trình phát đã dừng. Hãy mở lại ứng dụng.'); });
   await win.loadURL('phim4k://app/index.html');
   if (smoke) {
     const report = await win.webContents.executeJavaScript(`({ title: document.title, keyGate: !!document.querySelector('#activationGate:not(.hidden)'), nodeExposed: typeof require !== 'undefined', platform: Phim4KPlatform.detect(navigator.userAgent), downloadFunction: typeof refreshPublicDownloads === 'function' })`);
@@ -84,5 +84,5 @@ else app.whenReady().then(async () => {
     fs.writeFileSync(path.join(app.getPath('userData'), 'qa', 'desktop-smoke.json'), JSON.stringify(report, null, 2));
     app.exit(report.pass ? 0 : 1);
   }
-}).catch(() => { if (!process.argv.includes('--smoke-test')) dialog.showErrorBox('4K', 'Không thể khởi động ứng dụng. Vui lòng tải lại bản chính thức.'); app.exit(1); });
+}).catch(() => { if (!process.argv.includes('--smoke-test')) dialog.showErrorBox('4K Cinema', 'Không thể khởi động ứng dụng. Vui lòng tải lại bản chính thức.'); app.exit(1); });
 app.on('window-all-closed', () => app.quit());

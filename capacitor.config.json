@@ -1,6 +1,6 @@
 {
   "appId": "com.phim4k.cinema",
-  "appName": "4K",
+  "appName": "4K Cinema",
   "webDir": "dist-ios",
   "server": {
     "androidScheme": "https",

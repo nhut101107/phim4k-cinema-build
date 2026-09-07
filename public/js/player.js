@@ -801,7 +801,7 @@ const Player = {
       this.seekRelative(seek);
     } else {
       this.lastSurfaceTap = tap;
-      this.surfaceTapTimer = window.setTimeout(() => { this.lastSurfaceTap = null; this.toggleControls(); }, 320);
+      this.surfaceTapTimer = window.setTimeout(() => { this.lastSurfaceTap = null; this.toggleControls(); }, 540);
     }
   },
 

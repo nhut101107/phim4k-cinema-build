@@ -20,10 +20,11 @@ test('video surface toggles controls without changing playback', () => {
 test('double taps seek only on the same side within the gesture window', () => {
   const { doubleTapSeek } = require('../public/js/player-core');
   assert.equal(doubleTapSeek({x:.8,time:100},{x:.81,time:250}),10);
-  assert.equal(doubleTapSeek({x:.1,time:100},{x:.12,time:400}),-10);
+  assert.equal(doubleTapSeek({x:.1,time:100},{x:.12,time:500}),-10);
   assert.equal(doubleTapSeek({x:.1,time:100},{x:.8,time:250}),0);
   assert.equal(doubleTapSeek({x:.5,time:100},{x:.5,time:250}),0);
-  assert.equal(doubleTapSeek({x:.8,time:100},{x:.8,time:421}),0);
+  assert.equal(doubleTapSeek({x:.8,time:100},{x:.8,time:620}),10);
+  assert.equal(doubleTapSeek({x:.8,time:100},{x:.8,time:621}),0);
   assert.equal(doubleTapSeek(null,{x:.8,time:250}),0);
 });
 test('fullscreen preserves subtitles even after a legacy crop choice', () => {

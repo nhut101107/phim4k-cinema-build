@@ -137,7 +137,7 @@ body.activation-locked {
 }
 
 .logo-badge {
-  font-size: 26px;
+  font-size: clamp(22px, 6vw, 26px);
   font-weight: 900;
   letter-spacing: 1px;
   background: linear-gradient(135deg, #ff2a5f, #e50914);
@@ -370,7 +370,7 @@ body.activation-locked {
 }
 
 .logo-gradient {
-  font-size: 26px;
+  font-size: clamp(20px, 2.2vw, 26px);
   font-weight: 900;
   letter-spacing: 1.2px;
   background: linear-gradient(135deg, #ff2a5f, #e50914);

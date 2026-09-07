@@ -1,5 +1,5 @@
 @echo off
-title Phim4K Ad-Free Streaming App
+title 4K Cinema Streaming App
 echo ========================================================
 echo   PHIM 4K - UNLIMITED STREAMING ENGINE (100%% NO-ADS)
 echo ========================================================

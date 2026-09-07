@@ -71,7 +71,9 @@
   }
 
   function doubleTapSeek(first, next) {
-    if (!first || !next || next.time - first.time < 0 || next.time - first.time > 320) return 0;
+    // Mobile WebViews may synthesize the second click 400-500 ms after the
+    // first physical tap. Keep this aligned with Player.surfaceTapTimer.
+    if (!first || !next || next.time - first.time < 0 || next.time - first.time > 520) return 0;
     const zone = x => x < 0.4 ? -1 : x > 0.6 ? 1 : 0;
     const direction = zone(next.x);
     return direction && direction === zone(first.x) && Math.abs(next.x - first.x) < 0.2 ? direction * 10 : 0;

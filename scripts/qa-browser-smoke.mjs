@@ -245,6 +245,9 @@ try {
         const payload = options?.method === 'DELETE' ? {success:true,cleared:true} : options?.method === 'POST' ? {success:true,saved:1} : {success:true,items:[]};
         return Promise.resolve(new Response(JSON.stringify(payload),{status:200,headers:{'content-type':'application/json'}}));
       }
+      if (path.includes('/api/app/announcement')) {
+        return Promise.resolve(new Response(JSON.stringify({active:false}),{status:200,headers:{'content-type':'application/json'}}));
+      }
       return original(input, options);
     };
   })();`});
@@ -602,8 +605,15 @@ try {
   await evaluate('Player.video.currentTime = 12');
   await delay(150);
   const beforeSeek = await evaluate('Player.video.currentTime');
+  const rightTarget = await evaluate(`(() => {
+    const x=690,y=145,hit=document.elementFromPoint(x,y),r=Player.video.getBoundingClientRect();
+    window.__qaSurfaceClicks=[];
+    Player.video.addEventListener('click',event=>window.__qaSurfaceClicks.push({x:event.clientX,y:event.clientY,detail:event.detail,time:event.timeStamp}),{once:false});
+    return {x,y,hit:hit?.id||hit?.className||hit?.tagName,video:{left:r.left,top:r.top,right:r.right,bottom:r.bottom}};
+  })()`);
   for (let i=0;i<2;i++) {
     await send('Input.dispatchTouchEvent', {type:'touchStart',touchPoints:[{x:690,y:145}]});
+    await delay(35);
     await send('Input.dispatchTouchEvent', {type:'touchEnd',touchPoints:[]});
     await delay(70);
   }
@@ -614,12 +624,16 @@ try {
   await delay(400);
   for (let i=0;i<2;i++) {
     await send('Input.dispatchTouchEvent', {type:'touchStart',touchPoints:[{x:170,y:145}]});
+    await delay(35);
     await send('Input.dispatchTouchEvent', {type:'touchEnd',touchPoints:[]});
     await delay(70);
   }
   const afterBack = await evaluate('Player.video.currentTime');
   playerInteractionState.doubleLeft = afterSeek-afterBack > 9 && afterSeek-afterBack < 10.4;
-  if (!playerInteractionState.doubleRight || !playerInteractionState.doubleLeft || await evaluate('Player.video.paused')) throw new Error('Real double tap seek failed: '+JSON.stringify({beforeSeek,afterSeek,afterBack}));
+  if (!playerInteractionState.doubleRight || !playerInteractionState.doubleLeft || await evaluate('Player.video.paused')) {
+    const surfaceClicks=await evaluate('window.__qaSurfaceClicks');
+    throw new Error('Real double tap seek failed: '+JSON.stringify({beforeSeek,afterSeek,afterBack,rightTarget,surfaceClicks}));
+  }
   await send('Runtime.evaluate', {expression:"Player.toggleAudioMode()",awaitPromise:true,userGesture:true});
   playerInteractionState.audioEnabled = await evaluate("document.getElementById('btnAudioMode').textContent === 'Rõ thoại'");
   if (!playerInteractionState.audioEnabled) throw new Error('Audio enhancement did not enable for local fixture');

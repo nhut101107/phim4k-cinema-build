@@ -7,14 +7,14 @@ const yauzl = require('yauzl');
 const crc32 = require('buffer-crc32');
 const plist = require('bplist-parser');
 
-const version = process.env.RELEASE_VERSION || '3.4.35';
+const version = process.env.RELEASE_VERSION || '3.4.36';
 const build = version.split('.').at(-1);
-const root = path.resolve(__dirname, '..', 'builds', `4K-${version}`);
+const root = path.resolve(__dirname, '..', 'builds', `4K-Cinema-${version}`);
 const files = [
-  `4K-iOS-${version}-unsigned.ipa`,
-  `4K-Android-${version}.apk`,
-  `4K-Android-TV-${version}.apk`,
-  `4K-Windows-${version}-x64.exe`,
+  `4K-Cinema-iOS-${version}-unsigned.ipa`,
+  `4K-Cinema-Android-${version}.apk`,
+  `4K-Cinema-Android-TV-${version}.apk`,
+  `4K-Cinema-Windows-${version}-x64.exe`,
 ];
 const forbidden = [
   ['private key', /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/],
@@ -85,12 +85,12 @@ function archive(file, inspect) {
       item.archiveEntriesVerified = await archive(file, (entry, bytes) => {
         if (/(?:^|\/)public\/index\.html$/.test(entry)) {
           const html = bytes.toString('utf8');
-          indexVerified = html.includes('<title>4K</title>') && html.includes('Content-Security-Policy');
+          indexVerified = html.includes('<title>4K Cinema</title>') && html.includes('Content-Security-Policy');
         }
         if (/(?:^|\/)public\/js\/api\.js$/.test(entry)) apiVerified = bytes.toString('utf8').includes(`return '${version}'`);
         if (entry === 'Payload/App.app/Info.plist') {
           const info = plist.parseBuffer(bytes)[0];
-          if (info.CFBundleIdentifier !== 'com.phim4k.cinema' || info.CFBundleDisplayName !== '4K' || info.CFBundleShortVersionString !== version || String(info.CFBundleVersion) !== build) {
+          if (info.CFBundleIdentifier !== 'com.phim4k.cinema' || info.CFBundleDisplayName !== '4K Cinema' || info.CFBundleShortVersionString !== version || String(info.CFBundleVersion) !== build) {
             throw new Error(`${name}: incorrect iOS identity, name or version`);
           }
           item.bundleId = info.CFBundleIdentifier;
@@ -98,7 +98,7 @@ function archive(file, inspect) {
           item.build = info.CFBundleVersion;
         }
       });
-      if (!indexVerified || !apiVerified) throw new Error(`${name}: missing 4K web identity/version/security policy`);
+      if (!indexVerified || !apiVerified) throw new Error(`${name}: missing 4K Cinema web identity/version/security policy`);
       item.webContract = true;
     }
     report.files.push(item);
