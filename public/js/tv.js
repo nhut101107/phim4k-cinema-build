@@ -1,6 +1,4 @@
 (() => {
-  if (Phim4KPlatform.detect(navigator.userAgent, window.PHIM4K_PLATFORM) !== 'android_tv') return;
-  document.documentElement.classList.add('tv-mode');
   const selector = 'button, a[href], input, select, textarea, [role="button"], [onclick]:not(.modal-dialog):not(.modal-overlay):not(.download-dialog)';
   const visible = el => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden' && !el.closest('.hidden, [inert]');
   function scope() {
@@ -19,6 +17,12 @@
     if (area !== document && area.id !== 'activationGate') return true;
     return false;
   }
+  // Android phone and Android TV share one predictable system-Back contract:
+  // close the topmost app layer first and exit only when the home screen is bare.
+  window.Phim4KNavigation = Object.freeze({ back });
+
+  if (Phim4KPlatform.detect(navigator.userAgent, window.PHIM4K_PLATFORM) !== 'android_tv') return;
+  document.documentElement.classList.add('tv-mode');
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' || event.key === 'BrowserBack') { if (back()) { event.preventDefault(); event.stopImmediatePropagation(); } return; }
     if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(event.key)) return;

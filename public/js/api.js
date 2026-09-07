@@ -40,7 +40,7 @@ const API = {
 
   getOperationalContext() {
     const standalone = window.matchMedia?.('(display-mode: standalone)')?.matches;
-    const runtime = /Phim4KTV/.test(navigator.userAgent) ? 'Android TV' : /Phim4KDesktop/.test(navigator.userAgent) ? 'Windows app' : window.Capacitor?.isNativePlatform?.()
+    const runtime = /Phim4KTV/.test(navigator.userAgent) ? 'Android TV' : /Phim4KAndroid/.test(navigator.userAgent) ? 'Android app' : /Phim4KDesktop/.test(navigator.userAgent) ? 'Windows app' : window.Capacitor?.isNativePlatform?.()
       ? `${window.Capacitor.getPlatform?.() || 'native'} app`
       : (standalone ? 'PWA' : 'Web');
     const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;

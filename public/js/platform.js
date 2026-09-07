@@ -27,6 +27,11 @@
     }
     return 'current';
   }
+  const current = detect(root.navigator?.userAgent || '', root.PHIM4K_PLATFORM || root.Capacitor?.getPlatform?.() || '');
+  if (root.document?.documentElement) {
+    root.document.documentElement.dataset.platform = current;
+    root.document.documentElement.classList.add(`platform-${current.replace('_', '-')}`);
+  }
   root.Phim4KPlatform = Object.freeze({ labels, detect, safeUrl, release, releaseState });
   if (typeof module !== 'undefined') module.exports = root.Phim4KPlatform;
 })(typeof window !== 'undefined' ? window : globalThis);

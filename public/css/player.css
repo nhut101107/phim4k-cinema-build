@@ -49,6 +49,17 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+.platform-android .video-element {
+  touch-action: manipulation;
+  transform: translateZ(0);
+}
+.platform-android .cinema-player-wrapper,
+.platform-android .player-controls,
+.platform-android .player-top-bar {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
 /* Portrait playback is a real video stage, not a full-height box that leaves
    the picture stranded in the middle of a black screen. */
 @media (orientation: portrait) {

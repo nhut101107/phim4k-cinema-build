@@ -17,13 +17,13 @@ jobs:
       - run: npm run desktop:build
       - shell: pwsh
         run: |
-          $p = Start-Process -FilePath '.\builds\windows-3.4.17\win-unpacked\Phim4K Cinema.exe' -ArgumentList '--smoke-test' -WindowStyle Hidden -PassThru
+          $p = Start-Process -FilePath '.\builds\windows-3.4.34\win-unpacked\Phim4K Cinema.exe' -ArgumentList '--smoke-test' -WindowStyle Hidden -PassThru
           if (!$p.WaitForExit(60000)) { $p.Kill(); throw 'Desktop smoke timed out' }
           if ($p.ExitCode -ne 0) { throw 'Desktop smoke failed' }
       - uses: actions/upload-artifact@v4
         with:
           name: Phim4K-Windows
-          path: builds/windows-3.4.17/Phim4K-Windows-3.4.17-x64.exe
+          path: builds/windows-3.4.34/Phim4K-Windows-3.4.34-x64.exe
           if-no-files-found: error
   android-tv:
     runs-on: ubuntu-latest
@@ -39,6 +39,8 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: android-actions/setup-android@v3
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - run: npm ci --ignore-scripts
       - run: npm test
       - run: npm run tv:sync
@@ -46,7 +48,7 @@ jobs:
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon
+          ./gradlew :app:assembleTvRelease :app:assembleTvDebug :app:assembleTvDebugAndroidTest --no-daemon
       - name: Sign release
         env:
           TV_KEYSTORE: ${{ secrets.PHIM4K_TV_KEYSTORE }}
@@ -57,9 +59,10 @@ jobs:
           trap 'rm -f "$RUNNER_TEMP/tv.jks"' EXIT
           printf '%s' "$TV_KEYSTORE" | base64 --decode > "$RUNNER_TEMP/tv.jks"
           chmod 600 "$RUNNER_TEMP/tv.jks"
-          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -p -f 4 android/app/build/outputs/apk/release/app-release-unsigned.apk "$RUNNER_TEMP/tv-aligned.apk"
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign --ks "$RUNNER_TEMP/tv.jks" --ks-key-alias phim4k-tv --ks-pass env:TV_STORE_PASSWORD --out Phim4K-Android-TV-3.4.17.apk "$RUNNER_TEMP/tv-aligned.apk"
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose Phim4K-Android-TV-3.4.17.apk
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -p -f 4 android/app/build/outputs/apk/tv/release/app-tv-release-unsigned.apk "$RUNNER_TEMP/tv-aligned.apk"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign --ks "$RUNNER_TEMP/tv.jks" --ks-key-alias phim4k-tv --ks-pass env:TV_STORE_PASSWORD --out Phim4K-Android-TV-3.4.34.apk "$RUNNER_TEMP/tv-aligned.apk"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose Phim4K-Android-TV-3.4.34.apk
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging Phim4K-Android-TV-3.4.34.apk | grep "package: name='com.phim4k.cinema.tv'.*versionCode='34'.*versionName='3.4.34'"
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -71,7 +74,7 @@ jobs:
           target: android-tv
           arch: x86
           disable-animations: true
-          script: cd android && ./gradlew :app:connectedDebugAndroidTest --no-daemon
+          script: cd android && ./gradlew :app:connectedTvDebugAndroidTest --no-daemon
       - name: QA evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -81,5 +84,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Phim4K-Android-TV
-          path: Phim4K-Android-TV-3.4.17.apk
+          path: Phim4K-Android-TV-3.4.34.apk
           if-no-files-found: error

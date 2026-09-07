@@ -9,7 +9,7 @@
   };
   const jobs = new Map();
   window.Phim4KNativeDownloads = {
-    supported() { return /Phim4KTV/.test(navigator.userAgent) && window.Capacitor?.getPlatform?.() === 'android'; },
+    supported() { return /Phim4K(?:TV|Android)/.test(navigator.userAgent) && window.Capacitor?.getPlatform?.() === 'android'; },
     async status() { return plugin().status(); },
     async open(button, url) {
       if (jobs.has(url)) return;

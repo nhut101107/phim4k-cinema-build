@@ -609,6 +609,9 @@ try {
   }
   const afterSeek = await evaluate('Player.video.currentTime');
   playerInteractionState.doubleRight = afterSeek-beforeSeek > 9.7 && afterSeek-beforeSeek < 11.2;
+  // Start a distinct gesture sequence. Four taps without the double-tap
+  // window expiring are treated as one browser multi-tap gesture on mobile.
+  await delay(400);
   for (let i=0;i<2;i++) {
     await send('Input.dispatchTouchEvent', {type:'touchStart',touchPoints:[{x:170,y:145}]});
     await send('Input.dispatchTouchEvent', {type:'touchEnd',touchPoints:[]});

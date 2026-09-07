@@ -19,3 +19,11 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Capacitor discovers plugins and their annotated bridge methods at runtime.
+# Keep only that bridge surface while R8 still optimizes the rest of the app.
+-keepattributes RuntimeVisibleAnnotations,RuntimeInvisibleAnnotations,AnnotationDefault
+-keep @com.getcapacitor.annotation.CapacitorPlugin class * { *; }
+-keepclassmembers class * {
+    @com.getcapacitor.PluginMethod <methods>;
+}

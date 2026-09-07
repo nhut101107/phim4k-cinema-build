@@ -667,7 +667,7 @@ async function refreshPublicDownloads() {
         btn.onclick = null;
         if (entry.url) {
           btn.href = entry.url; btn.target = '_blank'; btn.rel = 'noopener noreferrer';
-          if (key === 'android_tv' && window.Phim4KNativeDownloads?.supported()) {
+          if ((key === 'android' || key === 'android_tv') && window.Phim4KNativeDownloads?.supported()) {
             btn.onclick = event => { event.preventDefault(); void Phim4KNativeDownloads.open(btn, entry.url); };
           }
         }

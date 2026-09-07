@@ -88,6 +88,46 @@ test('web, iOS and Windows release versions stay aligned', () => {
   assert.deepEqual([...iosProject.matchAll(/CURRENT_PROJECT_VERSION = ([^;]+);/g)].map((match) => match[1]), ['34', '34']);
 });
 
+test('Android phone and TV are separate optimized release flavors', () => {
+  const gradle = read('../android/app/build.gradle');
+  const mainManifest = read('../android/app/src/main/AndroidManifest.xml');
+  const tvManifest = read('../android/app/src/tv/AndroidManifest.xml');
+  const activity = read('../android/app/src/main/java/com/phim4k/cinema/MainActivity.java');
+  const platform = read('../public/js/platform.js');
+  const navigation = read('../public/js/tv.js');
+  const styles = read('../public/css/style.css');
+  const player = read('../public/js/player.js');
+
+  assert.match(gradle, /versionCode 34/);
+  assert.match(gradle, /versionName "3\.4\.34"/);
+  assert.match(gradle, /phone\s*\{[\s\S]*?applicationId "com\.phim4k\.cinema"[\s\S]*?PHIM4K_PLATFORM[^\n]*android/);
+  assert.match(gradle, /tv\s*\{[\s\S]*?applicationId "com\.phim4k\.cinema\.tv"[\s\S]*?PHIM4K_PLATFORM[^\n]*android_tv/);
+  assert.doesNotMatch(mainManifest, /LEANBACK_LAUNCHER|screenOrientation="landscape"/);
+  assert.match(mainManifest, /networkSecurityConfig="@xml\/network_security_config"/);
+  assert.match(tvManifest, /LEANBACK_LAUNCHER/);
+  assert.match(tvManifest, /screenOrientation="landscape"/);
+  assert.match(activity, /Phim4KAndroid/);
+  assert.match(activity, /Phim4KTV/);
+  assert.match(activity, /getOnBackPressedDispatcher/);
+  assert.match(platform, /platform-\$\{current\.replace\('_', '-'\)\}/);
+  assert.match(navigation, /window\.Phim4KNavigation/);
+  assert.match(styles, /\.platform-android \.cinema-rail/);
+  assert.match(player, /this\.nativePlatform\(\) === 'ios'/);
+  assert.match(read('../public/js/auth.js'), /key === 'android' \|\| key === 'android_tv'/);
+});
+
+test('Android CI builds, signs and device-tests the correct flavor', () => {
+  const phoneWorkflow = read('../.github/workflows/build-android-phone.yml');
+  const tvWorkflow = read('../.github/workflows/build-tv-windows.yml');
+  assert.match(phoneWorkflow, /assemblePhoneRelease/);
+  assert.match(phoneWorkflow, /connectedPhoneDebugAndroidTest/);
+  assert.match(phoneWorkflow, /package: name='com\.phim4k\.cinema'/);
+  assert.match(phoneWorkflow, /apksigner" verify/);
+  assert.match(tvWorkflow, /assembleTvRelease/);
+  assert.match(tvWorkflow, /connectedTvDebugAndroidTest/);
+  assert.match(tvWorkflow, /package: name='com\.phim4k\.cinema\.tv'/);
+});
+
 test('iOS entry point cache-busts every bundled script and stylesheet', () => {
   const html = read('../public/index.html');
   const localAssets = [...html.matchAll(/(?:src|href)="\/(?:js|css|vendor)\/[^"?]+(?:\?[^" ]+)?"/g)].map(match => match[0]);

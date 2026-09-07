@@ -56,11 +56,18 @@ test('loads player rules before the shared player and exposes a single fullscree
 });
 
 test('prefers native HLS before hls.js inside the iPhone WebView', () => {
-  const nativeIndex = player.indexOf('if (isHls && this.isNativeRuntime())');
+  const nativeIndex = player.indexOf("if (isHls && this.nativePlatform() === 'ios')");
   const hlsJsIndex = player.indexOf('const HlsEngine = window.Hls');
   assert.ok(nativeIndex >= 0);
   assert.ok(hlsJsIndex > nativeIndex);
   assert.match(player, /this\.usingNativeHls = true/);
+});
+
+test('Android WebView keeps adaptive hls.js playback with a native fallback', () => {
+  assert.match(player, /nativePlatform\(\)/);
+  assert.match(player, /this\.nativePlatform\(\) === 'ios'/);
+  assert.match(player, /const HlsEngine = window\.Hls/);
+  assert.match(player, /this\.usingNativeHls = isHls;[\s\S]*?this\.video\.src = streamUrl/);
 });
 
 test('keeps adaptive quality selected when HLS changes rendition', () => {
@@ -79,6 +86,7 @@ test('uses a compact portrait video stage instead of centering video in the full
 });
 
 test('does not claim an unsupported manual HLS quality list on native iPhone playback', () => {
-  assert.match(player, /iPhone tự chọn chất lượng HLS/);
+  assert.match(player, /const device = this\.nativePlatform\(\) === 'ios' \? 'iPhone' : 'Thiết bị'/);
+  assert.match(player, /`\$\{device\} tự chọn chất lượng HLS`/);
   assert.match(player, /uniqueQualityOptions/);
 });

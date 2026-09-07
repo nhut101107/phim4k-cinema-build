@@ -24,6 +24,14 @@ test('unbundled Android bridge exposes status without registerPlugin', async () 
   assert.equal((await window.Phim4KNativeDownloads.status()).status, 'missing');
 });
 
+test('phone and TV APKs both expose the native update bridge', () => {
+  for (const userAgent of ['Android Phim4KAndroid', 'Android Phim4KTV']) {
+    const window = { Capacitor: { getPlatform: () => 'android', Plugins: { ReleaseDownloads: {} } } };
+    vm.runInNewContext(fs.readFileSync('public/js/native-downloads.js', 'utf8'), { window, navigator: { userAgent }, setTimeout });
+    assert.equal(window.Phim4KNativeDownloads.supported(), true, userAgent);
+  }
+});
+
 test('absent native plugin produces a visible error rather than an unhandled rejection', async () => {
   const window = { Capacitor: { getPlatform: () => 'android' } };
   vm.runInNewContext(fs.readFileSync('public/js/native-downloads.js', 'utf8'), { window, navigator: { userAgent: 'Phim4KTV' }, setTimeout });

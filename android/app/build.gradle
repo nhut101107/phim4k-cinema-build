@@ -5,11 +5,11 @@ android {
     buildFeatures { buildConfig true }
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.phim4k.cinema.tv"
+        applicationId "com.phim4k.cinema"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 17
-        versionName "3.4.17"
+        versionCode 34
+        versionName "3.4.34"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -17,11 +17,24 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    flavorDimensions += "device"
+    productFlavors {
+        phone {
+            dimension "device"
+            applicationId "com.phim4k.cinema"
+            buildConfigField "String", "PHIM4K_PLATFORM", '"android"'
+        }
+        tv {
+            dimension "device"
+            applicationId "com.phim4k.cinema.tv"
+            buildConfigField "String", "PHIM4K_PLATFORM", '"android_tv"'
+        }
+    }
     buildTypes {
         release {
             minifyEnabled true
             shrinkResources true
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 }

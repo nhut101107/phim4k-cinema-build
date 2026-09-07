@@ -50,19 +50,19 @@ public class ReleaseDownloadsPlugin extends Plugin {
             String raw = call.getString("url", "");
             Uri uri = Uri.parse(raw);
             if (!"https".equals(uri.getScheme()) || uri.getHost() == null || uri.getUserInfo() != null || raw.length() > 2048) { call.reject("Link tải HTTPS không hợp lệ."); return; }
-            if (manager() == null) { call.reject("TV không có dịch vụ tải hệ thống. Hãy tải APK bằng điện thoại rồi chuyển sang TV."); return; }
+            if (manager() == null) { call.reject("Thiết bị không có dịch vụ tải hệ thống. Hãy tải APK bằng trình duyệt rồi cài thủ công."); return; }
             JSObject existing = state();
             if (raw.equals(prefs().getString("url", "")) && ("complete".equals(existing.getString("status")) || "downloading".equals(existing.getString("status")))) { call.resolve(existing); return; }
             String name = "Phim4K-update-" + UUID.randomUUID() + ".apk";
             DownloadManager.Request request = new DownloadManager.Request(uri)
-                .setTitle("Cập nhật Phim4K TV")
+                .setTitle("Cập nhật Phim4K " + ("android_tv".equals(BuildConfig.PHIM4K_PLATFORM) ? "TV" : "Android"))
                 .setMimeType("application/vnd.android.package-archive")
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 .setDestinationInExternalFilesDir(getContext(), Environment.DIRECTORY_DOWNLOADS, name);
             long id = manager().enqueue(request);
             prefs().edit().putLong("id", id).putString("url", raw).putString("file", name).apply();
             call.resolve(state());
-        } catch (Exception error) { call.reject("Không thể bắt đầu tải APK. Kiểm tra mạng và dung lượng TV."); }
+        } catch (Exception error) { call.reject("Không thể bắt đầu tải APK. Kiểm tra mạng và dung lượng thiết bị."); }
     }
     @PluginMethod public void status(PluginCall call) {
         try { call.resolve(state()); }
@@ -94,6 +94,6 @@ public class ReleaseDownloadsPlugin extends Plugin {
             Intent intent = new Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             getActivity().startActivity(intent);
             call.resolve(new JSObject().put("installerOpened", true));
-        } catch (Exception error) { call.reject("TV không mở được màn cài đặt. Kiểm tra quyền cài ứng dụng từ nguồn này."); }
+        } catch (Exception error) { call.reject("Không mở được màn cài đặt. Kiểm tra quyền cài ứng dụng từ nguồn này."); }
     }
 }

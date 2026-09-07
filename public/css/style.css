@@ -2430,6 +2430,43 @@ body:not(.activation-locked) {
   }
 }
 
+/* Android phone: keep the WebView compositor cheap and every gesture native. */
+.platform-android body {
+  overscroll-behavior-y: none;
+  touch-action: pan-y pinch-zoom;
+}
+.platform-android .navbar,
+.platform-android .bottom-tab-bar,
+.platform-android .gate-overlay,
+.platform-android .card-badge-quality,
+.platform-android .modal-overlay {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.platform-android .navbar { background: rgba(10, 14, 23, .98); }
+.platform-android .bottom-tab-bar { background: rgba(9, 13, 21, .99); }
+.platform-android .movie-section {
+  content-visibility: auto;
+  contain-intrinsic-size: 520px;
+}
+.platform-android .cinema-rail {
+  scrollbar-width: none;
+  touch-action: pan-x;
+}
+.platform-android .cinema-rail::-webkit-scrollbar { display: none; }
+.platform-android .movie-card {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.platform-android .movie-card:active { transform: scale(.985); }
+.platform-android .card-poster { backface-visibility: hidden; }
+
+@media (min-width: 600px) and (max-width: 1100px) {
+  .platform-android .main-content { padding-right: 24px; padding-left: 24px; }
+  .platform-android .movie-row.cinema-rail { grid-auto-columns: clamp(190px, 27vw, 248px); }
+  .platform-android .filtered-movie-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
 /* ================================================= */
 /* CINEMA RAILS + MAINTENANCE STATE                   */
 /* ================================================= */

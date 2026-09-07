@@ -226,8 +226,10 @@ const Player = {
     // Capacitor on iOS must prefer AVFoundation's native HLS path. Recent
     // WKWebView versions may expose enough MSE for hls.js to report support,
     // but cross-origin segment requests can then fail even though native HLS
-    // can play the same HTTPS playlist directly.
-    if (isHls && this.isNativeRuntime()) {
+    // can play the same HTTPS playlist directly. Android WebView instead uses
+    // hls.js when MSE is available, preserving adaptive quality and recovery;
+    // the native video element below remains its compatibility fallback.
+    if (isHls && this.nativePlatform() === 'ios') {
       this.usingNativeHls = true;
       this.populateNativeHlsMenu();
       this.setQualityButtonLabel('Tự động');
@@ -300,7 +302,7 @@ const Player = {
     API.trackUsage('playback_ready', {
       ...this.usageContext(),
       duration: Number.isFinite(this.video.duration) ? this.video.duration : 0,
-      quality: this.usingNativeHls ? 'Tự động iOS' : this.qualityMode
+      quality: this.usingNativeHls ? `Tự động ${this.nativePlatform()}` : this.qualityMode
     });
     if (autoplay) this.video.play().catch(() => this.showAlert('Chạm nút Phát để bắt đầu xem.'));
   },
@@ -571,14 +573,16 @@ const Player = {
     item.type = 'button';
     item.disabled = true;
     item.className = 'quality-note';
-    item.textContent = 'iPhone tự chọn chất lượng HLS';
+    const device = this.nativePlatform() === 'ios' ? 'iPhone' : 'Thiết bị';
+    item.textContent = `${device} tự chọn chất lượng HLS`;
     menu.appendChild(item);
-    this.setQualityButtonLabel('Tự động iOS');
+    this.setQualityButtonLabel(this.nativePlatform() === 'ios' ? 'Tự động iOS' : 'Tự động');
   },
 
   setQuality(levelIndex) {
     if (!this.hls) {
-      this.showAlert(this.usingNativeHls ? 'iPhone đang tự chọn chất lượng HLS phù hợp mạng.' : 'Luồng này không có danh sách chất lượng để chọn.');
+      const device = this.nativePlatform() === 'ios' ? 'iPhone' : 'Thiết bị';
+      this.showAlert(this.usingNativeHls ? `${device} đang tự chọn chất lượng HLS phù hợp mạng.` : 'Luồng này không có danh sách chất lượng để chọn.');
       document.getElementById('qualityMenu')?.classList.add('hidden');
       return;
     }
@@ -656,6 +660,11 @@ const Player = {
   isNativeRuntime() {
     const capacitor = window.Capacitor;
     return Boolean(capacitor && (capacitor.isNativePlatform?.() || ['ios', 'android'].includes(capacitor.getPlatform?.())));
+  },
+
+  nativePlatform() {
+    if (!this.isNativeRuntime()) return 'web';
+    return window.Capacitor?.getPlatform?.() || window.PHIM4K_PLATFORM || 'native';
   },
 
   getNativePlugin(name) {
