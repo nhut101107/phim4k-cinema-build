@@ -456,7 +456,7 @@ const App = {
       empty.textContent = 'Chưa có phim phù hợp trong mục này. Hãy chọn bộ lọc khác hoặc bấm Bỏ lọc.';
       container.appendChild(empty);
     } else {
-      sections.forEach((section) => container.appendChild(this.createSectionElement(section)));
+      sections.forEach((section, index) => container.appendChild(this.createSectionElement(section, index)));
       if (hasFilter && this.filterPagination.currentPage < this.filterPagination.totalPages) {
         const loadMore = document.createElement('button');
         loadMore.type = 'button';
@@ -672,34 +672,92 @@ const App = {
     }, 9000);
   },
 
-  createSectionElement(section) {
+  createSectionElement(section, sectionIndex = 0) {
     const sec = document.createElement('section');
-    sec.className = 'movie-section';
+    const isGrid = section.layout === 'grid';
+    const itemCount = (section.items || []).length;
+    sec.className = `movie-section ${isGrid ? 'catalog-grid-section' : 'cinema-rail-section'}`;
+    sec.dataset.sectionId = section.id || '';
+
+    const updateStatus = section.id === 'latest' && this.homeFeedUpdatedAt
+      ? `Đồng bộ ${new Date(this.homeFeedUpdatedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`
+      : section.id === 'recent-interest'
+        ? 'Xếp theo điểm quan tâm TMDB / IMDb'
+        : '';
 
     sec.innerHTML = `
-      <div class="section-header">
-        <h2 class="section-title">${this.escapeHtml(section.title)}</h2>
-        ${section.id === 'latest' && this.homeFeedUpdatedAt ? `<span class="section-update-status">Đồng bộ · ${new Date(this.homeFeedUpdatedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</span>` : ''}
-        ${section.id === 'recent-interest' ? '<span class="section-update-status">Theo lượt đánh giá TMDB/IMDb · Không phải lượt xem trực tiếp</span>' : ''}
+      <div class="section-header ${isGrid ? '' : 'cinema-section-header'}">
+        ${isGrid ? '' : `<span class="section-index" aria-hidden="true">${String(sectionIndex + 1).padStart(2, '0')}</span>`}
+        <div class="section-heading-copy">
+          ${isGrid ? '' : `<span class="section-eyebrow">BĂNG PHIM · ${itemCount} TỰA</span>`}
+          <h2 class="section-title">${this.escapeHtml(section.title)}</h2>
+        </div>
+        <div class="section-heading-aside">
+          ${updateStatus ? `<span class="section-update-status">${this.escapeHtml(updateStatus)}</span>` : ''}
+          ${isGrid ? '' : `<span class="rail-position" aria-live="polite">01 / ${String(Math.max(itemCount, 1)).padStart(2, '0')}</span><span class="rail-gesture" aria-hidden="true">VUỐT →</span>`}
+        </div>
       </div>
-      <div class="${section.layout === 'grid' ? 'movie-grid filtered-movie-grid' : 'movie-row'}"></div>
+      <div class="${isGrid ? 'movie-grid filtered-movie-grid' : 'movie-row cinema-rail'}" aria-label="${this.escapeHtml(section.title || 'Danh sách phim')}"></div>
     `;
 
-    const row = sec.querySelector(section.layout === 'grid' ? '.filtered-movie-grid' : '.movie-row');
+    const row = sec.querySelector(isGrid ? '.filtered-movie-grid' : '.cinema-rail');
     const fragment = document.createDocumentFragment();
-    (section.items || []).forEach(movie => {
-      const card = this.createMovieCard(movie);
+    (section.items || []).forEach((movie, movieIndex) => {
+      const card = this.createMovieCard(movie, isGrid ? null : movieIndex);
       fragment.appendChild(card);
     });
     row.appendChild(fragment);
+    if (!isGrid) this.bindMovieRail(sec, row);
 
     return sec;
   },
 
-  createMovieCard(movie) {
+  bindMovieRail(section, row) {
+    if (!row) return;
+    const status = section.querySelector('.rail-position');
+    const cards = [...row.querySelectorAll('.movie-card')];
+    if (!status || !cards.length) return;
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const rowRect = row.getBoundingClientRect();
+      const guide = rowRect.left + Math.min(28, rowRect.width * 0.08);
+      let nearestIndex = 0;
+      let nearestDistance = Number.POSITIVE_INFINITY;
+      cards.forEach((card, index) => {
+        const distance = Math.abs(card.getBoundingClientRect().left - guide);
+        if (distance < nearestDistance) {
+          nearestDistance = distance;
+          nearestIndex = index;
+        }
+      });
+      status.textContent = `${String(nearestIndex + 1).padStart(2, '0')} / ${String(cards.length).padStart(2, '0')}`;
+    };
+    row.addEventListener('scroll', () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    }, { passive: true });
+    update();
+  },
+
+  createMovieCard(movie, railIndex = null) {
     const card = document.createElement('div');
     card.className = 'movie-card';
     card.onclick = () => this.openMovieDetail(movie.slug);
+    card.tabIndex = 0;
+    card.setAttribute('role', 'button');
+    card.setAttribute('aria-label', `Mở phim ${movie.name || 'Đang cập nhật'}`);
+    card.onkeydown = (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        this.openMovieDetail(movie.slug);
+      }
+    };
+
+    const accentPalette = ['#ff3d5e', '#ffb21c', '#8b7cff', '#25d8b4', '#58a6ff'];
+    const identity = String(movie.slug || movie.name || 'phim');
+    const accentIndex = [...identity].reduce((sum, character) => sum + character.charCodeAt(0), 0) % accentPalette.length;
+    card.style.setProperty('--card-accent', accentPalette[accentIndex]);
+    if (railIndex !== null) card.dataset.railIndex = String(railIndex);
 
     const posterUrl = this.resolveImageUrl(movie.poster_url || movie.thumb_url);
     const alternatePosterUrl = this.resolveImageUrl(movie.thumb_url || movie.poster_url);
@@ -709,9 +767,11 @@ const App = {
 
     card.innerHTML = `
       <div class="card-poster-wrapper">
-        <img class="card-poster" src="${posterUrl}" alt="${this.escapeHtml(movie.name || 'Poster phim')}" loading="lazy" decoding="async" width="300" height="450" />
+        <img class="card-poster" src="${this.escapeHtml(posterUrl)}" alt="${this.escapeHtml(movie.name || 'Poster phim')}" loading="lazy" decoding="async" width="300" height="450" />
+        ${railIndex !== null ? `<span class="card-rail-number" aria-hidden="true">${String(railIndex + 1).padStart(2, '0')}</span>` : ''}
         <span class="card-badge-quality">${this.escapeHtml(movie.quality || 'FHD')}</span>
         ${epCurrent ? `<span class="card-badge-ep">${this.escapeHtml(epCurrent)}</span>` : ''}
+        <span class="card-quick-play" aria-hidden="true"><b>▶</b><small>MỞ PHIM</small></span>
       </div>
       <div class="card-info">
         <h4 class="card-title" title="${this.escapeHtml(movie.name || '')}">${this.escapeHtml(movie.name || 'Đang cập nhật')}</h4>

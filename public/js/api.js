@@ -23,7 +23,7 @@ const API = {
   },
 
   getVersion() {
-    return '3.4.33';
+    return '3.4.34';
   },
 
   getSessionId() {
@@ -203,7 +203,8 @@ const API = {
         return {
           success: false,
           code: payload.code || 'ACTIVATION_REJECTED',
-          message: payload.message || payload.error || 'Không thể xác thực key trên thiết bị này.'
+          message: payload.message || payload.error || 'Không thể xác thực key trên thiết bị này.',
+          maintenance: payload.maintenance || null
         };
       }
       return payload;
@@ -237,9 +238,15 @@ const API = {
   },
 
   async checkDeviceAccess(key, deviceId) {
-    return this.fetchJson('/api/auth/device-status', {
-      headers: { 'x-app-version': this.getVersion(), 'x-license-key': key, 'x-device-id': deviceId }
-    }, 12000);
+    try {
+      const response = await this.fetchWithTimeout('/api/auth/device-status', {
+        cache: 'no-store',
+        headers: { 'x-app-version': this.getVersion(), 'x-license-key': key, 'x-device-id': deviceId }
+      }, 12000);
+      return await response.json().catch(() => ({ active: false, code: 'INVALID_SERVER_RESPONSE' }));
+    } catch (_error) {
+      return { active: false, isAdmin: false, plan: 'OFFLINE' };
+    }
   },
 
   async checkUpdate(version = this.getVersion()) {

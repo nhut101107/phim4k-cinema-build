@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import worker, { auditTypeForAction, compareAppVersions, createRateLimiter, json, normalizeAnnouncementSetting, normalizeTelemetryEvents, sealMediaTicket } from "../src/worker.mjs";
+import worker, { auditTypeForAction, compareAppVersions, createRateLimiter, json, normalizeAnnouncementSetting, normalizeMaintenanceSetting, normalizeTelemetryEvents, sealMediaTicket } from "../src/worker.mjs";
 
 const MEDIA_SECRET = "fixture-media-ticket-secret-at-least-32-characters";
 function freeViewerEnv(extra = {}) {
@@ -121,6 +121,14 @@ test("image relay accepts only an opaque encrypted capability for the configured
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("maintenance settings support timed and manual windows and expire closed", () => {
+  const timestamp = Date.parse("2026-09-07T12:00:00.000Z");
+  assert.deepEqual(normalizeMaintenanceSetting(null, timestamp), { active: false });
+  assert.deepEqual(normalizeMaintenanceSetting({ enabled: true, expiresAt: "2026-09-07T11:59:59.000Z" }, timestamp), { active: false });
+  assert.equal(normalizeMaintenanceSetting({ enabled: true, message: "  Bảo trì   nhanh ", expiresAt: "" }, timestamp).message, "Bảo trì nhanh");
+  assert.equal(normalizeMaintenanceSetting(JSON.stringify({ enabled: true, message: "Nâng cấp", expiresAt: "2026-09-07T13:00:00.000Z" }), timestamp).active, true);
 });
 
 test("image relay uses the authenticated VPS path when it is configured", async () => {

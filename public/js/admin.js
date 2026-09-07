@@ -17,6 +17,7 @@ const Admin = {
       const res = await API.fetchJson(`/api/app/access-policy?refresh=${Date.now()}`, { cache: 'no-store' });
       if (typeof res.freeAccess !== 'boolean') throw new Error('Không đọc được trạng thái');
       toggle.checked = res.freeAccess;
+      this.renderMaintenance(res.maintenance);
       toggle.disabled = save.disabled = false;
       document.getElementById('accessPolicyMessage').textContent = res.freeAccess ? 'Đang miễn key' : 'Đang yêu cầu key · 1 key / 1 máy';
     } catch (_) { document.getElementById('accessPolicyMessage').textContent = 'Không đọc được trạng thái. Bấm thử lại.'; }
@@ -43,6 +44,81 @@ const Admin = {
       } catch (_) {}
     }
     finally { toggle.disabled = save.disabled = false; }
+  },
+
+  renderMaintenance(value) {
+    const maintenance = value?.active === true ? value : { active: false };
+    const toggle = document.getElementById('adminMaintenanceToggle');
+    const save = document.getElementById('maintenanceSaveBtn');
+    const state = document.getElementById('maintenanceAdminState');
+    const quick = document.getElementById('adminMaintenanceBtn');
+    const message = document.getElementById('maintenanceMessageInput');
+    if (toggle) { toggle.checked = maintenance.active; toggle.disabled = false; }
+    if (save) save.disabled = false;
+    if (message && maintenance.message) message.value = maintenance.message;
+    if (state) {
+      const until = maintenance.expiresAt
+        ? ` · tự mở ${new Date(maintenance.expiresAt).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })}`
+        : maintenance.active ? ' · tắt thủ công' : '';
+      state.classList.toggle('active', maintenance.active);
+      state.innerHTML = `<i></i> ${maintenance.active ? `Đang bảo trì${until}` : 'Đang hoạt động'}`;
+    }
+    if (quick) {
+      quick.classList.toggle('active', maintenance.active);
+      quick.textContent = maintenance.active ? '🛠 Đang bảo trì · mở quản lý' : '🛠 Bật / tắt bảo trì';
+    }
+  },
+
+  async loadMaintenance() {
+    const state = document.getElementById('maintenanceAdminState');
+    const toggle = document.getElementById('adminMaintenanceToggle');
+    const save = document.getElementById('maintenanceSaveBtn');
+    if (toggle) toggle.disabled = true;
+    if (save) save.disabled = true;
+    if (state) state.innerHTML = '<i></i> Đang đọc…';
+    try {
+      const result = await API.fetchJson(`/api/app/access-policy?refresh=${Date.now()}`, { cache: 'no-store' }, 12000);
+      this.renderMaintenance(result.maintenance);
+      document.getElementById('maintenanceAdminMessage').textContent = 'Đã đồng bộ trạng thái từ máy chủ.';
+    } catch (error) {
+      if (state) state.innerHTML = '<i></i> Không đọc được';
+      document.getElementById('maintenanceAdminMessage').textContent = error.message || 'Không đọc được trạng thái bảo trì.';
+    }
+  },
+
+  async saveMaintenance() {
+    const toggle = document.getElementById('adminMaintenanceToggle');
+    const save = document.getElementById('maintenanceSaveBtn');
+    const status = document.getElementById('maintenanceAdminMessage');
+    const enabled = Boolean(toggle?.checked);
+    const message = document.getElementById('maintenanceMessageInput')?.value.trim() || '';
+    const durationMinutes = Number.parseInt(document.getElementById('maintenanceDurationInput')?.value || '0', 10);
+    if (enabled && !message) {
+      status.textContent = 'Hãy nhập thông báo cho người dùng.';
+      return;
+    }
+    if (enabled && !window.confirm('Bật bảo trì sẽ tạm chặn toàn bộ người xem. Tiếp tục?')) {
+      await this.loadMaintenance();
+      return;
+    }
+    toggle.disabled = save.disabled = true;
+    status.textContent = enabled ? 'Đang đóng phòng chiếu…' : 'Đang mở lại ứng dụng…';
+    try {
+      const response = await fetch('/api/admin/maintenance', {
+        method: 'POST', cache: 'no-store',
+        headers: { ...this.getAdminHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled, message, durationMinutes }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.success) throw new Error(result.message || 'Không lưu được chế độ bảo trì.');
+      this.renderMaintenance(result.maintenance);
+      status.textContent = result.message || (enabled ? 'Đã bật bảo trì.' : 'Đã mở lại ứng dụng.');
+    } catch (error) {
+      status.textContent = error.message || 'Không lưu được chế độ bảo trì.';
+      await this.loadMaintenance();
+    } finally {
+      toggle.disabled = save.disabled = false;
+    }
   },
 
   async open(tab = 'keys') {
@@ -91,7 +167,7 @@ const Admin = {
       this.loadDeviceRequests();
     }
     if (tab === 'users') this.loadUsers();
-    if (tab === 'downloads') this.loadDownloadsConfig();
+    if (tab === 'downloads') return Promise.all([this.loadDownloadsConfig(), this.loadAccessPolicy()]);
     if (tab === 'content') return Promise.all([this.loadContentStatus(), this.loadAnnouncementEditor()]);
     if (tab === 'logs') {
       const loading = this.loadLogs();

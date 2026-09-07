@@ -16,6 +16,7 @@ const scheduleScreenshotPath = resolve(projectRoot, 'data', 'qa', 'phim4k-schedu
 const filterScreenshotPath = resolve(projectRoot, 'data', 'qa', 'phim4k-filter-smoke.png');
 const adminLogsScreenshotPath = resolve(projectRoot, 'data', 'qa', 'phim4k-admin-logs-smoke.png');
 const announcementScreenshotPath = resolve(projectRoot, 'data', 'qa', 'phim4k-announcement-admin-smoke.png');
+const railsScreenshotPath = resolve(projectRoot, 'data', 'qa', 'phim4k-cinema-rails-smoke.png');
 const mimeTypes = new Map([
   ['.css', 'text/css; charset=utf-8'],
   ['.html', 'text/html; charset=utf-8'],
@@ -360,6 +361,7 @@ try {
 
   const homeState = await evaluate(`(() => {
     const images = [...document.querySelectorAll('.movie-card img')].slice(0, 8);
+    const rail = document.querySelector('.cinema-rail');
     return {
       cards: document.querySelectorAll('.movie-card').length,
       loadedImages: images.filter((img) => img.complete && img.naturalWidth > 0).length,
@@ -369,12 +371,37 @@ try {
       heroYears: window.App.heroList.map(m=>Number(m.year)),
       firstHeroCinema: window.App.heroList[0]?.chieurap === true,
       firstSection: window.App.homeSections[0]?.id,
+      rails: document.querySelectorAll('.cinema-rail').length,
+      railFlow: rail ? getComputedStyle(rail).gridAutoFlow : '',
+      railOverflow: Boolean(rail && rail.scrollWidth > rail.clientWidth),
     };
   })()`);
 
   mkdirSync(resolve(projectRoot, 'data', 'qa'), { recursive: true });
   const homeScreenshot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
   writeFileSync(homeScreenshotPath, Buffer.from(homeScreenshot.data, 'base64'));
+  const railState = await evaluate(`(async () => {
+    const rail = document.querySelector('.cinema-rail');
+    const section = rail?.closest('.cinema-rail-section');
+    if (!rail || !section) return { found: false };
+    section.scrollIntoView({ block: 'start' });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const status = section.querySelector('.rail-position');
+    const before = status?.textContent || '';
+    rail.scrollLeft = Math.min(rail.scrollWidth - rail.clientWidth, rail.clientWidth * 1.15);
+    rail.dispatchEvent(new Event('scroll'));
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return {
+      found: true,
+      before,
+      after: status?.textContent || '',
+      moved: rail.scrollLeft > 0,
+      cardWidth: rail.querySelector('.movie-card')?.getBoundingClientRect().width || 0,
+    };
+  })()`);
+  const railsScreenshot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+  writeFileSync(railsScreenshotPath, Buffer.from(railsScreenshot.data, 'base64'));
+  await evaluate('window.scrollTo(0, 0)');
   const scrollState = await evaluate(`(() => {
     const maxScroll = Math.max(0, document.documentElement.scrollHeight - innerHeight);
     window.scrollTo(0, Math.min(maxScroll, 900));
@@ -619,9 +646,18 @@ try {
     window.__qaOriginalFetch = originalFetch;
     window.fetch = (url, options) => {
       const path = String(url);
+      if (path.includes('/api/admin/maintenance')) {
+        const body = JSON.parse(options?.body || '{}');
+        window.__qaMaintenance = body.enabled ? {
+          active: true,
+          message: body.message,
+          expiresAt: body.durationMinutes ? new Date(Date.now() + body.durationMinutes * 60000).toISOString() : ''
+        } : { active: false };
+        return Promise.resolve(new Response(JSON.stringify({success:true,maintenance:window.__qaMaintenance,message:body.enabled?'Đã bật chế độ bảo trì.':'Đã mở lại ứng dụng.'}),{status:200,headers:{'content-type':'application/json'}}));
+      }
       if (path.includes('/api/app/access-policy') || path.includes('/api/admin/access-policy')) {
         if (options?.method === 'POST') window.__qaFreeAccess = JSON.parse(options.body).freeAccess;
-        return Promise.resolve(new Response(JSON.stringify({success:true,freeAccess:!!window.__qaFreeAccess}),{status:200,headers:{'content-type':'application/json'}}));
+        return Promise.resolve(new Response(JSON.stringify({success:true,freeAccess:!!window.__qaFreeAccess,maintenance:window.__qaMaintenance||{active:false}}),{status:200,headers:{'content-type':'application/json'}}));
       }
       if (path.includes('/api/admin/device-access-requests')) {
         return Promise.resolve(new Response(JSON.stringify({ requests: [] }), { status: 200, headers: { 'content-type': 'application/json' } }));
@@ -667,6 +703,7 @@ try {
       }
       return originalFetch(url, options);
     };
+    window.confirm = () => true;
     window.Auth.activeKeyData = { isAdmin: true, telegramId: '1000000001', key: 'P4K-QA-LOCAL', active: true };
     window.Admin.open();
     await window.Admin.switchTab('logs');
@@ -676,7 +713,7 @@ try {
     const sessionCount = document.getElementById('logSessionCount').textContent;
     const watchTime = document.getElementById('logWatchTime').textContent;
     const loadMoreVisible = !document.getElementById('logsLoadMoreBtn').classList.contains('hidden');
-    window.Admin.switchTab('downloads');
+    await window.Admin.switchTab('downloads');
     const downloads = document.getElementById('adminTabDownloads');
     const logs = document.getElementById('adminTabLogs');
     const downloadsVisible = !downloads.classList.contains('hidden')
@@ -762,6 +799,26 @@ try {
   })()`);
   if(Object.values(accessPolicyUI).some(value=>!value)) throw new Error('Admin access policy UI failed: '+JSON.stringify(accessPolicyUI));
   console.log('[qa] admin access policy UI passed',JSON.stringify(accessPolicyUI));
+  const maintenanceUI=await evaluate(`(async()=>{
+    Admin.showTab('downloads');
+    await Admin.loadMaintenance();
+    const toggle=document.getElementById('adminMaintenanceToggle');
+    const initiallyOff=!toggle.checked && !toggle.disabled;
+    document.getElementById('maintenanceMessageInput').value='Đang nâng cấp QA.';
+    document.getElementById('maintenanceDurationInput').value='15';
+    toggle.checked=true; await Admin.saveMaintenance();
+    const enabled=toggle.checked && window.__qaMaintenance?.active===true
+      && document.getElementById('maintenanceAdminState').classList.contains('active')
+      && document.getElementById('adminMaintenanceBtn').classList.contains('active');
+    toggle.checked=false; await Admin.saveMaintenance();
+    const disabled=!toggle.checked && window.__qaMaintenance?.active===false
+      && !document.getElementById('maintenanceAdminState').classList.contains('active');
+    Admin.showTab('keys');
+    return {initiallyOff,enabled,disabled};
+  })()`);
+  if(Object.values(maintenanceUI).some(value=>!value)) throw new Error('Admin maintenance UI failed: '+JSON.stringify(maintenanceUI));
+  console.log('[qa] admin maintenance UI passed',JSON.stringify(maintenanceUI));
+  adminCloseState.maintenance=maintenanceUI;
   adminCloseState.quickActions=adminQuick;
   const adminLayout = await evaluate(`(() => {
     const dialog=document.querySelector('.admin-dialog'), nav=dialog.querySelector('.admin-tabs-nav');
@@ -869,6 +926,13 @@ try {
     && homeState.heroYears.every(year=>year===new Date().getUTCFullYear())
     && homeState.firstHeroCinema
     && homeState.firstSection === 'cinema-new'
+    && homeState.rails >= 3
+    && homeState.railFlow === 'column'
+    && homeState.railOverflow
+    && railState.found
+    && railState.moved
+    && railState.before !== railState.after
+    && railState.cardWidth >= 140
     && deviceApprovalState.unlocked
     && deviceApprovalState.deviceOnly
     && deviceApprovalState.telegramEmpty
@@ -924,6 +988,7 @@ try {
     && adminCloseState.announcementState.includes('Đang ghim')
     && adminCloseState.announcementButtonHeight >= 44
     && adminCloseState.loadMoreVisible
+    && Object.values(adminCloseState.maintenance || {}).every(Boolean)
     && exceptions.length === 0
     && consoleErrors.length === 0
     && failedRequests.length === 0
@@ -937,6 +1002,7 @@ try {
     trailer: trailerState,
     expectedMediaCancellations,
     home: homeState,
+    rails: railState,
     scroll: scrollState,
     filter: filterState,
     category: categoryState,
@@ -956,6 +1022,7 @@ try {
     filterScreenshot: filterScreenshotPath,
     adminLogsScreenshot: adminLogsScreenshotPath,
     announcementScreenshot: announcementScreenshotPath,
+    railsScreenshot: railsScreenshotPath,
   };
   if (!checksPassed) process.exitCode = 1;
 } catch (error) {

@@ -547,7 +547,7 @@ function renderAccountTab() {
   if (planEl) planEl.textContent = isSuperAdmin ? '👑 SUPER ADMIN' : plan;
   if (keyEl) keyEl.textContent = key;
   const versionEl = document.getElementById('accAppVersion');
-  if (versionEl) versionEl.textContent = `v${window.API?.getVersion?.() || '3.4.33'}`;
+  if (versionEl) versionEl.textContent = `v${window.API?.getVersion?.() || '3.4.34'}`;
 
   if (adminBtn) {
     adminBtn.classList.toggle('hidden', !isSuperAdmin);

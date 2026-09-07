@@ -55,9 +55,26 @@ test('account version and a verified session do not fall back to stale WebView s
   const auth = read('../public/js/auth.js');
   assert.match(api, /window\.API = API/);
   assert.match(auth, /window\.Auth = Auth/);
-  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.33'/);
+  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.34'/);
   assert.match(auth, /const verifiedSession = \{ \.\.\.res, key, telegramId \}/);
   assert.match(auth, /Auth\.unlockApp\(verifiedSession\)/);
+});
+
+test('maintenance mode is controlled by verified admin and enforced across client sessions', () => {
+  const auth = read('../public/js/auth.js');
+  const api = read('../public/js/api.js');
+  const admin = read('../public/js/admin.js');
+  const index = read('../public/index.html');
+  const worker = read('../backend-worker/src/worker.mjs');
+  assert.match(index, /id="maintenanceNotice"/);
+  assert.match(index, /id="adminMaintenanceToggle"/);
+  assert.match(index, /id="maintenanceDurationInput"/);
+  assert.match(auth, /showMaintenance\(value/);
+  assert.match(auth, /MAINTENANCE_MODE/);
+  assert.match(api, /maintenance: payload\.maintenance/);
+  assert.match(admin, /\/api\/admin\/maintenance/);
+  assert.match(worker, /function maintenanceError/);
+  assert.match(worker, /if \(maintenance\.active\) return maintenanceError/);
 });
 
 test('web, iOS and Windows release versions stay aligned', () => {
@@ -65,18 +82,18 @@ test('web, iOS and Windows release versions stay aligned', () => {
   const iosProject = read('../ios/App/App.xcodeproj/project.pbxproj');
   const desktop = JSON.parse(read('../electron-builder.json'));
   const webVersion = api.match(/return '(\d+\.\d+\.\d+)'/)?.[1];
-  assert.equal(webVersion, '3.4.33');
+  assert.equal(webVersion, '3.4.34');
   assert.equal(desktop.extraMetadata.version, webVersion);
   assert.deepEqual([...iosProject.matchAll(/MARKETING_VERSION = ([^;]+);/g)].map((match) => match[1]), [webVersion, webVersion]);
-  assert.deepEqual([...iosProject.matchAll(/CURRENT_PROJECT_VERSION = ([^;]+);/g)].map((match) => match[1]), ['33', '33']);
+  assert.deepEqual([...iosProject.matchAll(/CURRENT_PROJECT_VERSION = ([^;]+);/g)].map((match) => match[1]), ['34', '34']);
 });
 
 test('iOS entry point cache-busts every bundled script and stylesheet', () => {
   const html = read('../public/index.html');
   const localAssets = [...html.matchAll(/(?:src|href)="\/(?:js|css|vendor)\/[^"?]+(?:\?[^" ]+)?"/g)].map(match => match[0]);
   assert.ok(localAssets.length >= 20);
-  assert.ok(localAssets.every(asset => asset.includes('?v=3.4.33')), localAssets.join('\n'));
-  assert.match(html, /3\.4\.33[^<]*FIX TOÀN MÀN HÌNH GIỮ TRỌN PHỤ ĐỀ/);
+  assert.ok(localAssets.every(asset => asset.includes('?v=3.4.34')), localAssets.join('\n'));
+  assert.match(html, /3\.4\.34[^<]*BẢO TRÌ \+ BĂNG PHIM MƯỢT/);
 });
 
 test('movie modal is scrollable and sized for a phone viewport', () => {
@@ -121,7 +138,7 @@ test('native catalog falls back immediately instead of leaving the UI loading', 
   vm.runInContext(read('../public/js/home-curation.js'), sandbox);
   sandbox.Phim4KHome = sandbox.window.Phim4KHome;
   vm.runInContext(`${read('../public/js/api.js')}\nglobalThis.__api = API;`, sandbox);
-  assert.equal(sandbox.window.API.getVersion(), '3.4.33');
+  assert.equal(sandbox.window.API.getVersion(), '3.4.34');
   const home = await sandbox.__api.getHomeFeed();
   const detail = await sandbox.__api.getDetail(home.hero[0].slug);
   assert.ok(home.hero.length > 0);
@@ -142,6 +159,20 @@ test('home catalog has working genre and country filters with grouped rows', () 
   app.activeHomeFilters = { genre: 'Hoạt Hình', country: 'Nhật Bản' };
   assert.ok(app.moviesMatching().length > 0);
   assert.ok(app.buildHomeSections([]).some((section) => section.id === 'country-china'));
+});
+
+test('home uses touch-native cinema rails while filtered results remain a grid', () => {
+  const app = read('../public/js/app.js');
+  const styles = read('../public/css/style.css');
+  assert.match(app, /cinema-rail-section/);
+  assert.match(app, /bindMovieRail/);
+  assert.match(app, /requestAnimationFrame\(update\)/);
+  assert.match(app, /section-index/);
+  assert.match(app, /isGrid \? 'movie-grid filtered-movie-grid' : 'movie-row cinema-rail'/);
+  assert.match(styles, /\.movie-row\.cinema-rail[\s\S]*?grid-auto-flow: column/);
+  assert.match(styles, /scroll-snap-type: x proximity/);
+  assert.match(styles, /-webkit-overflow-scrolling: touch/);
+  assert.match(styles, /@media \(hover: none\)[\s\S]*?\.movie-card:hover/);
 });
 
 test('home filters query the full server catalogue with pagination and a mobile grid', () => {

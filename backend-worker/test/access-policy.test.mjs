@@ -38,6 +38,53 @@ test('free access defaults off; only verified admin can change it; disabling rev
   } finally {f.sqlite.close();}
 });
 
+test('maintenance is server-authoritative, blocks every viewer, and keeps verified admin recovery access', async () => {
+  const f=fixture(); f.seed('P4K-MAINTENANCE-USER');
+  try {
+    assert.deepEqual((await (await f.request('/api/app/access-policy')).json()).maintenance,{active:false});
+    assert.equal((await f.request('/api/auth/activate',{key:'P4K-MAINTENANCE-USER',deviceId:'viewer-maintenance'})).status,200);
+    await f.request('/api/admin/access-policy',{freeAccess:true},f.admin);
+
+    const denied=await f.request('/api/admin/maintenance',{enabled:true,message:'Không được phép',durationMinutes:15});
+    assert.equal(denied.status,403);
+
+    const enabledResponse=await f.request('/api/admin/maintenance',{
+      enabled:true,
+      message:'  Đang nâng cấp   máy chủ.  ',
+      durationMinutes:60,
+    },f.admin);
+    assert.equal(enabledResponse.status,200);
+    const enabled=await enabledResponse.json();
+    assert.equal(enabled.maintenance.active,true);
+    assert.equal(enabled.maintenance.message,'Đang nâng cấp máy chủ.');
+    assert.ok(Date.parse(enabled.maintenance.expiresAt)>Date.now());
+
+    const policy=await (await f.request('/api/app/access-policy')).json();
+    assert.equal(policy.freeAccess,true);
+    assert.equal(policy.maintenance.active,true);
+
+    const viewer=await f.request('/api/auth/status',undefined,{
+      'x-license-key':'P4K-MAINTENANCE-USER','x-device-id':'viewer-maintenance'
+    });
+    assert.equal(viewer.status,503);
+    assert.equal((await viewer.json()).code,'MAINTENANCE_MODE');
+
+    const guest=await f.request('/api/auth/status',undefined,{'x-device-id':'guest-maintenance'});
+    assert.equal(guest.status,503);
+    assert.equal((await guest.json()).maintenance.active,true);
+
+    const admin=await (await f.request('/api/auth/status',undefined,{...f.admin,'x-device-id':'admin-maintenance'})).json();
+    assert.equal(admin.active,true);
+    assert.equal(admin.isAdmin,true);
+
+    assert.equal((await f.request('/api/admin/maintenance',{enabled:false},f.admin)).status,200);
+    const restored=await (await f.request('/api/auth/status',undefined,{
+      'x-license-key':'P4K-MAINTENANCE-USER','x-device-id':'viewer-maintenance'
+    })).json();
+    assert.equal(restored.active,true);
+  } finally {f.sqlite.close();}
+});
+
 test('key-only activation atomically binds one device and rejects concurrent second device',async()=>{
   const f=fixture(); f.seed();
   try {

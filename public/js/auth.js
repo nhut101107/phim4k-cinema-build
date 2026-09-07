@@ -70,7 +70,11 @@ const Auth = {
     // switched the whole app to free access.
     try {
       const policy = await this.getAccessPolicy();
-      if (policy.freeAccess === true) {
+      if (policy.maintenance?.active === true && !savedKey) {
+        this.showMaintenance(policy.maintenance);
+        return;
+      }
+      if (policy.freeAccess === true && policy.maintenance?.active !== true) {
         const guest = await API.checkStatus('', '', deviceId);
         if (guest.active && guest.freeAccess && !guest.forceUpdate) {
           this.unlockApp({ ...guest, key: '', telegramId: '' });
@@ -95,6 +99,10 @@ const Auth = {
         : await API.checkStatus(savedKey, savedTeleId, deviceId);
       if (res.forceUpdate || res.code === 'FORCE_UPDATE_REQUIRED') {
         showForceUpdateModal(res);
+        return;
+      }
+      if (res.code === 'MAINTENANCE_MODE' || res.maintenance?.active === true) {
+        this.showMaintenance(res.maintenance || { active: true, message: res.message });
         return;
       }
       if (res.active) {
@@ -144,7 +152,9 @@ const Auth = {
     }
 
     document.body.classList.add('activation-locked');
-    document.getElementById('activationGate').classList.remove('hidden');
+    const gate = document.getElementById('activationGate');
+    gate.classList.remove('hidden', 'maintenance-active');
+    document.getElementById('maintenanceNotice')?.classList.add('hidden');
     document.getElementById('appContainer').classList.add('hidden');
     
     const adminBtn = document.getElementById('adminNavBtn');
@@ -157,6 +167,37 @@ const Auth = {
       msgEl.classList.remove('hidden');
     } else {
       msgEl.classList.add('hidden');
+    }
+  },
+
+  showMaintenance(value = {}) {
+    const maintenance = value?.active === false ? { active: true } : value;
+    this.triggerLock();
+    const gate = document.getElementById('activationGate');
+    const notice = document.getElementById('maintenanceNotice');
+    gate?.classList.add('maintenance-active');
+    notice?.classList.remove('hidden');
+    const message = document.getElementById('maintenanceMessage');
+    if (message) message.textContent = maintenance.message || 'Hệ thống đang được nâng cấp. Vui lòng quay lại sau.';
+    const until = document.getElementById('maintenanceUntil');
+    if (until) {
+      const expiry = Date.parse(maintenance.expiresAt || '');
+      until.textContent = Number.isFinite(expiry)
+        ? `Dự kiến mở lại ${new Date(expiry).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })}`
+        : 'Admin sẽ mở lại ngay khi nâng cấp hoàn tất.';
+    }
+    const adminFields = document.getElementById('adminLoginFields');
+    if (adminFields) adminFields.open = true;
+    const buttonText = document.querySelector('#btnActivate .btn-text');
+    if (buttonText) buttonText.textContent = 'ĐĂNG NHẬP QUẢN TRỊ';
+  },
+
+  async retryAfterMaintenance() {
+    const button = document.getElementById('maintenanceRetryBtn');
+    if (button) { button.disabled = true; button.textContent = 'Đang kiểm tra…'; }
+    try { await this.init(); }
+    finally {
+      if (button) { button.disabled = false; button.textContent = 'Kiểm tra lại'; }
     }
   },
 
@@ -213,7 +254,12 @@ const Auth = {
     localStorage.setItem('phim4k_plan', keyData.isAdmin ? 'SUPER ADMIN' : (keyData.plan || 'VIP PRO'));
 
     document.body.classList.remove('activation-locked');
-    document.getElementById('activationGate').classList.add('hidden');
+    const gate = document.getElementById('activationGate');
+    gate.classList.remove('maintenance-active');
+    gate.classList.add('hidden');
+    document.getElementById('maintenanceNotice')?.classList.add('hidden');
+    const buttonText = document.querySelector('#btnActivate .btn-text');
+    if (buttonText) buttonText.textContent = 'XÁC THỰC VÀ VÀO XEM PHIM';
     document.getElementById('appContainer').classList.remove('hidden');
 
     // VIP Plan display
@@ -276,6 +322,10 @@ const Auth = {
         const res = deviceOnly
           ? await API.checkDeviceAccess(key, this.getDeviceId())
           : await API.checkStatus(key, teleId, this.getDeviceId());
+        if (res.code === 'MAINTENANCE_MODE' || res.maintenance?.active === true) {
+          this.showMaintenance(res.maintenance || { active: true, message: res.message });
+          return;
+        }
         if (!res.active) {
           console.warn('Heartbeat detected expired, blocked, or device/tele mismatch:', res);
           
@@ -364,6 +414,10 @@ async function handleActivation(e) {
         }
       }, 500);
     } else {
+      if (res.code === 'MAINTENANCE_MODE') {
+        Auth.showMaintenance(res.maintenance || { active: true, message: res.message });
+        return;
+      }
       const adminIdentityRequired = String(res.code || '').includes('TELEGRAM');
       if (adminIdentityRequired) {
         const adminFields = document.getElementById('adminLoginFields');

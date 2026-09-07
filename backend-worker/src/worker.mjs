@@ -22,7 +22,9 @@ const MASTER_KEY_MIN_LENGTH = 12;
 const MAX_JSON_BODY_BYTES = 16 * 1024;
 const ADMIN_KEY_HASH_SETTING = "admin_key_hmac_v1";
 const ANNOUNCEMENT_SETTING = "global_announcement_v1";
+const MAINTENANCE_SETTING = "maintenance_mode_v1";
 const MAX_ANNOUNCEMENT_MINUTES = 30 * 24 * 60;
+const MAX_MAINTENANCE_MINUTES = 7 * 24 * 60;
 const TELEMETRY_ACTIONS = new Set([
   "app_open", "tab_view", "category_view", "filter_applied", "search",
   "movie_open", "episode_open", "playback_start", "playback_ready",
@@ -511,7 +513,11 @@ async function verifyTelemetryViewer(request, env) {
   const telegramId = requestTelegram(request);
   const deviceId = normalizeId(request.headers.get("x-device-id"));
   if (!deviceId) return { error: textError("Thiếu phiên người dùng hợp lệ.", 401, "VIEWER_SESSION_REQUIRED") };
-  if (!key && await freeAccessEnabled(env.DB)) return {telegramId: '', deviceId, isAdmin: false};
+  if (!key) {
+    const maintenance = await getMaintenance(env.DB);
+    if (maintenance.active) return { error: maintenanceError(maintenance) };
+    if (await freeAccessEnabled(env.DB)) return {telegramId: '', deviceId, isAdmin: false};
+  }
   if (!key) return {error: textError('Vui lòng nhập key.', 401, 'KEY_REQUIRED')};
 
   if (await verifyMasterKey(key, env, env.DB)) {
@@ -520,6 +526,8 @@ async function verifyTelemetryViewer(request, env) {
     }
     return { telegramId, deviceId, isAdmin: true };
   }
+  const maintenance = await getMaintenance(env.DB);
+  if (maintenance.active) return { error: maintenanceError(maintenance) };
   if (!validKey(key)) return { error: textError("Key không hợp lệ.", 401, "INVALID_KEY_FORMAT") };
   const record = await queryOne(env.DB, "SELECT * FROM license_keys WHERE license_key = ?", key);
   if (!record || !record.active || isExpired(record.expires_at)) {
@@ -818,6 +826,72 @@ async function getAnnouncement(db) {
   return normalizeAnnouncementSetting(row?.setting_value);
 }
 
+export function normalizeMaintenanceSetting(raw, timestamp = Date.now()) {
+  let value = raw;
+  if (typeof value === "string") {
+    try { value = JSON.parse(value); } catch (_error) { value = null; }
+  }
+  if (!value || typeof value !== "object" || !value.enabled) return { active: false };
+  const message = String(value.message || "Hệ thống đang được nâng cấp. Vui lòng quay lại sau.")
+    .replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 400);
+  const startedAt = String(value.startedAt || "");
+  const expiresAt = String(value.expiresAt || "");
+  if (expiresAt && (!Number.isFinite(Date.parse(expiresAt)) || Date.parse(expiresAt) <= timestamp)) return { active: false };
+  return { active: true, message, startedAt, expiresAt };
+}
+
+async function getMaintenance(db) {
+  const row = await queryOne(db, "SELECT setting_value FROM app_settings WHERE setting_key = ?", MAINTENANCE_SETTING);
+  return normalizeMaintenanceSetting(row?.setting_value);
+}
+
+function maintenanceError(maintenance) {
+  const retryAfter = maintenance.expiresAt
+    ? Math.max(30, Math.min(3600, Math.ceil((Date.parse(maintenance.expiresAt) - Date.now()) / 1000)))
+    : 300;
+  return json({
+    success: false,
+    active: false,
+    code: "MAINTENANCE_MODE",
+    error: maintenance.message,
+    message: maintenance.message,
+    maintenance,
+  }, 503, { "retry-after": String(retryAfter) });
+}
+
+async function handleMaintenanceAdmin(request, env) {
+  const denied = await requireVerifiedAdmin(request, env);
+  if (denied) return denied;
+  const body = await parseBody(request);
+  if (typeof body.enabled !== "boolean") return textError("Trạng thái bảo trì không hợp lệ.", 400, "INVALID_MAINTENANCE_STATE");
+  const timestamp = now();
+  if (!body.enabled) {
+    const value = JSON.stringify({ enabled: false, endedAt: timestamp });
+    await env.DB.prepare(
+      "INSERT INTO app_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?) ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = excluded.updated_at",
+    ).bind(MAINTENANCE_SETTING, value, timestamp).run();
+    await logEvent(env.DB, "admin_maintenance_disabled", { actorTelegramId: requestTelegram(request) });
+    return json({ success: true, maintenance: { active: false }, message: "Đã mở lại ứng dụng cho người dùng." });
+  }
+
+  const message = String(body.message || "Hệ thống đang được nâng cấp. Vui lòng quay lại sau.")
+    .replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 400);
+  const durationMinutes = Number.parseInt(String(body.durationMinutes || "0"), 10);
+  if (!message) return textError("Hãy nhập nội dung bảo trì.", 400, "MAINTENANCE_MESSAGE_REQUIRED");
+  if (!Number.isInteger(durationMinutes) || durationMinutes < 0 || durationMinutes > MAX_MAINTENANCE_MINUTES) {
+    return textError("Thời gian bảo trì phải từ 0 phút đến 7 ngày; chọn 0 để tự tắt thủ công.", 400, "INVALID_MAINTENANCE_DURATION");
+  }
+  const expiresAt = durationMinutes ? new Date(Date.now() + durationMinutes * 60 * 1000).toISOString() : "";
+  const value = { enabled: true, message, startedAt: timestamp, expiresAt };
+  await env.DB.prepare(
+    "INSERT INTO app_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?) ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = excluded.updated_at",
+  ).bind(MAINTENANCE_SETTING, JSON.stringify(value), timestamp).run();
+  await logEvent(env.DB, "admin_maintenance_enabled", {
+    actorTelegramId: requestTelegram(request), detail: JSON.stringify({ durationMinutes, expiresAt }),
+  });
+  return json({ success: true, maintenance: normalizeMaintenanceSetting(value), message: "Đã bật chế độ bảo trì." });
+}
+
 async function handleAnnouncementAdmin(request, env) {
   const denied = await requireVerifiedAdmin(request, env);
   if (denied) return denied;
@@ -872,12 +946,14 @@ async function accessPolicy(request, env) {
     await env.DB.prepare('INSERT INTO app_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?) ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = excluded.updated_at').bind('free_access', String(body.freeAccess), now()).run();
     await logEvent(env.DB, 'admin_access_policy_updated', {actorTelegramId: requestTelegram(request), detail: `freeAccess=${body.freeAccess}`});
   }
-  return json({success: true, freeAccess: await freeAccessEnabled(env.DB)});
+  return json({success: true, freeAccess: await freeAccessEnabled(env.DB), maintenance: await getMaintenance(env.DB)});
 }
 
 async function activationStatus({ db, key, telegramId, deviceId, request, env, activation }) {
   if (!deviceId) return textError('Thiếu mã thiết bị.', 400, 'MISSING_LICENSE_DATA');
   if (!key) {
+    const maintenance = await getMaintenance(db);
+    if (maintenance.active) return maintenanceError(maintenance);
     if (!await freeAccessEnabled(db)) return textError('Vui lòng nhập key để tiếp tục.', 401, 'KEY_REQUIRED');
     return json({success: true, active: true, isAdmin: false, freeAccess: true, plan: 'MIỄN KEY', expiresAt: null, ...await getForceUpdate(db, appVersion(request))});
   }
@@ -890,6 +966,8 @@ async function activationStatus({ db, key, telegramId, deviceId, request, env, a
     // key or administrator identity back in an API response.
     return json({ success: true, active: !force.forceUpdate, isAdmin: true, plan: "MASTER", expiresAt: null, ...force });
   }
+  const maintenance = await getMaintenance(db);
+  if (maintenance.active) return maintenanceError(maintenance);
   if (!validKey(key)) return textError("Định dạng key không hợp lệ.", 400, "INVALID_KEY_FORMAT");
 
   const record = await queryOne(db, "SELECT * FROM license_keys WHERE license_key = ?", key);
@@ -955,6 +1033,8 @@ async function requestDeviceAccess(request, env) {
   const deviceId = normalizeId(body.deviceId);
   if (!validKey(key) || !deviceId) return textError("Nhập key hợp lệ để gửi yêu cầu cho Admin.", 400, "INVALID_DEVICE_REQUEST");
   if (await verifyMasterKey(key, env, env.DB)) return textError("Key Admin bắt buộc dùng Telegram ID quản trị.", 403, "ADMIN_TELEGRAM_REQUIRED");
+  const maintenance = await getMaintenance(env.DB);
+  if (maintenance.active) return maintenanceError(maintenance);
 
   const record = await queryOne(env.DB, "SELECT * FROM license_keys WHERE license_key = ?", key);
   if (!record) return textError("Key không tồn tại.", 404, "KEY_NOT_FOUND");
@@ -979,6 +1059,8 @@ async function deviceAccessStatus(request, env) {
   const key = requestKey(request) || normalizeKey(url.searchParams.get("key"));
   const deviceId = normalizeId(request.headers.get('x-device-id')) || normalizeId(url.searchParams.get("deviceId"));
   if (!validKey(key) || !deviceId) return textError("Thiếu key hoặc mã thiết bị.", 400, "MISSING_DEVICE_LICENSE_DATA");
+  const maintenance = await getMaintenance(env.DB);
+  if (maintenance.active) return maintenanceError(maintenance);
   await ensureDeviceAccessTable(env.DB);
   const approval = await queryOne(env.DB, "SELECT status FROM device_access_requests WHERE license_key = ? AND device_id = ?", key, deviceId);
   if (!approval) return json({ success: true, active: false, status: "none", message: "Chưa gửi yêu cầu cấp phép." });
@@ -1893,6 +1975,7 @@ export default {
 
       if (request.method === 'GET' && pathname === '/api/app/access-policy') return await accessPolicy(request, env);
       if (request.method === 'POST' && pathname === '/api/admin/access-policy') return await accessPolicy(request, env);
+      if (request.method === 'POST' && pathname === '/api/admin/maintenance') return await handleMaintenanceAdmin(request, env);
 
       if (request.method === "POST" && pathname === "/api/auth/activate") {
         const body = await parseBody(request);
