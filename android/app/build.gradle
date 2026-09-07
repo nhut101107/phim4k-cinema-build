@@ -37,6 +37,21 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
+
+    // The decoder smoke fixture is available only to debug/instrumentation
+    // builds. It must never add test media to the signed production APK.
+    sourceSets {
+        debug.assets.srcDir(layout.buildDirectory.dir('generated/qaAssets'))
+    }
+}
+
+def prepareDebugQaAssets = tasks.register('prepareDebugQaAssets', Copy) {
+    from(rootProject.file('../public/media/qa-original.mp4'))
+    into(layout.buildDirectory.dir('generated/qaAssets/public/media'))
+}
+
+tasks.matching { it.name in ['mergePhoneDebugAssets', 'mergeTvDebugAssets'] }.configureEach {
+    dependsOn(prepareDebugQaAssets)
 }
 
 repositories {

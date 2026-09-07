@@ -102,6 +102,8 @@ test('Android phone and TV are separate optimized release flavors', () => {
   assert.match(gradle, /versionName "3\.4\.34"/);
   assert.match(gradle, /phone\s*\{[\s\S]*?applicationId "com\.phim4k\.cinema"[\s\S]*?PHIM4K_PLATFORM[^\n]*android/);
   assert.match(gradle, /tv\s*\{[\s\S]*?applicationId "com\.phim4k\.cinema\.tv"[\s\S]*?PHIM4K_PLATFORM[^\n]*android_tv/);
+  assert.match(gradle, /debug\.assets\.srcDir\(layout\.buildDirectory\.dir\('generated\/qaAssets'\)\)/);
+  assert.match(gradle, /prepareDebugQaAssets/);
   assert.doesNotMatch(mainManifest, /LEANBACK_LAUNCHER|screenOrientation="landscape"/);
   assert.match(mainManifest, /networkSecurityConfig="@xml\/network_security_config"/);
   assert.match(tvManifest, /LEANBACK_LAUNCHER/);
