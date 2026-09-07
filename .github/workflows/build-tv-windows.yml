@@ -13,7 +13,6 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run ios:prepare
       - run: npm test
       - run: npm run desktop:build
       - shell: pwsh
@@ -43,7 +42,6 @@ jobs:
       - name: Install Android SDK packages
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - run: npm ci --ignore-scripts
-      - run: npm run ios:prepare
       - run: npm test
       - run: npm run tv:sync
       - name: Build release and QA APK
