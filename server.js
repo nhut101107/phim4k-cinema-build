@@ -4,10 +4,10 @@ const fs = require('fs');
 const path = require('path');
 const net = require('net');
 const crypto = require('crypto');
-const dns = require('dns').promises;
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const BIND_HOST = String(process.env.BIND_HOST || '127.0.0.1');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
 app.disable('x-powered-by');
@@ -351,7 +351,9 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(cors());
+// This legacy development server is same-origin only. Production clients use
+// the Cloudflare Worker API and must never depend on a wildcard CORS proxy.
+app.use(cors({ origin: false }));
 app.use(express.json({ limit: '1mb' }));
 app.get('/standalone.html', (_req, res) => {
   res.status(410).type('text/plain').send('This legacy page is no longer available.');
@@ -1331,103 +1333,13 @@ app.get('/api/movies/detail/:slug', requireLicenseKey, async (req, res) => {
   }
 });
 
-function isPrivateNetworkAddress(address) {
-  const family = net.isIP(address);
-  if (family === 4) {
-    const [a, b] = address.split('.').map(Number);
-    return a === 10 || a === 127 || a === 0 || a === 169 && b === 254 ||
-      a === 192 && b === 168 || a === 172 && b >= 16 && b <= 31;
-  }
-  if (family === 6) {
-    const normalized = address.toLowerCase();
-    return normalized === '::1' || normalized.startsWith('::ffff:') || normalized.startsWith('fc') || normalized.startsWith('fd') || normalized.startsWith('fe80:');
-  }
-  return true;
-}
-
-async function validateStreamTarget(value) {
-  if (!value || String(value).length > 4096) throw new Error('Invalid stream URL');
-  const parsed = new URL(value);
-  if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Unsupported stream protocol');
-  const host = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase();
-  if (host === 'localhost' || host.endsWith('.local') || host.endsWith('.internal')) {
-    throw new Error('Blocked stream host');
-  }
-
-  if (net.isIP(host)) {
-    if (isPrivateNetworkAddress(host)) throw new Error('Blocked private stream host');
-  } else {
-    const addresses = await dns.lookup(host, { all: true, verbatim: true });
-    if (!addresses.length || addresses.some(item => isPrivateNetworkAddress(item.address))) {
-      throw new Error('Blocked private stream host');
-    }
-  }
-  return parsed;
-}
-
-// Stream proxy. It rejects local/private destinations so the endpoint cannot be
-// used as an open proxy into this machine or its private network.
-app.get('/api/stream/proxy', async (req, res) => {
-  const targetUrl = req.query.url;
-  if (!targetUrl) return res.status(400).send('Missing url parameter');
-
-  try {
-    const parsed = await validateStreamTarget(targetUrl);
-    const headers = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Referer': `${parsed.protocol}//${parsed.host}/`,
-      'Origin': `${parsed.protocol}//${parsed.host}`
-    };
-
-    if (req.headers.range) headers['Range'] = req.headers.range;
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000);
-    let upstream;
-    try {
-      upstream = await fetch(parsed, { headers, signal: controller.signal });
-    } finally {
-      clearTimeout(timeout);
-    }
-
-    if (!upstream.ok && upstream.status !== 206) {
-      return res.status(upstream.status).send('Upstream stream is unavailable');
-    }
-
-    const contentType = upstream.headers.get('content-type') || '';
-    if (contentType) res.set('Content-Type', contentType);
-    const contentRange = upstream.headers.get('content-range');
-    if (contentRange) res.set('Content-Range', contentRange);
-    const acceptRanges = upstream.headers.get('accept-ranges');
-    if (acceptRanges) res.set('Accept-Ranges', acceptRanges);
-
-    res.status(upstream.status);
-
-    if (contentType.includes('mpegurl') || targetUrl.endsWith('.m3u8')) {
-      const text = await upstream.text();
-      const baseUrl = targetUrl.substring(0, targetUrl.lastIndexOf('/') + 1);
-
-      const lines = text.split('\n');
-      const rewritten = lines.map(line => {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith('#')) return line;
-
-        let fullSegmentUrl = trimmed;
-        if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
-          fullSegmentUrl = new URL(trimmed, baseUrl).toString();
-        }
-        return `/api/stream/proxy?url=${encodeURIComponent(fullSegmentUrl)}`;
-      }).join('\n');
-
-      return res.send(rewritten);
-    }
-
-    const arrayBuffer = await upstream.arrayBuffer();
-    res.send(Buffer.from(arrayBuffer));
-  } catch (err) {
-    console.error('Stream proxy error:', err.message);
-    res.status(400).send('Stream Proxy Error');
-  }
+// The old client-controlled stream proxy is permanently retired. Playback is
+// resolved server-side and fetched only by the allowlisted, signed relay.
+app.get('/api/stream/proxy', requireLicenseKey, async (req, res) => {
+  return res.status(410).json({
+    error: 'LEGACY_STREAM_PROXY_RETIRED',
+    message: 'Use the authenticated media relay.'
+  });
 });
 
 // ==========================================
@@ -1590,10 +1502,10 @@ app.use((err, _req, res, _next) => {
   });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, BIND_HOST, () => {
   console.log(`=====================================================`);
   console.log(`🎬 Phim4K Ultra Engine running with Anti-DDoS & Logs!`);
-  console.log(`🔗 Local Address: http://localhost:${PORT}`);
+  console.log(`🔗 Local Address: http://${BIND_HOST}:${PORT}`);
   console.log(`👑 Super Admin controls enabled`);
   console.log(`=====================================================`);
 });

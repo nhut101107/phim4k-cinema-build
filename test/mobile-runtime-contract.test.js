@@ -24,7 +24,8 @@ test('activation gate does not prefill a cached Telegram identity', () => {
   assert.doesNotMatch(auth, /teleInput\.value = savedTeleId;\s*\/\/ Pre-fill/);
   assert.match(auth, /key người xem không cần Telegram ID/i);
   assert.match(auth, /activationFailureMessage\(res/);
-  assert.match(auth, /clearStoredSession\(\);\s*this\.triggerLock\(activationFailureMessage/);
+  assert.match(auth, /SessionVault\.clear\(\)/);
+  assert.match(auth, /localStorage\.removeItem\('phim4k_key'\)/);
   assert.match(index, /Key người xem không cần Telegram ID/);
   assert.doesNotMatch(api, /Không thể xác thực key hoặc Telegram ID/);
   assert.match(index, /media\/phim4k-avatar\.png/);
@@ -33,11 +34,12 @@ test('activation gate does not prefill a cached Telegram identity', () => {
   assert.doesNotMatch(auth, /function setPersistentCookie/);
 });
 
-test('free-access policy is checked before a saved key and users can refresh app state', () => {
+test('legacy credentials are migrated once, erased and users can refresh app state', () => {
   const auth = read('../public/js/auth.js');
   const admin = read('../public/js/admin.js');
   const index = read('../public/index.html');
-  assert.ok(auth.indexOf('await this.getAccessPolicy()') < auth.indexOf('if (!savedKey)'));
+  assert.ok(auth.indexOf("localStorage.removeItem('phim4k_key')") < auth.indexOf('if (savedKey)'));
+  assert.match(auth, /await API\.activate\(savedKey, savedTeleId, deviceId\)/);
   assert.match(auth, /window\.refreshAppFromServer = refreshAppFromServer/);
   assert.match(auth, /window\.location\.reload\(\)/);
   assert.match(index, /onclick="refreshAppFromServer\(this\)"[^>]*>🔄 Làm mới ứng dụng/);
@@ -60,9 +62,18 @@ test('account version and a verified session do not fall back to stale WebView s
   const auth = read('../public/js/auth.js');
   assert.match(api, /window\.API = API/);
   assert.match(auth, /window\.Auth = Auth/);
-  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.36'/);
-  assert.match(auth, /const verifiedSession = \{ \.\.\.res, key, telegramId \}/);
-  assert.match(auth, /Auth\.unlockApp\(verifiedSession\)/);
+  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.39'/);
+  assert.match(auth, /SessionVault\.hasSession\(\)/);
+  assert.match(auth, /await SessionVault\.save\(result\)/);
+  assert.doesNotMatch(account, /localStorage\.getItem\('phim4k_key'\)/);
+});
+
+test('iOS device proof exports only its public key and persists a sealed private key', () => {
+  const vault = read('../public/js/session-vault.js');
+  assert.match(vault, /exportKey\('jwk', generated\.publicKey\)/);
+  assert.match(vault, /importKey\('jwk', privateJwk,[\s\S]*?false, \['sign'\]\)/);
+  assert.match(vault, /exportKey\('jwk', pair\.publicKey\)/);
+  assert.match(vault, /store\.delete\(DEVICE_KEY\)/);
 });
 
 test('maintenance mode is controlled by verified admin and enforced across client sessions', () => {
@@ -87,10 +98,10 @@ test('web, iOS and Windows release versions stay aligned', () => {
   const iosProject = read('../ios/App/App.xcodeproj/project.pbxproj');
   const desktop = JSON.parse(read('../electron-builder.json'));
   const webVersion = api.match(/return '(\d+\.\d+\.\d+)'/)?.[1];
-  assert.equal(webVersion, '3.4.36');
+  assert.equal(webVersion, '3.4.39');
   assert.equal(desktop.extraMetadata.version, webVersion);
   assert.deepEqual([...iosProject.matchAll(/MARKETING_VERSION = ([^;]+);/g)].map((match) => match[1]), [webVersion, webVersion]);
-  assert.deepEqual([...iosProject.matchAll(/CURRENT_PROJECT_VERSION = ([^;]+);/g)].map((match) => match[1]), ['36', '36']);
+  assert.deepEqual([...iosProject.matchAll(/CURRENT_PROJECT_VERSION = ([^;]+);/g)].map((match) => match[1]), ['39', '39']);
   assert.equal(JSON.parse(read('../capacitor.config.json')).appName, '4K Cinema');
   assert.equal(desktop.productName, '4K Cinema');
   assert.equal(desktop.win.artifactName, '4K-Cinema-Windows-${version}-x64.exe');
@@ -109,8 +120,8 @@ test('Android phone and TV are separate optimized release flavors', () => {
   const styles = read('../public/css/style.css');
   const player = read('../public/js/player.js');
 
-  assert.match(gradle, /versionCode 36/);
-  assert.match(gradle, /versionName "3\.4\.36"/);
+  assert.match(gradle, /versionCode 39/);
+  assert.match(gradle, /versionName "3\.4\.39"/);
   assert.match(gradle, /phone\s*\{[\s\S]*?applicationId "com\.phim4k\.cinema"[\s\S]*?PHIM4K_PLATFORM[^\n]*android/);
   assert.match(gradle, /tv\s*\{[\s\S]*?applicationId "com\.phim4k\.cinema\.tv"[\s\S]*?PHIM4K_PLATFORM[^\n]*android_tv/);
   assert.match(gradle, /debug\.assets\.srcDir\(layout\.buildDirectory\.dir\('generated\/qaAssets'\)\)/);
@@ -139,14 +150,14 @@ test('Android CI builds, signs and device-tests the correct flavor', () => {
   assert.match(phoneWorkflow, /assemblePhoneRelease/);
   assert.match(phoneWorkflow, /connectedPhoneDebugAndroidTest/);
   assert.match(phoneWorkflow, /package: name='com\.phim4k\.cinema'/);
-  assert.match(phoneWorkflow, /4K-Cinema-Android-3\.4\.36\.apk/);
+  assert.match(phoneWorkflow, /4K-Cinema-Android-3\.4\.39\.apk/);
   assert.match(phoneWorkflow, /application-label:'4K Cinema'/);
   assert.match(phoneWorkflow, /apksigner" verify/);
   assert.match(phoneWorkflow, /ABAFDA2EAD9478B2540328C98774B4B0A9432014F7B31CBF40FB3EF1F6FECBC8/);
   assert.match(tvWorkflow, /assembleTvRelease/);
   assert.match(tvWorkflow, /connectedTvDebugAndroidTest/);
   assert.match(tvWorkflow, /package: name='com\.phim4k\.cinema\.tv'/);
-  assert.match(tvWorkflow, /4K-Cinema-Android-TV-3\.4\.36\.apk/);
+  assert.match(tvWorkflow, /4K-Cinema-Android-TV-3\.4\.39\.apk/);
   assert.match(tvWorkflow, /application-label:'4K Cinema'/);
   assert.match(tvWorkflow, /ABAFDA2EAD9478B2540328C98774B4B0A9432014F7B31CBF40FB3EF1F6FECBC8/);
 });
@@ -155,8 +166,8 @@ test('iOS entry point cache-busts every bundled script and stylesheet', () => {
   const html = read('../public/index.html');
   const localAssets = [...html.matchAll(/(?:src|href)="\/(?:js|css|vendor)\/[^"?]+(?:\?[^" ]+)?"/g)].map(match => match[0]);
   assert.ok(localAssets.length >= 20);
-  assert.ok(localAssets.every(asset => asset.includes('?v=3.4.36')), localAssets.join('\n'));
-  assert.match(html, /4K Cinema 3\.4\.36[^<]*BẢN ĐỒNG BỘ ĐA THIẾT BỊ/);
+  assert.ok(localAssets.every(asset => asset.includes('?v=3.4.39')), localAssets.join('\n'));
+  assert.match(html, /4K Cinema 3\.4\.39[^<]*BẢN ĐỒNG BỘ ĐA THIẾT BỊ/);
 });
 
 test('movie modal is scrollable and sized for a phone viewport', () => {
@@ -201,7 +212,7 @@ test('native catalog falls back immediately instead of leaving the UI loading', 
   vm.runInContext(read('../public/js/home-curation.js'), sandbox);
   sandbox.Phim4KHome = sandbox.window.Phim4KHome;
   vm.runInContext(`${read('../public/js/api.js')}\nglobalThis.__api = API;`, sandbox);
-  assert.equal(sandbox.window.API.getVersion(), '3.4.36');
+  assert.equal(sandbox.window.API.getVersion(), '3.4.39');
   const home = await sandbox.__api.getHomeFeed();
   const detail = await sandbox.__api.getDetail(home.hero[0].slug);
   assert.ok(home.hero.length > 0);
@@ -301,8 +312,8 @@ test('device-only approval remains server-authoritative and bound to a device', 
   assert.match(index, /id="btnRequestDeviceAccess"/);
   assert.match(api, /\/api\/auth\/request-device-access/);
   assert.match(api, /\/api\/auth\/device-status/);
-  assert.match(auth, /deviceOnly: true/);
-  assert.match(auth, /phim4k_device_only/);
+  assert.match(auth, /if \(status\.active && status\.status === 'approved'\) \{/);
+  assert.doesNotMatch(auth, /localStorage\.setItem\('phim4k_device_only'/);
   assert.match(auth, /phim4k_pending_device_key/);
   assert.match(auth, /beginDeviceApprovalPolling/);
   assert.match(index, /id="deviceRequestsList"/);
@@ -354,7 +365,7 @@ test('iOS workflow audits the completed IPA before uploading it', () => {
   const upload = workflow.indexOf('actions/upload-artifact@');
   assert.ok(audit >= 0 && upload > audit);
   assert.match(workflow, /CFBundleDisplayName[^\n]*"4K Cinema"/);
-  assert.match(workflow, /4K-Cinema-iOS-3\.4\.36-unsigned\.ipa/);
+  assert.match(workflow, /4K-Cinema-iOS-3\.4\.39-unsigned\.ipa/);
 });
 
 test('user activity is batched without stream URLs and admin logs support user filters and pagination', () => {

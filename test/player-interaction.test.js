@@ -15,6 +15,7 @@ test('video surface toggles controls without changing playback', () => {
   const p = fixture(); p.toggleControls(); assert.equal(p.wrapper.classList.contains('inactive'),true); assert.equal(p.video.paused,false);
   p.toggleControls(); assert.equal(p.wrapper.classList.contains('inactive'),false); assert.equal(p.video.paused,false);
   assert.match(fs.readFileSync('public/js/player.js','utf8'), /onVideo\('click', event => this\.onSurfaceTap\(event\)\)/);
+  assert.doesNotMatch(fs.readFileSync('public/js/player.js','utf8'), /player-ambient-backdrop/);
 });
 
 test('double taps seek only on the same side within the gesture window', () => {
@@ -27,11 +28,12 @@ test('double taps seek only on the same side within the gesture window', () => {
   assert.equal(doubleTapSeek({x:.8,time:100},{x:.8,time:621}),0);
   assert.equal(doubleTapSeek(null,{x:.8,time:250}),0);
 });
-test('fullscreen preserves subtitles even after a legacy crop choice', () => {
+test('aspect choice persists and defaults to subtitle-safe contain', () => {
   const p = fixture(); p.showAlert = () => {};
   p.applyPreferredAspect(); assert.equal(p.aspectMode,'contain');
-  p.isCinemaFullscreen=true; p.applyPreferredAspect(); assert.equal(p.aspectMode,'contain');
-  p.toggleAspectRatio(); p.applyPreferredAspect(); assert.equal(p.aspectMode,'contain');
+  p.toggleAspectRatio(); assert.equal(p.aspectMode,'cover');
+  p.applyPreferredAspect(); assert.equal(p.aspectMode,'cover');
+  p.toggleAspectRatio(); assert.equal(p.aspectMode,'contain');
 });
 test('center and bottom controls explicitly toggle playback', () => {
   const html = fs.readFileSync('public/index.html','utf8');

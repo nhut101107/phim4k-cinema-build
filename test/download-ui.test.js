@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const platform = require('../public/js/platform.js');
 
 test('release comparison distinguishes newer, same, older and missing/unknown versions', () => {
-  const entry = version => ({url:'https://example.com/app.ipa',version});
+  const entry = version => ({url:'https://example.com/app.ipa',version,sha256:'a'.repeat(64)});
   assert.equal(platform.releaseState(entry('3.10.0'),'3.4.19'),'newer');
   assert.equal(platform.releaseState(entry('3.4.17'),'3.4.19'),'older');
   assert.equal(platform.releaseState(entry('3.4.19.0'),'3.4.19'),'current');
@@ -52,7 +52,7 @@ function fixture(fetchJson, device = 'ios') {
 for (const device of ['ios', 'android', 'android_tv', 'windows', 'web']) {
   test(`all published device downloads remain available on ${device}`, async () => {
     const ids = {ios:'Ipa',android:'Apk',android_tv:'Tv',windows:'Exe'};
-    const data = Object.fromEntries(Object.keys(ids).map(key => [key, {url:`https://example.com/${key}`,version:'3.5.0'}]));
+    const data = Object.fromEntries(Object.keys(ids).map(key => [key, {url:`https://example.com/${key}`,version:'3.5.0',sha256:'a'.repeat(64)}]));
     const f = fixture(async () => data, device);
     await f.ctx.refreshPublicDownloads();
     for (const [key,id] of Object.entries(ids)) {
@@ -69,7 +69,7 @@ test('download request is single-flight, marks old public release and only insta
   const f=fixture(()=>{count++;return new Promise(r=>resolve=r);});
   const a=f.ctx.refreshPublicDownloads(), b=f.ctx.refreshPublicDownloads();
   assert.equal(count,1);
-  resolve({ios:{url:'https://example.com/old.ipa',version:'3.4.17'},windows:{url:'javascript:bad',version:'9'}});
+  resolve({ios:{url:'https://example.com/old.ipa',version:'3.4.17',sha256:'a'.repeat(64)},windows:{url:'javascript:bad',version:'9',sha256:'b'.repeat(64)}});
   await Promise.all([a,b]);
   assert.equal(f.get('btnDownloadIpa').href,'https://example.com/old.ipa');
   assert.match(f.get('downloadReleaseStatus').textContent,/không cần hạ phiên bản/);
@@ -78,7 +78,7 @@ test('download request is single-flight, marks old public release and only insta
 
 test('download list reports failure and permits retry without a stale active request',async()=>{
   let count=0;
-  const f=fixture(async()=>{if(++count===1)throw new Error('offline');return {ios:{url:'https://example.com/new.ipa',version:'3.5.0'}};});
+  const f=fixture(async()=>{if(++count===1)throw new Error('offline');return {ios:{url:'https://example.com/new.ipa',version:'3.5.0',sha256:'a'.repeat(64)}};});
   await f.ctx.refreshPublicDownloads();
   assert.equal(f.get('downloadRetryBtn').classList.contains('hidden'),false);
   assert.match(f.get('downloadReleaseStatus').textContent,/Không lấy được/);

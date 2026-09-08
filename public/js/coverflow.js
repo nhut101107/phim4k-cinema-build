@@ -474,13 +474,13 @@ const ContinueWatching = {
 
       card.innerHTML = `
         <div class="cw-thumb-wrapper">
-          <img src="${posterUrl}" class="cw-thumb" alt="${App.escapeHtml(item.name)}" loading="lazy" decoding="async" />
+          <img src="${App.escapeHtml(posterUrl)}" class="cw-thumb" alt="${App.escapeHtml(item.name)}" loading="lazy" decoding="async" />
           <div class="cw-progress-bar">
             <div class="cw-progress-fill" style="width: ${Number.isFinite(Number(item.progressPercent)) ? Number(item.progressPercent) : 0}%"></div>
           </div>
         </div>
-        <div class="cw-meta">${item.epName} • ${item.timeText}</div>
-        <div class="cw-name">${item.name}</div>
+        <div class="cw-meta">${App.escapeHtml(item.epName)} • ${App.escapeHtml(item.timeText)}</div>
+        <div class="cw-name">${App.escapeHtml(item.name)}</div>
       `;
 
       const image = card.querySelector('.cw-thumb');
@@ -532,10 +532,10 @@ function switchTab(tabId) {
 
 function renderAccountTab() {
   const session = window.Auth?.activeKeyData;
-  const isAuthenticated = Boolean(session?.active !== false && (session?.freeAccess || (session?.key && (session?.telegramId || session?.deviceOnly || session?.keyOnly))));
-  const teleId = isAuthenticated ? (session.freeAccess ? 'Không cần key' : session.keyOnly ? 'Thiết bị đã gắn key' : session.deviceOnly ? 'Thiết bị được Admin duyệt' : String(session.telegramId)) : 'Chưa đăng nhập';
+  const isAuthenticated = Boolean(session?.active !== false && window.SessionVault?.hasSession?.());
+  const teleId = isAuthenticated ? (session.freeAccess ? 'Không cần key' : session.isAdmin ? 'Quản trị viên đã xác thực' : 'Thiết bị đã xác thực') : 'Chưa đăng nhập';
   const plan = isAuthenticated ? (session.isAdmin ? 'SUPER ADMIN' : (session.plan || 'VIP')) : 'Chưa kích hoạt';
-  const key = session?.freeAccess ? 'Không yêu cầu' : isAuthenticated ? `${String(session.key).slice(0, 4)}••••${String(session.key).slice(-4)}` : 'Chưa có key';
+  const key = session?.freeAccess ? 'Không yêu cầu' : isAuthenticated ? (session.keyHint || 'Phiên an toàn') : 'Chưa có key';
   const isSuperAdmin = Boolean(isAuthenticated && session.isAdmin);
 
   const teleEl = document.getElementById('accTelegramId');
@@ -547,7 +547,7 @@ function renderAccountTab() {
   if (planEl) planEl.textContent = isSuperAdmin ? '👑 SUPER ADMIN' : plan;
   if (keyEl) keyEl.textContent = key;
   const versionEl = document.getElementById('accAppVersion');
-  if (versionEl) versionEl.textContent = `v${window.API?.getVersion?.() || '3.4.36'}`;
+  if (versionEl) versionEl.textContent = `v${window.API?.getVersion?.() || '3.4.39'}`;
 
   if (adminBtn) {
     adminBtn.classList.toggle('hidden', !isSuperAdmin);

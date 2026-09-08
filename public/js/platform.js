@@ -16,10 +16,18 @@
   }
   function release(data, platform) {
     const entry = data?.[platform] || { url: data?.[platform + 'Url'], version: data?.[platform + 'Version'] };
-    return { url: safeUrl(entry.url), version: String(entry.version || '').slice(0, 64) };
+    const sha256 = String(entry.sha256 || '').trim().toLowerCase();
+    const sizeBytes = Number(entry.sizeBytes || 0);
+    return {
+      url: safeUrl(entry.url),
+      version: String(entry.version || '').slice(0, 64),
+      sha256: /^[a-f0-9]{64}$/.test(sha256) ? sha256 : '',
+      sizeBytes: Number.isSafeInteger(sizeBytes) && sizeBytes > 0 ? sizeBytes : 0,
+      signer: String(entry.signer || '').slice(0, 200)
+    };
   }
   function releaseState(entry, current) {
-    if (!entry.url) return 'unavailable';
+    if (!entry.url || !entry.sha256) return 'unavailable';
     if (!/^\d+(\.\d+){0,3}$/.test(entry.version) || !/^\d+(\.\d+){0,3}$/.test(current)) return 'unknown';
     const a = entry.version.split('.').map(Number), b = current.split('.').map(Number);
     for (let i = 0; i < Math.max(a.length, b.length); i++) {

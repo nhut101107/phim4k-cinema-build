@@ -8,12 +8,14 @@ const player = fs.readFileSync(path.join(root, 'public/js/player.js'), 'utf8');
 const index = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'public/css/player.css'), 'utf8');
 
-test('all legacy crop preferences are retired and fullscreen is locked to contain', () => {
+test('player exposes only subtitle-safe contain and explicit fullscreen fill modes', () => {
   assert.match(player, /removeItem\('phim4k-player-fit'\)/);
   assert.match(player, /removeItem\('phim4k-player-fit-v2'\)/);
-  assert.doesNotMatch(player, /getItem\('phim4k-player-fit/);
-  assert.match(player, /this\.aspectMode = 'contain'/);
-  assert.doesNotMatch(css, /cinema-fullscreen\.aspect-cover/);
+  assert.match(player, /getItem\('phim4k-player-aspect-v3'\)/);
+  assert.match(index, /id="btnAspectContain"/);
+  assert.match(index, /id="btnAspectCover"/);
+  assert.match(css, /\.cinema-player-wrapper\.aspect-cover \.video-element\s*\{[\s\S]*?object-fit:\s*cover/);
+  assert.match(css, /\.cinema-player-wrapper\.aspect-contain \.video-element\s*\{[\s\S]*?object-fit:\s*contain/);
 });
 
 test('fullscreen follows the live visual viewport after native rotation', () => {
@@ -76,6 +78,18 @@ test('keeps adaptive quality selected when HLS changes rendition', () => {
   assert.match(player, /if \(this\.qualityMode === 'auto'\)/);
   assert.match(player, /setQualityButtonLabel\('Tự động'\)/);
   assert.match(index, /id="btnQuality"[^>]*>Tự động</);
+  assert.match(index, /id="btnQuality"[^>]*disabled/);
+  assert.doesNotMatch(index, /id="qualityMenu"/);
+  assert.doesNotMatch(index, /id="btnAudioMode"/);
+  assert.doesNotMatch(index, /id="btnAspectFit"/);
+});
+
+test('uses black bars without poster ambience and reserves subtitle space in contain mode', () => {
+  assert.doesNotMatch(index, /id="playerAmbientBackdrop"/);
+  assert.doesNotMatch(player, /setAmbientBackdrop|layoutVideoSurface/);
+  assert.doesNotMatch(css, /player-ambient-backdrop/);
+  assert.match(css, /\.video-element\s*\{[\s\S]*?background:\s*#000/);
+  assert.match(css, /aspect-contain:not\(\.inactive\) \.video-element\s*\{[\s\S]*?subtitle-safe-area/);
 });
 
 test('uses a compact portrait video stage instead of centering video in the full viewport', () => {
@@ -85,8 +99,8 @@ test('uses a compact portrait video stage instead of centering video in the full
   assert.match(css, /badge-real-res\.res-auto/);
 });
 
-test('does not claim an unsupported manual HLS quality list on native iPhone playback', () => {
-  assert.match(player, /const device = this\.nativePlatform\(\) === 'ios' \? 'iPhone' : 'Thiết bị'/);
-  assert.match(player, /`\$\{device\} tự chọn chất lượng HLS`/);
-  assert.match(player, /uniqueQualityOptions/);
+test('native playback and HLS.js expose automatic quality only', () => {
+  assert.match(player, /populateNativeHlsMenu\(\)[\s\S]*?this\.qualityMode = 'auto'/);
+  assert.match(player, /if \(this\.hls\) this\.hls\.currentLevel = -1/);
+  assert.doesNotMatch(index, /onclick="setQuality\((?!-1)/);
 });

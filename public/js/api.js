@@ -8,22 +8,18 @@ const API = {
   lastUsageFingerprint: '',
   lastUsageAt: 0,
   maxMovieCacheEntries: 80,
+  refreshPromise: null,
 
-  getKey() {
-    if (window.Auth?.activeKeyData?.freeAccess === true) return '';
-    return localStorage.getItem('phim4k_key') || '';
-  },
+  getSession() { return window.SessionVault?.current?.() || null; },
 
-  getTelegramId() {
-    return localStorage.getItem('phim4k_telegram_id') || '';
-  },
+  hasSession() { return Boolean(this.getSession()?.accessToken); },
 
   getDeviceId() {
     return localStorage.getItem('phim4k_device_id') || '';
   },
 
   getVersion() {
-    return '3.4.36';
+    return '3.4.39';
   },
 
   getSessionId() {
@@ -81,7 +77,7 @@ const API = {
   },
 
   trackUsage(action, context = {}) {
-    if (!this.getKey() || !this.getDeviceId()) return;
+    if (!this.hasSession() || !this.getDeviceId()) return;
     const safeAction = String(action || '').trim().toLowerCase();
     if (!safeAction) return;
     const operational = safeAction === 'app_open'
@@ -108,22 +104,14 @@ const API = {
   async flushUsage({ keepalive = false } = {}) {
     window.clearTimeout(this.usageFlushTimer);
     this.usageFlushTimer = null;
-    if (!this.usageQueue.length || !this.getKey() || !this.getDeviceId()) return;
+    if (!this.usageQueue.length || !this.hasSession() || !this.getDeviceId()) return;
     const events = this.usageQueue.splice(0, 20);
     try {
-      const response = await fetch('/api/telemetry', {
+      await this.request('/api/telemetry', {
         method: 'POST',
         keepalive,
-        headers: {
-          'Content-Type': 'application/json',
-          'x-license-key': this.getKey(),
-          'x-telegram-id': this.getTelegramId(),
-          'x-device-id': this.getDeviceId(),
-          'x-app-version': this.getVersion()
-        },
         body: JSON.stringify({ events })
       });
-      if (!response.ok && response.status >= 500) this.usageQueue.unshift(...events.slice(-10));
     } catch (_error) {
       this.usageQueue.unshift(...events.slice(-10));
     }
@@ -151,16 +139,10 @@ const API = {
     return payload;
   },
 
-  async request(endpoint, options = {}) {
-    const key = this.getKey();
-    const telegramId = this.getTelegramId();
-    const deviceId = this.getDeviceId();
-
+  async request(endpoint, options = {}, retried = false) {
     const headers = {
       'Content-Type': 'application/json',
-      'x-license-key': key,
-      'x-telegram-id': telegramId,
-      'x-device-id': deviceId,
+      'x-device-id': this.getDeviceId(),
       'x-app-version': this.getVersion(),
       ...(options.headers || {})
     };
@@ -168,6 +150,10 @@ const API = {
     try {
       const response = await this.fetchWithTimeout(endpoint, { ...options, headers });
       const payload = await response.json().catch(() => ({}));
+      if (response.status === 401 && payload.code === 'ACCESS_TOKEN_EXPIRED' && !retried) {
+        const refreshed = await this.refreshSession();
+        if (refreshed?.active) return this.request(endpoint, options, true);
+      }
       if (response.status === 401 || response.status === 403) {
         Auth.triggerLock(payload.message || 'Khóa kích hoạt không hợp lệ hoặc đã hết hạn!');
         const error = new Error(payload.error || 'UNAUTHORIZED_KEY');
@@ -186,17 +172,52 @@ const API = {
     }
   },
 
+  async refreshSession() {
+    if (this.refreshPromise) return this.refreshPromise;
+    const current = this.getSession();
+    if (!current?.refreshToken) return null;
+    this.refreshPromise = (async () => {
+      try {
+        const proof = await SessionVault.proofHeaders('POST', '/api/auth/refresh', current.refreshToken);
+        const response = await this.fetchWithTimeout('/api/auth/refresh', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-refresh-token': current.refreshToken,
+            'x-device-id': this.getDeviceId(),
+            'x-app-version': this.getVersion(),
+            ...proof
+          },
+          body: '{}'
+        }, 15000);
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.active || !payload.accessToken || !payload.refreshToken) {
+          await SessionVault.clear();
+          return payload;
+        }
+        await SessionVault.save(payload);
+        return payload;
+      } catch (_error) {
+        return null;
+      } finally {
+        this.refreshPromise = null;
+      }
+    })();
+    return this.refreshPromise;
+  },
+
   // Authentication is server-authoritative. A native release must never
   // accept a key locally when the licensing API is unavailable.
   async activate(key, telegramId, deviceId) {
     try {
+      const devicePublicKey = await SessionVault.publicDeviceKey();
       const response = await this.fetchWithTimeout('/api/auth/activate', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
           'x-app-version': this.getVersion()
         },
-        body: JSON.stringify({ key, telegramId, deviceId })
+        body: JSON.stringify({ key, telegramId, deviceId, devicePublicKey })
       }, 15000);
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -221,12 +242,26 @@ const API = {
     try {
       const response = await this.fetchWithTimeout('/api/auth/status', {
         cache: 'no-store',
-        headers: { 'x-app-version': this.getVersion(), 'x-license-key': key, 'x-telegram-id': telegramId, 'x-device-id': deviceId }
+        headers: { 'x-app-version': this.getVersion(), 'x-device-id': deviceId || this.getDeviceId() }
       }, 12000);
-      return await response.json().catch(() => ({ active: false, code: 'INVALID_SERVER_RESPONSE' }));
+      const payload = await response.json().catch(() => ({ active: false, code: 'INVALID_SERVER_RESPONSE' }));
+      if (response.status === 401 && payload.code === 'ACCESS_TOKEN_EXPIRED') {
+        return await this.refreshSession() || payload;
+      }
+      return payload;
     } catch (err) {}
 
     return { active: false, isAdmin: false, plan: 'OFFLINE' };
+  },
+
+  async logout() {
+    try {
+      if (this.hasSession()) await this.request('/api/auth/logout', { method: 'POST', body: '{}' });
+    } catch (_error) {
+      // Removing the local envelope must still complete when the server is down.
+    } finally {
+      await SessionVault.clear();
+    }
   },
 
   async requestDeviceAccess(key, deviceId) {
@@ -306,6 +341,10 @@ const API = {
       const items = this.getBundledHomeFeed().sections.flatMap((section) => section.items);
       return { title: category, items, pagination: { currentPage: 1, totalPages: 1 } };
     }
+  },
+
+  async getCatalog(page = 1) {
+    return this.cachedMovieRequest(`/api/movies/catalog?page=${page}`, 60000);
   },
 
   async getFilteredCatalog({ genre = '', country = '' } = {}, page = 1) {

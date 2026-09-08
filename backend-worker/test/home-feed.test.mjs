@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker, { openMediaTicket } from '../src/worker.mjs';
 const env={
+  ALLOW_LEGACY_TEST_AUTH:'1',
   DB:{prepare(){return{bind(){return{async first(){return{setting_value:'true'}}}}}}},
   MOVIE_CATALOG_ORIGIN:'https://catalog.example',
   MOVIE_IMAGE_HOSTS:'legacy.example,images.example',
@@ -41,5 +42,29 @@ test('all sources failing produces a retryable error, not invented movie recomme
   try {
     const res=await worker.fetch(request(),env);assert.equal(res.status,502);
     assert.equal((await res.json()).code,'MOVIE_UPSTREAM_UNAVAILABLE');
+  } finally {globalThis.fetch=original;}
+});
+
+test('full catalog exposes real paginated inventory above one thousand without bundling it into the client',async()=>{
+  const original=globalThis.fetch;
+  globalThis.fetch=async(input)=>{
+    const url=new URL(input);
+    assert.equal(url.origin,'https://catalog.example');
+    assert.equal(url.pathname,'/danh-sach/phim-moi-cap-nhat');
+    assert.equal(url.searchParams.get('page'),'7');
+    return new Response(JSON.stringify({data:{
+      APP_DOMAIN_CDN_IMAGE:'https://images.example',
+      items:[{slug:'licensed-direct-title',name:'Licensed title',poster_url:'uploads/poster.webp'}],
+      params:{pagination:{currentPage:7,totalPages:52,totalItems:1248,totalItemsPerPage:24}},
+    }}),{headers:{'content-type':'application/json'}});
+  };
+  try {
+    const res=await worker.fetch(new Request('https://example.workers.dev/api/movies/catalog?page=7',{headers:{'x-device-id':'catalog-fixture'}}),env);
+    const data=await res.json();
+    assert.equal(res.status,200);
+    assert.equal(data.pagination.totalItems,1248);
+    assert.equal(data.pagination.totalPages,52);
+    assert.equal(data.items.length,1);
+    assert.match(data.items[0].poster_url,/\/api\/media\/image\?t=/);
   } finally {globalThis.fetch=original;}
 });

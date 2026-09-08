@@ -189,7 +189,7 @@ function send(method, params = {}) {
     const timeout = setTimeout(() => {
       pending.delete(id);
       reject(new Error(`DevTools command timed out: ${method}`));
-    }, 25000);
+    }, 45000);
     pending.set(id, {
       resolve: (value) => { clearTimeout(timeout); resolveCommand(value); },
       reject: (error) => { clearTimeout(timeout); reject(error); },
@@ -200,7 +200,7 @@ function send(method, params = {}) {
 
 async function evaluate(expression, awaitPromise = true) {
   const result = await send('Runtime.evaluate', { expression, awaitPromise, returnByValue: true });
-  if (result.exceptionDetails) throw new Error(result.exceptionDetails.text || 'Evaluation failed');
+  if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text || 'Evaluation failed');
   return result.result?.value;
 }
 
@@ -291,6 +291,10 @@ try {
       updatedAt: new Date().toISOString()
     });
     API.getFilteredCatalog = async (_filters, number = 1) => page(number);
+    API.getCatalog = async (number = 1) => ({
+      items: movies.slice(((number - 1) % 3) * 24, (((number - 1) % 3) + 1) * 24),
+      pagination: {currentPage:number,totalPages:52,totalItems:1248}
+    });
     API.getCategory = async (_category, number = 1) => ({title:'QA', ...page(number)});
     API.search = async (_query, number = 1) => ({query:'qa', ...page(number)});
     API.getDetail = async (slug) => ({
@@ -310,13 +314,26 @@ try {
     const activate=API.activate, status=API.checkStatus, accessPolicy=Auth.getAccessPolicy;
     const hiddenTelegram=!document.getElementById('adminLoginFields').open && !document.getElementById('telegramInput').required;
     let submitted;
-    API.activate=async(key,telegram,device)=>{submitted={telegram,device}; return {success:true,active:true,keyOnly:true,isAdmin:false,plan:'TEST'};};
+    const sessionEnvelope=(suffix,extra={})=>({
+      success:true, active:true, sessionId:'sid_'+suffix.padEnd(24,'S').slice(0,24),
+      accessToken:'p4a_'+suffix.padEnd(43,'A').slice(0,43),
+      refreshToken:'p4r_'+suffix.padEnd(43,'R').slice(0,43),
+      accessExpiresAt:new Date(Date.now()+15*60*1000).toISOString(),
+      refreshExpiresAt:new Date(Date.now()+24*60*60*1000).toISOString(),
+      isAdmin:false, ...extra
+    });
+    API.activate=async(key,telegram,device)=>{
+      submitted={telegram,device};
+      return key
+        ? sessionEnvelope('qa-user',{keyOnly:true,plan:'TEST'})
+        : sessionEnvelope('qa-guest',{freeAccess:true,plan:'MIEN KEY'});
+    };
     document.getElementById('keyInput').value='P4K-KEY-ONLY-QA';
     await handleActivation({preventDefault(){}});
-    await new Promise(r=>setTimeout(r,650));
+    for(let attempt=0;attempt<30&&!Auth.activeKeyData;attempt+=1) await new Promise(r=>setTimeout(r,100));
     renderAccountTab();
     const keyOnly=Auth.activeKeyData.keyOnly && submitted.telegram==='' && document.getElementById('accPlan').textContent==='TEST';
-    Auth.clearStoredSession();
+    Auth.clearStoredSession(); await SessionVault.clear();
     Auth.getAccessPolicy=async()=>({freeAccess:true});
     API.checkStatus=async()=>({active:true,freeAccess:true,isAdmin:false,plan:'MIỄN KEY'});
     await Auth.init();
@@ -332,12 +349,21 @@ try {
   const deviceApprovalState = await evaluate(`(async () => {
     const requestOriginal = window.API.requestDeviceAccess;
     const statusOriginal = window.API.checkDeviceAccess;
+    const activateOriginal = window.API.activate;
     window.API.requestDeviceAccess = async () => ({ status: 'pending', message: 'Đang chờ Admin duyệt' });
     window.API.checkDeviceAccess = async () => ({
       active: true,
       status: 'approved',
       plan: 'QA DEVICE',
       expiresAt: new Date(Date.now() + 60000).toISOString(),
+    });
+    window.API.activate = async () => ({
+      success: true, active: true, keyOnly: true, deviceOnly: true, isAdmin: false, plan: 'QA DEVICE',
+      sessionId: 'sid_' + 'device-approval'.padEnd(24, 'S').slice(0, 24),
+      accessToken: 'p4a_' + 'device-approval'.padEnd(43, 'A').slice(0, 43),
+      refreshToken: 'p4r_' + 'device-approval'.padEnd(43, 'R').slice(0, 43),
+      accessExpiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+      refreshExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     });
     document.getElementById('keyInput').value = 'P4K-DEVICE-QA';
     await window.requestDeviceOnlyAccess();
@@ -349,6 +375,7 @@ try {
     };
     window.API.requestDeviceAccess = requestOriginal;
     window.API.checkDeviceAccess = statusOriginal;
+    window.API.activate = activateOriginal;
     return state;
   })()`);
 
@@ -414,6 +441,17 @@ try {
   })()`);
 
   process.stderr.write('[qa] checking full catalogue filters and load more\n');
+  await evaluate('window.App.browseAllCatalog()');
+  await waitFor('window.App.filterLoading === false && window.App.filterResults.length >= 24', 'Full catalog did not load its first page');
+  const catalogInventory = await evaluate(`(() => ({
+    total: window.App.filterPagination.totalItems,
+    mode: window.App.browseAllMode,
+    page: window.App.filterPagination.currentPage,
+    visible: window.App.filterResults.length,
+    buttonHidden: document.getElementById('browseAllCatalogBtn').classList.contains('hidden')
+  }))()`);
+  if (catalogInventory.total < 1000 || !catalogInventory.mode || !catalogInventory.buttonHidden) throw new Error('Full catalog inventory is below contract: '+JSON.stringify(catalogInventory));
+  await evaluate('window.App.clearHomeFilters()');
   await evaluate(`(() => {
     const button = [...document.querySelectorAll('#genreFilterChips .catalog-filter-chip')]
       .find((item) => item.textContent.trim() === 'Hành Động');
@@ -543,8 +581,7 @@ try {
   process.stderr.write('[qa] checking real video touch controls and edge-to-edge landscape\n');
   await send('Emulation.setDeviceMetricsOverride', { width: 844, height: 390, screenWidth: 844, screenHeight: 390, deviceScaleFactor: 1, mobile: true });
   await evaluate(`(() => {
-    localStorage.setItem('phim4k-player-fit', 'cover');
-    localStorage.removeItem('phim4k-player-fit-v2');
+    localStorage.setItem('phim4k-player-aspect-v3', 'contain');
     Player.video.muted = true; Player.video.loop = true;
     Player.open({ name: 'Original QA', slug: 'qa-touch' }, { name: 'QA', stream_ref: {movie:'qa-touch',server:0,episode:0} });
     return Player.enterCinemaFullscreen();
@@ -555,20 +592,22 @@ try {
     const v=Player.video, r=v.getBoundingClientRect(), c=document.getElementById('playerControls').getBoundingClientRect();
     const shown=getComputedStyle(v).objectFit==='contain' && r.bottom<=c.top-8;
     Player.wrapper.classList.add('inactive');
-    const hidden=getComputedStyle(v).objectFit==='contain' && v.getBoundingClientRect().bottom<=innerHeight;
+    Player.updateSubtitleSafeArea();
+    const hiddenRect=v.getBoundingClientRect();
+    const hidden=getComputedStyle(v).objectFit==='contain' && hiddenRect.bottom<=innerHeight;
     Player.resetInactivityTimer();
-    return {shown,hidden,legacyCropIgnored:Player.aspectMode==='contain'};
+    return {shown,hidden,defaultContains:Player.aspectMode==='contain'};
   })()`);
-  if (!subtitleDefault.shown || !subtitleDefault.hidden || !subtitleDefault.legacyCropIgnored) throw new Error('Subtitle-safe fullscreen default regressed: '+JSON.stringify(subtitleDefault));
+  if (!subtitleDefault.shown || !subtitleDefault.hidden || !subtitleDefault.defaultContains) throw new Error('Subtitle-safe fullscreen default regressed: '+JSON.stringify(subtitleDefault));
   const safeShot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
   writeFileSync(resolve(projectRoot,'data/qa/fullscreen-subtitle-safe.png'),Buffer.from(safeShot.data,'base64'));
-  // The subtitle-safe mode is locked; old builds must not re-enable cropping.
+  // The user may explicitly switch from subtitle-safe contain to full-screen crop.
   await evaluate('Player.toggleAspectRatio()');
   await delay(250);
   const playerInteractionState = await evaluate(`(() => {
     const v = Player.video, r = v.getBoundingClientRect(), m=Player.modal.getBoundingClientRect(), vv=window.visualViewport;
     return {
-      subtitleLocked: Player.aspectMode==='contain' && getComputedStyle(v).objectFit==='contain' && !Player.wrapper.classList.contains('aspect-cover'),
+      fillMode: Player.aspectMode==='cover' && getComputedStyle(v).objectFit==='cover' && Player.wrapper.classList.contains('aspect-cover'),
       videoInsideViewport: r.top>=-1 && r.left>=-1 && r.right<=(vv?.width||innerWidth)+1 && r.bottom<=(vv?.height||innerHeight)+1,
       modalInsideViewport: m.left>=(vv?.offsetLeft||0)-1 && m.top>=(vv?.offsetTop||0)-1 && m.right<=(vv?.offsetLeft||0)+(vv?.width||innerWidth)+1 && m.bottom<=(vv?.offsetTop||0)+(vv?.height||innerHeight)+1,
       width: r.width, height: r.height, viewportWidth: innerWidth, viewportHeight: innerHeight, classes:Player.wrapper.className
@@ -611,22 +650,20 @@ try {
     Player.video.addEventListener('click',event=>window.__qaSurfaceClicks.push({x:event.clientX,y:event.clientY,detail:event.detail,time:event.timeStamp}),{once:false});
     return {x,y,hit:hit?.id||hit?.className||hit?.tagName,video:{left:r.left,top:r.top,right:r.right,bottom:r.bottom}};
   })()`);
-  for (let i=0;i<2;i++) {
-    await send('Input.dispatchTouchEvent', {type:'touchStart',touchPoints:[{x:690,y:145}]});
-    await delay(35);
-    await send('Input.dispatchTouchEvent', {type:'touchEnd',touchPoints:[]});
-    await delay(70);
+  for (const clickCount of [1, 2]) {
+    await send('Input.dispatchMouseEvent', {type:'mousePressed',x:690,y:145,button:'left',clickCount});
+    await send('Input.dispatchMouseEvent', {type:'mouseReleased',x:690,y:145,button:'left',clickCount});
+    await delay(40);
   }
   const afterSeek = await evaluate('Player.video.currentTime');
   playerInteractionState.doubleRight = afterSeek-beforeSeek > 9.7 && afterSeek-beforeSeek < 11.2;
   // Start a distinct gesture sequence. Four taps without the double-tap
   // window expiring are treated as one browser multi-tap gesture on mobile.
   await delay(400);
-  for (let i=0;i<2;i++) {
-    await send('Input.dispatchTouchEvent', {type:'touchStart',touchPoints:[{x:170,y:145}]});
-    await delay(35);
-    await send('Input.dispatchTouchEvent', {type:'touchEnd',touchPoints:[]});
-    await delay(70);
+  for (const clickCount of [1, 2]) {
+    await send('Input.dispatchMouseEvent', {type:'mousePressed',x:170,y:145,button:'left',clickCount});
+    await send('Input.dispatchMouseEvent', {type:'mouseReleased',x:170,y:145,button:'left',clickCount});
+    await delay(40);
   }
   const afterBack = await evaluate('Player.video.currentTime');
   playerInteractionState.doubleLeft = afterSeek-afterBack > 9 && afterSeek-afterBack < 10.4;
@@ -634,22 +671,22 @@ try {
     const surfaceClicks=await evaluate('window.__qaSurfaceClicks');
     throw new Error('Real double tap seek failed: '+JSON.stringify({beforeSeek,afterSeek,afterBack,rightTarget,surfaceClicks}));
   }
-  await send('Runtime.evaluate', {expression:"Player.toggleAudioMode()",awaitPromise:true,userGesture:true});
-  playerInteractionState.audioEnabled = await evaluate("document.getElementById('btnAudioMode').textContent === 'Rõ thoại'");
-  if (!playerInteractionState.audioEnabled) throw new Error('Audio enhancement did not enable for local fixture');
+  playerInteractionState.compactControls = await evaluate("!document.getElementById('btnAudioMode') && !document.getElementById('btnAspectFit') && !!document.getElementById('btnAspectContain') && !!document.getElementById('btnAspectCover') && document.getElementById('btnQuality')?.textContent.trim() === 'Tự động' && document.getElementById('btnQuality')?.disabled");
+  playerInteractionState.noAmbientBackdrop = await evaluate("!document.getElementById('playerAmbientBackdrop') && getComputedStyle(Player.wrapper).backgroundColor === 'rgb(0, 0, 0)'");
+  if (!playerInteractionState.compactControls || !playerInteractionState.noAmbientBackdrop) throw new Error('Automatic quality, two aspect modes, or black background missing');
   await evaluate('Player.toggleAspectRatio()');
   await send('Emulation.setDeviceMetricsOverride', { width: 852, height: 393, screenWidth: 852, screenHeight: 393, deviceScaleFactor: 1, mobile: true });
   await delay(100);
-  playerInteractionState.fitPreferenceSurvivesResize = await evaluate("Player.aspectMode === 'contain' && getComputedStyle(Player.video).objectFit === 'contain'");
+  playerInteractionState.fitPreferenceSurvivesResize = await evaluate("Player.aspectMode === 'contain' && getComputedStyle(Player.video).objectFit === 'contain' && Player.wrapper.classList.contains('aspect-contain')");
   await evaluate('Player.resetInactivityTimer(); Player.updateSubtitleSafeArea()');
   playerInteractionState.subtitleClear = await evaluate("Player.video.getBoundingClientRect().bottom <= document.getElementById('playerControls').getBoundingClientRect().top - 8");
   if (!playerInteractionState.subtitleClear) throw new Error('Fit mode subtitle strip overlaps controls');
   await evaluate("Player.toggleAspectRatio(); Player.resetInactivityTimer()");
   const fitScreenshot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
   writeFileSync(resolve(projectRoot, 'data/qa/phim4k-player-fit.png'), Buffer.from(fitScreenshot.data, 'base64'));
-  if (!playerInteractionState.subtitleLocked || !playerInteractionState.videoInsideViewport || !playerInteractionState.modalInsideViewport || !playerInteractionState.outsideDoesNotPause || !playerInteractionState.centerPauses || !playerInteractionState.fitPreferenceSurvivesResize) throw new Error('Player interaction/fullscreen regression: ' + JSON.stringify(playerInteractionState));
+  if (!playerInteractionState.fillMode || !playerInteractionState.videoInsideViewport || !playerInteractionState.modalInsideViewport || !playerInteractionState.outsideDoesNotPause || !playerInteractionState.centerPauses || !playerInteractionState.fitPreferenceSurvivesResize || !playerInteractionState.compactControls || !playerInteractionState.noAmbientBackdrop) throw new Error('Player interaction/fullscreen regression: ' + JSON.stringify(playerInteractionState));
   releasingFixture = true;
-  await evaluate("Player.close(); Player.video.loop = false; localStorage.removeItem('phim4k-player-fit-v2')");
+  await evaluate("Player.close(); Player.video.loop = false; localStorage.removeItem('phim4k-player-aspect-v3')");
   await evaluate("Player.video.muted=true; Player.open({name:'QA reload',slug:'qa-reload'}, {name:'QA',stream_ref:{movie:'qa-reload',server:0,episode:0}})");
   await waitFor('!Player.video.paused && Player.video.currentTime > .1','Video did not recover after audio graph disposal');
   originalFixtureDecoded = true;
@@ -876,12 +913,18 @@ try {
   const accountDownloadShot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
   writeFileSync(resolve(projectRoot,'data/qa/iphone-account-download.png'),Buffer.from(accountDownloadShot.data,'base64'));
   const phoneDownloads = await evaluate(`(async()=>{
+    const saved=API.fetchJson;
+    API.fetchJson=async(path,...args)=>String(path).includes('/api/app/downloads')
+      ? {ios:{url:'https://example.com/app.ipa',version:API.getVersion(),sha256:'a'.repeat(64),sizeBytes:2048}}
+      : saved.call(API,path,...args);
     const button=document.getElementById('accDownloadBtn'),r=button.getBoundingClientRect();
     const hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
     const entryVisible=r.height>=44&&r.top>=0&&r.bottom<=innerHeight&&(hit===button||button.contains(hit));
     button.click(); await refreshPublicDownloads();
-    return {entryVisible, entryRect:{top:r.top,bottom:r.bottom,height:r.height},hitId:hit?.id, status:document.getElementById('downloadReleaseStatus').textContent,
+    const result={entryVisible, entryRect:{top:r.top,bottom:r.bottom,height:r.height},hitId:hit?.id, status:document.getElementById('downloadReleaseStatus').textContent,
       safeLink:Phim4KPlatform.safeUrl(document.getElementById('btnDownloadIpa').href).length>0};
+    API.fetchJson=saved;
+    return result;
   })()`);
   await delay(300);
   Object.assign(phoneDownloads,await evaluate(`(()=>{
@@ -911,7 +954,10 @@ try {
   await send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
   const windowsDownloads = await evaluate(`(async () => {
     const saved = API.fetchJson;
-    API.fetchJson = async () => ({ windows: { url: 'https://example.com/app.exe', version: API.getVersion() }, android_tv: { url: 'https://example.com/tv.apk', version: API.getVersion() } });
+    API.fetchJson = async () => ({
+      windows: { url: 'https://example.com/app.exe', version: API.getVersion(), sha256: 'b'.repeat(64), sizeBytes: 4096 },
+      android_tv: { url: 'https://example.com/tv.apk', version: API.getVersion(), sha256: 'c'.repeat(64), sizeBytes: 4096 }
+    });
     window.PHIM4K_PLATFORM = 'windows';
     openDownloadModal(); await refreshPublicDownloads();
     const enabled = document.getElementById('btnDownloadExe').getAttribute('aria-disabled') === 'false';

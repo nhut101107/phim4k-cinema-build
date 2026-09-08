@@ -1,8 +1,9 @@
 {
   "appId": "com.phim4k.cinema.desktop",
   "productName": "4K Cinema",
-  "extraMetadata": { "main": "desktop/main.cjs", "version": "3.4.36", "dependencies": {} },
-  "directories": { "output": "builds/windows-3.4.36" },
+  "extraMetadata": { "main": "desktop/main.cjs", "version": "3.4.39", "dependencies": {} },
+  "directories": { "output": "builds/windows-3.4.39" },
+  "compression": "normal",
   "files": ["desktop/**", "public/**", "!public/standalone.html", "package.json"],
   "asar": true,
   "electronFuses": {
@@ -12,5 +13,5 @@
     "enableEmbeddedAsarIntegrityValidation": true,
     "onlyLoadAppFromAsar": true
   },
-  "win": { "icon": "public/media/phim4k-avatar.png", "target": [{ "target": "portable", "arch": ["x64"] }], "artifactName": "4K-Cinema-Windows-${version}-x64.exe" }
+  "win": { "icon": "desktop/icon.ico", "target": [{ "target": "portable", "arch": ["x64"] }], "artifactName": "4K-Cinema-Windows-${version}-x64.exe" }
 }

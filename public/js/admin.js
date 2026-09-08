@@ -255,11 +255,7 @@ const Admin = {
   },
 
   getAdminHeaders() {
-    return {
-      'Content-Type': 'application/json',
-      'x-license-key': localStorage.getItem('phim4k_key') || '',
-      'x-telegram-id': localStorage.getItem('phim4k_telegram_id') || ''
-    };
+    return { 'Content-Type': 'application/json' };
   },
 
   async rotateMasterKey(event) {
@@ -285,12 +281,16 @@ const Admin = {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || data.message || `HTTP ${res.status}`);
 
-      localStorage.setItem('phim4k_key', newKey);
-      if (window.Auth?.activeKeyData) window.Auth.activeKeyData.key = newKey;
       input.value = '';
-      alertEl.textContent = 'Đã đổi key Admin. Chỉ Telegram ID quản trị này dùng được key mới.';
+      await SessionVault.clear();
+      alertEl.textContent = 'Đã đổi key Admin và thu hồi phiên cũ. Hãy đăng nhập lại bằng key mới.';
       alertEl.className = 'gate-message success';
       alertEl.classList.remove('hidden');
+      window.setTimeout(() => {
+        this.close();
+        Auth.clearStoredSession();
+        Auth.triggerLock('Key Admin đã đổi. Hãy đăng nhập lại bằng key mới.');
+      }, 700);
     } catch (error) {
       alertEl.textContent = `Không thể đổi key: ${error.message}`;
       alertEl.className = 'gate-message error';
@@ -737,7 +737,13 @@ const Admin = {
       if (more) more.classList.toggle('hidden', !data.hasMore);
       if (liveState) liveState.textContent = '● LIVE';
     } catch (err) {
-      if (!append) container.innerHTML = `<div class="log-line log-err">Không tải được nhật ký: ${err.message}</div>`;
+      if (!append) {
+        container.innerHTML = '';
+        const errorLine = document.createElement('div');
+        errorLine.className = 'log-line log-err';
+        errorLine.textContent = `Không tải được nhật ký: ${err.message}`;
+        container.appendChild(errorLine);
+      }
       if (liveState) liveState.textContent = '● MẤT KẾT NỐI';
     } finally {
       this.logLoading = false;
@@ -1160,29 +1166,12 @@ const Admin = {
         const entry = Phim4KPlatform.release(data, platform);
         const input = document.getElementById('adminDownload' + id + 'Input');
         const version = document.getElementById('adminVersion' + id + 'Input');
+        const sha256 = document.getElementById('adminSha256' + id + 'Input');
+        const size = document.getElementById('adminSize' + id + 'Input');
         if (input) { input.value = entry.url; input.required = false; }
         if (version) { version.value = entry.version; version.required = false; }
-      }
-
-      if (data.android) {
-        const apkInput = document.getElementById('adminDownloadApkInput');
-        const apkVer = document.getElementById('adminVersionApkInput');
-        if (apkInput) apkInput.value = Phim4KPlatform.safeUrl(data.android.url);
-        if (apkVer) apkVer.value = data.android.version || '3.0.0';
-      }
-
-      if (data.ios) {
-        const ipaInput = document.getElementById('adminDownloadIpaInput');
-        const ipaVer = document.getElementById('adminVersionIpaInput');
-        if (ipaInput) ipaInput.value = Phim4KPlatform.safeUrl(data.ios.url);
-        if (ipaVer) ipaVer.value = data.ios.version || '3.0.0';
-      }
-
-      if (data.windows) {
-        const exeInput = document.getElementById('adminDownloadExeInput');
-        const exeVer = document.getElementById('adminVersionExeInput');
-        if (exeInput) exeInput.value = Phim4KPlatform.safeUrl(data.windows.url);
-        if (exeVer) exeVer.value = data.windows.version || '3.0.0';
+        if (sha256) sha256.value = entry.sha256 || '';
+        if (size) size.value = entry.sizeBytes || '';
       }
 
       // Populate Force Update section
@@ -1269,10 +1258,18 @@ const Admin = {
         headers: this.getAdminHeaders(),
         body: JSON.stringify({
           androidUrl, androidVersion,
+          androidSha256: document.getElementById('adminSha256ApkInput').value.trim(),
+          androidSizeBytes: Number(document.getElementById('adminSizeApkInput').value || 0),
           iosUrl, iosVersion,
+          iosSha256: document.getElementById('adminSha256IpaInput').value.trim(),
+          iosSizeBytes: Number(document.getElementById('adminSizeIpaInput').value || 0),
           windowsUrl, windowsVersion,
+          windowsSha256: document.getElementById('adminSha256ExeInput').value.trim(),
+          windowsSizeBytes: Number(document.getElementById('adminSizeExeInput').value || 0),
           android_tvUrl: document.getElementById('adminDownloadTvInput').value.trim(),
-          android_tvVersion: document.getElementById('adminVersionTvInput').value.trim()
+          android_tvVersion: document.getElementById('adminVersionTvInput').value.trim(),
+          android_tvSha256: document.getElementById('adminSha256TvInput').value.trim(),
+          android_tvSizeBytes: Number(document.getElementById('adminSizeTvInput').value || 0)
         })
       });
 

@@ -2443,6 +2443,7 @@ body:not(.activation-locked) {
     min-height: 48px;
   }
 }
+.catalog-browse-all-btn { width: 100%; margin-top: 14px; }
 
 /* Android phone: keep the WebView compositor cheap and every gesture native. */
 .platform-android body {

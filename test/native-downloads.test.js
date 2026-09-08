@@ -9,7 +9,7 @@ test('TV downloader shows completion and requires explicit installation click', 
   const context = { window, navigator: { userAgent: 'Android Phim4KTV' }, setTimeout };
   vm.runInNewContext(fs.readFileSync('public/js/native-downloads.js', 'utf8'), context);
   const button = { removeAttribute() {}, textContent: '' };
-  await window.Phim4KNativeDownloads.open(button, 'https://example.com/a.apk');
+  await window.Phim4KNativeDownloads.open(button, {url:'https://example.com/a.apk',sha256:'a'.repeat(64),sizeBytes:1234});
   assert.equal(installs, 0);
   assert.match(button.textContent, /Bấm kiểm tra/);
   button.onclick({ preventDefault() {} });
@@ -36,15 +36,15 @@ test('absent native plugin produces a visible error rather than an unhandled rej
   const window = { Capacitor: { getPlatform: () => 'android' } };
   vm.runInNewContext(fs.readFileSync('public/js/native-downloads.js', 'utf8'), { window, navigator: { userAgent: 'Phim4KTV' }, setTimeout });
   const button = { removeAttribute() {}, textContent: '' };
-  await window.Phim4KNativeDownloads.open(button, 'https://example.com/a.apk');
+  await window.Phim4KNativeDownloads.open(button, {url:'https://example.com/a.apk',sha256:'a'.repeat(64),sizeBytes:1234});
   assert.match(button.textContent, /Chưa kết nối/);
 });
 test('TV downloader makes failure visible and allows a retry', async () => {
   const window = { Capacitor: { getPlatform: () => 'android', registerPlugin: () => ({ start: async () => { throw new Error('Không có mạng'); } }) } };
   vm.runInNewContext(fs.readFileSync('public/js/native-downloads.js', 'utf8'), { window, navigator: { userAgent: 'Phim4KTV' }, setTimeout });
   const button = { removeAttribute() {}, textContent: '' };
-  await window.Phim4KNativeDownloads.open(button, 'https://example.com/a.apk');
+  await window.Phim4KNativeDownloads.open(button, {url:'https://example.com/a.apk',sha256:'a'.repeat(64),sizeBytes:1234});
   assert.equal(button.textContent, 'Không có mạng');
-  await window.Phim4KNativeDownloads.open(button, 'https://example.com/a.apk');
+  await window.Phim4KNativeDownloads.open(button, {url:'https://example.com/a.apk',sha256:'a'.repeat(64),sizeBytes:1234});
   assert.equal(button.textContent, 'Không có mạng');
 });

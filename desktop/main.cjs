@@ -1,4 +1,4 @@
-const { app, BrowserWindow, protocol, net, session, shell, dialog } = require('electron');
+const { app, BrowserWindow, protocol, net, session, shell, dialog, ipcMain, safeStorage } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const fs = require('node:fs');
@@ -9,6 +9,31 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'phim4k', privileges: { standard
 // Keep the existing storage location while the visible application name is
 // standardized to 4K, so upgrading does not erase local viewing progress.
 app.setPath('userData', path.join(app.getPath('appData'), 'Phim4K Cinema'));
+const secureSessionFile = path.join(app.getPath('userData'), 'secure-session.v1');
+ipcMain.handle('phim4k:session:get', () => {
+  try {
+    if (!fs.existsSync(secureSessionFile) || !safeStorage.isEncryptionAvailable()) return { value: '' };
+    const encrypted = Buffer.from(fs.readFileSync(secureSessionFile, 'utf8'), 'base64');
+    if (!encrypted.length || encrypted.length > 32 * 1024) return { value: '' };
+    return { value: safeStorage.decryptString(encrypted) };
+  } catch (_error) {
+    return { value: '' };
+  }
+});
+ipcMain.handle('phim4k:session:set', (_event, payload = {}) => {
+  const value = typeof payload.value === 'string' ? payload.value : '';
+  if (!safeStorage.isEncryptionAvailable() || Buffer.byteLength(value, 'utf8') > 16 * 1024) throw new Error('Secure storage is unavailable.');
+  fs.mkdirSync(path.dirname(secureSessionFile), { recursive: true });
+  const temporary = `${secureSessionFile}.${process.pid}.tmp`;
+  fs.writeFileSync(temporary, safeStorage.encryptString(value).toString('base64'), { encoding: 'utf8', mode: 0o600 });
+  if (fs.existsSync(secureSessionFile)) fs.rmSync(secureSessionFile, { force: true });
+  fs.renameSync(temporary, secureSessionFile);
+  return {};
+});
+ipcMain.handle('phim4k:session:clear', () => {
+  fs.rmSync(secureSessionFile, { force: true });
+  return {};
+});
 if (!app.requestSingleInstanceLock()) app.quit();
 else app.whenReady().then(async () => {
   const root = path.join(app.isPackaged ? app.getAppPath() : path.resolve(__dirname, '..'), 'public');
@@ -36,7 +61,8 @@ else app.whenReady().then(async () => {
   session.defaultSession.setPermissionCheckHandler(() => false);
   const smoke = process.argv.includes('--smoke-test');
   const win = new BrowserWindow({ width: 1366, height: 900, minWidth: 960, minHeight: 640, backgroundColor: '#0b101b', show: !smoke,
-    autoHideMenuBar: true, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true, devTools: false } });
+    autoHideMenuBar: true, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true, devTools: false,
+      preload: path.join(__dirname, 'preload.cjs') } });
   win.webContents.setUserAgent(win.webContents.getUserAgent() + ' Phim4KDesktop');
   const external = url => { if (allowedExternal(url)) void shell.openExternal(url); };
   win.webContents.setWindowOpenHandler(({ url }) => { external(url); return { action: 'deny' }; });

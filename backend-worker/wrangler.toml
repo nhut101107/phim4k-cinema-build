@@ -41,3 +41,11 @@ namespace_id = "910010004"
   [ratelimits.simple]
   limit = 300
   period = 60
+
+[[ratelimits]]
+name = "MEDIA_RATE_LIMITER"
+namespace_id = "910010005"
+
+  [ratelimits.simple]
+  limit = 1200
+  period = 60

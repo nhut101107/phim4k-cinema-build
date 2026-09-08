@@ -1,6 +1,6 @@
 {
   "name": "phim4k-app",
-  "version": "3.4.36",
+  "version": "3.4.39",
   "description": "4K Cinema Streaming App with License Key Gate and Ad-Free HLS Player",
   "main": "server.js",
   "overrides": {
@@ -19,7 +19,9 @@
     "pretest": "npm run test:prepare",
     "test": "node --test test/*.test.js backend-worker/test/*.test.mjs relay/*.test.mjs",
     "desktop:build": "npm run ios:prepare && electron-builder --config electron-builder.json --win --x64",
+    "desktop:verify": "node scripts/verify-windows-artifact.cjs",
     "desktop:smoke": "node scripts/run-desktop-smoke.cjs",
+    "security:audit": "node scripts/security-audit.cjs",
     "android:sync": "npm run ios:prepare && cap sync android",
     "tv:sync": "npm run android:sync"
   },

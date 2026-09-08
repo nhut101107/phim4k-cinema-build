@@ -27,7 +27,7 @@ jobs:
         if: ${{ inputs.health_url != '' }}
         run: curl --fail --show-error --max-time 20 "${{ inputs.health_url }}"
 
-      - name: Verify license backend fails closed for an unknown key
+      - name: Verify legacy raw-key authentication fails closed
         if: ${{ inputs.auth_status_url != '' }}
         env:
           AUTH_STATUS_URL: ${{ inputs.auth_status_url }}
@@ -38,5 +38,5 @@ jobs:
             --header 'x-license-key: P4K-ACTIONS-PROBE' \
             --header 'x-device-id: github-actions-probe' \
             "$AUTH_STATUS_URL")"
-          test "$status" = "404"
-          grep -q '"code":"KEY_NOT_FOUND"' "$response_file"
+          test "$status" = "401"
+          grep -q '"code":"ACCESS_TOKEN_REQUIRED"' "$response_file"

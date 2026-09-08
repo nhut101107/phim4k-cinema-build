@@ -17,7 +17,9 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.io.File;
+import java.io.FileInputStream;
 import java.security.MessageDigest;
+import java.util.Locale;
 import java.util.UUID;
 
 @CapacitorPlugin(name = "ReleaseDownloads")
@@ -48,8 +50,12 @@ public class ReleaseDownloadsPlugin extends Plugin {
     @PluginMethod public void start(PluginCall call) {
         try {
             String raw = call.getString("url", "");
+            String expectedHash = call.getString("sha256", "").trim().toLowerCase(Locale.ROOT);
+            long expectedSize = call.getData().optLong("sizeBytes", 0L);
             Uri uri = Uri.parse(raw);
             if (!"https".equals(uri.getScheme()) || uri.getHost() == null || uri.getUserInfo() != null || raw.length() > 2048) { call.reject("Link tải HTTPS không hợp lệ."); return; }
+            if (!expectedHash.matches("^[a-f0-9]{64}$")) { call.reject("Bản cập nhật thiếu mã kiểm tra SHA-256 hợp lệ."); return; }
+            if (expectedSize < 0 || expectedSize > 128L * 1024 * 1024) { call.reject("Kích thước bản cập nhật không hợp lệ."); return; }
             if (manager() == null) { call.reject("Thiết bị không có dịch vụ tải hệ thống. Hãy tải APK bằng trình duyệt rồi cài thủ công."); return; }
             JSObject existing = state();
             if (raw.equals(prefs().getString("url", "")) && ("complete".equals(existing.getString("status")) || "downloading".equals(existing.getString("status")))) { call.resolve(existing); return; }
@@ -60,7 +66,13 @@ public class ReleaseDownloadsPlugin extends Plugin {
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 .setDestinationInExternalFilesDir(getContext(), Environment.DIRECTORY_DOWNLOADS, name);
             long id = manager().enqueue(request);
-            prefs().edit().putLong("id", id).putString("url", raw).putString("file", name).apply();
+            prefs().edit()
+                .putLong("id", id)
+                .putString("url", raw)
+                .putString("file", name)
+                .putString("sha256", expectedHash)
+                .putLong("sizeBytes", expectedSize)
+                .apply();
             call.resolve(state());
         } catch (Exception error) { call.reject("Không thể bắt đầu tải APK. Kiểm tra mạng và dung lượng thiết bị."); }
     }
@@ -79,12 +91,30 @@ public class ReleaseDownloadsPlugin extends Plugin {
         android.content.pm.Signature[] currentKeys = Build.VERSION.SDK_INT >= 28 ? installed.signingInfo.getApkContentsSigners() : installed.signatures;
         return incomingKeys.length == 1 && currentKeys.length == 1 && MessageDigest.isEqual(incomingKeys[0].toByteArray(), currentKeys[0].toByteArray());
     }
+    private String sha256(File file) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        byte[] buffer = new byte[64 * 1024];
+        try (FileInputStream input = new FileInputStream(file)) {
+            int read;
+            while ((read = input.read(buffer)) != -1) digest.update(buffer, 0, read);
+        }
+        StringBuilder result = new StringBuilder(64);
+        for (byte value : digest.digest()) result.append(String.format(Locale.ROOT, "%02x", value & 0xff));
+        return result.toString();
+    }
     @PluginMethod public void install(PluginCall call) {
         try {
             if (!"complete".equals(state().getString("status"))) { call.reject("APK chưa tải xong."); return; }
             File directory = getContext().getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
             File file = new File(directory, prefs().getString("file", "missing"));
-            if (directory == null || !file.getCanonicalPath().startsWith(directory.getCanonicalPath() + File.separator) || !sameSigner(file)) { call.reject("APK không đúng ứng dụng 4K Cinema hoặc chữ ký không khớp. Không cài file này."); return; }
+            String expectedHash = prefs().getString("sha256", "");
+            long expectedSize = prefs().getLong("sizeBytes", 0L);
+            if (directory == null || !file.isFile() || !file.getCanonicalPath().startsWith(directory.getCanonicalPath() + File.separator)) { call.reject("Không tìm thấy APK hợp lệ trong thư mục tải an toàn."); return; }
+            if ((expectedSize > 0 && file.length() != expectedSize) || !MessageDigest.isEqual(expectedHash.getBytes(java.nio.charset.StandardCharsets.US_ASCII), sha256(file).getBytes(java.nio.charset.StandardCharsets.US_ASCII))) {
+                file.delete();
+                call.reject("APK tải về không khớp SHA-256 hoặc kích thước công bố. File đã bị loại bỏ."); return;
+            }
+            if (!sameSigner(file)) { file.delete(); call.reject("APK không đúng ứng dụng 4K Cinema hoặc chữ ký không khớp. File đã bị loại bỏ."); return; }
             if (Build.VERSION.SDK_INT >= 26 && !getContext().getPackageManager().canRequestPackageInstalls()) {
                 getActivity().startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + getContext().getPackageName())));
                 call.resolve(new JSObject().put("needsPermission", true)); return;

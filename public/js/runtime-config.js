@@ -17,10 +17,11 @@
 
   window.Phim4KRuntime = Object.freeze({ apiBaseUrl });
   const nativeFetch = window.fetch.bind(window);
-  window.fetch = (input, init) => {
+  window.fetch = async (input, init = {}) => {
+    const decorated = window.SessionVault ? await window.SessionVault.decorate(input, init) : init;
     if (typeof input === "string" && input.startsWith("/api/") && apiBaseUrl) {
-      return nativeFetch(`${apiBaseUrl}${input}`, init);
+      return nativeFetch(`${apiBaseUrl}${input}`, decorated);
     }
-    return nativeFetch(input, init);
+    return nativeFetch(input, decorated);
   };
 })();

@@ -1,4 +1,11 @@
 import HomeCuration from '../../public/js/home-curation.js';
+import {
+  authenticateSession,
+  issueSession,
+  mediaSession,
+  revokeSession,
+  rotateSession,
+} from './session-security.mjs';
 
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
@@ -13,7 +20,7 @@ const JSON_HEADERS = {
 const CORS_HEADERS = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
-  "access-control-allow-headers": "content-type, range, x-license-key, x-telegram-id, x-device-id, x-app-version",
+  "access-control-allow-headers": "authorization, content-type, range, x-license-key, x-telegram-id, x-device-id, x-app-version, x-device-time, x-device-nonce, x-device-proof, x-refresh-token",
   "access-control-expose-headers": "accept-ranges, content-length, content-range, retry-after",
   "access-control-max-age": "86400",
 };
@@ -43,6 +50,7 @@ const RATE_LIMITS = Object.freeze({
   authActivate: { limit: 20, windowSeconds: 60 },
   authStatus: { limit: 120, windowSeconds: 60 },
   admin: { limit: 30, windowSeconds: 60 },
+  media: { limit: 1200, windowSeconds: 60 },
   default: { limit: 240, windowSeconds: 60 },
 });
 
@@ -232,6 +240,11 @@ function normalizeId(value) {
   return String(value || "").trim().slice(0, 128);
 }
 
+function normalizeDeviceId(value) {
+  const clean = String(value || "").trim();
+  return /^[A-Za-z0-9._:-]{3,128}$/.test(clean) ? clean : "";
+}
+
 function validKey(value) {
   return LICENSE_PATTERN.test(value);
 }
@@ -361,6 +374,7 @@ function ratePolicy(pathname) {
   if (pathname === "/api/auth/activate" || pathname === "/api/auth/request-device-access") return RATE_LIMITS.authActivate;
   if (pathname === "/api/auth/status" || pathname === "/api/auth/device-status") return RATE_LIMITS.authStatus;
   if (pathname.startsWith("/api/admin/")) return RATE_LIMITS.admin;
+  if (pathname === "/api/media/stream") return RATE_LIMITS.media;
   return RATE_LIMITS.default;
 }
 
@@ -368,6 +382,7 @@ function distributedRateBinding(pathname, env) {
   if (pathname === "/api/auth/activate" || pathname === "/api/auth/request-device-access") return env.ACTIVATION_RATE_LIMITER;
   if (pathname === "/api/auth/status" || pathname === "/api/auth/device-status") return env.STATUS_RATE_LIMITER;
   if (pathname.startsWith("/api/admin/")) return env.ADMIN_RATE_LIMITER;
+  if (pathname === "/api/media/stream") return env.MEDIA_RATE_LIMITER;
   return env.PUBLIC_RATE_LIMITER;
 }
 
@@ -376,7 +391,7 @@ function distributedRateKey(request, pathname) {
   // Activation and administrative attempts are limited by edge IP. Status
   // checks use a stable identity so carrier NATs do not throttle viewers.
   if (pathname === "/api/auth/status" || pathname === "/api/auth/device-status") {
-    return `status:${requestKey(request) || requestTelegram(request) || ip}`;
+    return `status:${normalizeDeviceId(request.headers.get("x-device-id")) || ip}`;
   }
   return `${pathname}:${ip}`;
 }
@@ -433,6 +448,19 @@ function toHex(buffer) {
 
 async function adminKeyDigest(key, env) {
   if (!env.ADMIN_KEY_PEPPER) return "";
+  const hmacKey = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(String(env.ADMIN_KEY_PEPPER)),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign("HMAC", hmacKey, new TextEncoder().encode(normalizeKey(key)));
+  return `hmac-sha256:${toHex(signature)}`;
+}
+
+async function legacyAdminKeyDigest(key, env) {
+  if (!env.ADMIN_KEY_PEPPER) return "";
   const encoded = new TextEncoder().encode(`${normalizeKey(key)}:${env.ADMIN_KEY_PEPPER}`);
   return toHex(await crypto.subtle.digest("SHA-256", encoded));
 }
@@ -446,7 +474,9 @@ async function verifyMasterKey(key, env, db) {
   if (!key) return false;
   const storedHash = await configuredAdminKeyHash(db);
   if (storedHash) {
-    const candidateHash = await adminKeyDigest(key, env);
+    const candidateHash = storedHash.startsWith("hmac-sha256:")
+      ? await adminKeyDigest(key, env)
+      : await legacyAdminKeyDigest(key, env);
     return Boolean(candidateHash) && equalString(candidateHash, storedHash);
   }
   return Boolean(env.ADMIN_LICENSE_KEY) && equalString(normalizeKey(key), normalizeKey(env.ADMIN_LICENSE_KEY));
@@ -466,7 +496,12 @@ async function verifyAdmin(request, env, db) {
 async function requireVerifiedAdmin(request, env) {
   const missing = dbUnavailable(env);
   if (missing) return missing;
-  return await verifyAdmin(request, env, env.DB) ? null : textError("Admin authorization required.", 403, "ADMIN_REQUIRED");
+  if (env.ALLOW_LEGACY_TEST_AUTH === "1" && !request.headers.get("authorization")) {
+    return await verifyAdmin(request, env, env.DB) ? null : textError("Admin authorization required.", 403, "ADMIN_REQUIRED");
+  }
+  const identity = await verifiedSessionIdentity(request, env);
+  if (identity.error) return identity.error;
+  return identity.isAdmin ? null : textError("Admin authorization required.", 403, "ADMIN_REQUIRED");
 }
 
 async function parseBody(request) {
@@ -500,20 +535,123 @@ async function queryOne(db, statement, ...values) {
   return db.prepare(statement).bind(...values).first();
 }
 
+function sessionError(code) {
+  const values = {
+    ACCESS_TOKEN_REQUIRED: ["Phiên đăng nhập là bắt buộc.", 401],
+    ACCESS_TOKEN_EXPIRED: ["Phiên truy cập đã hết hạn.", 401],
+    SESSION_EXPIRED: ["Phiên đăng nhập đã hết hạn.", 401],
+    SESSION_REVOKED: ["Phiên đăng nhập đã bị thu hồi.", 401],
+    REFRESH_TOKEN_REQUIRED: ["Thiếu mã làm mới phiên.", 401],
+    REFRESH_TOKEN_INVALID: ["Mã làm mới phiên không hợp lệ.", 401],
+    REFRESH_TOKEN_REUSED: ["Phát hiện mã làm mới đã được dùng lại; toàn bộ phiên đã bị thu hồi.", 401],
+    DEVICE_MISMATCH: ["Thiết bị không khớp với phiên đã kích hoạt.", 403],
+    DEVICE_PROOF_REQUIRED: ["Thiếu chữ ký xác thực thiết bị.", 401],
+    DEVICE_PROOF_KEY_INVALID: ["Khóa xác thực thiết bị không hợp lệ.", 401],
+    DEVICE_PROOF_INVALID: ["Chữ ký thiết bị không hợp lệ.", 401],
+    DEVICE_PROOF_EXPIRED: ["Chữ ký thiết bị đã quá hạn.", 401],
+    DEVICE_PROOF_REPLAYED: ["Yêu cầu đã được sử dụng trước đó.", 409],
+  };
+  const [message, status] = values[code] || ["Phiên đăng nhập không hợp lệ.", 401];
+  return textError(message, status, code || "SESSION_INVALID");
+}
+
+async function authorizeSessionRecord(session, env) {
+  if (!session) return { error: sessionError("SESSION_REVOKED") };
+  if (session.role === "admin") {
+    const configuredTelegram = normalizeId(env.ADMIN_TELEGRAM_ID);
+    if (!configuredTelegram || !equalString(normalizeId(session.telegram_id), configuredTelegram)) {
+      await revokeSession(env.DB, session.session_id);
+      return { error: textError("Admin authorization required.", 403, "ADMIN_REQUIRED") };
+    }
+    return {
+      session,
+      sessionId: session.session_id,
+      telegramId: configuredTelegram,
+      deviceId: session.device_id,
+      isAdmin: true,
+      freeAccess: false,
+      plan: "MASTER",
+      keyHint: "ADMIN",
+      expiresAt: null,
+    };
+  }
+
+  const maintenance = await getMaintenance(env.DB);
+  if (maintenance.active) return { error: maintenanceError(maintenance) };
+  if (session.role === "guest") {
+    if (!await freeAccessEnabled(env.DB)) {
+      await revokeSession(env.DB, session.session_id);
+      return { error: textError("Chế độ không cần key đã được tắt.", 401, "FREE_ACCESS_DISABLED") };
+    }
+    return {
+      session,
+      sessionId: session.session_id,
+      telegramId: "",
+      deviceId: session.device_id,
+      isAdmin: false,
+      freeAccess: true,
+      plan: "MIỄN KEY",
+      keyHint: "",
+      expiresAt: null,
+    };
+  }
+
+  if (session.role !== "user" || !validKey(normalizeKey(session.license_key))) {
+    await revokeSession(env.DB, session.session_id);
+    return { error: sessionError("SESSION_REVOKED") };
+  }
+  const record = await queryOne(env.DB, "SELECT * FROM license_keys WHERE license_key = ?", normalizeKey(session.license_key));
+  if (!record || !record.active) {
+    await revokeSession(env.DB, session.session_id);
+    return { error: textError("Key đã bị vô hiệu hóa.", 403, "KEY_DISABLED") };
+  }
+  if (isExpired(record.expires_at)) {
+    await revokeSession(env.DB, session.session_id);
+    return { error: textError("Key đã hết hạn.", 403, "KEY_EXPIRED") };
+  }
+  if (!record.device_id || record.device_id !== session.device_id) {
+    await revokeSession(env.DB, session.session_id);
+    return { error: sessionError("DEVICE_MISMATCH") };
+  }
+  const owner = normalizeId(record.activated_telegram_id || record.assigned_telegram_id);
+  if (owner && await queryOne(env.DB, "SELECT reason FROM bans WHERE telegram_id = ?", owner)) {
+    await revokeSession(env.DB, session.session_id);
+    return { error: textError("Tài khoản đã bị khóa.", 403, "USER_BANNED") };
+  }
+  return {
+    session,
+    sessionId: session.session_id,
+    telegramId: owner,
+    deviceId: session.device_id,
+    isAdmin: false,
+    freeAccess: false,
+    plan: record.plan,
+    keyHint: maskedValue(record.license_key),
+    expiresAt: record.expires_at || null,
+    licenseKey: record.license_key,
+  };
+}
+
+async function verifiedSessionIdentity(request, env) {
+  const authenticated = await authenticateSession(request, env.DB);
+  if (authenticated.error) return { error: sessionError(authenticated.error) };
+  return authorizeSessionRecord(authenticated.session, env);
+}
+
 async function logEvent(db, action, { actorTelegramId = "", targetKey = "", targetTelegramId = "", detail = "" } = {}) {
   try {
     await db.prepare(
       "INSERT INTO audit_logs (created_at, action, actor_telegram_id, target_key, target_telegram_id, detail) VALUES (?, ?, ?, ?, ?, ?)",
-    ).bind(now(), action, actorTelegramId, targetKey, targetTelegramId, String(detail).slice(0, 500)).run();
+    ).bind(now(), action, actorTelegramId, targetKey ? maskedValue(targetKey) : "", targetTelegramId, String(detail).slice(0, 500)).run();
   } catch (_error) {
     // Audit logging must not turn an otherwise valid authorization result into a failure.
   }
 }
 
-async function verifyTelemetryViewer(request, env) {
+async function verifyLegacyTelemetryViewer(request, env) {
   const key = requestKey(request);
   const telegramId = requestTelegram(request);
-  const deviceId = normalizeId(request.headers.get("x-device-id"));
+  const deviceId = normalizeDeviceId(request.headers.get("x-device-id"));
   if (!deviceId) return { error: textError("Thiếu phiên người dùng hợp lệ.", 401, "VIEWER_SESSION_REQUIRED") };
   if (!key) {
     const maintenance = await getMaintenance(env.DB);
@@ -544,6 +682,13 @@ async function verifyTelemetryViewer(request, env) {
     if (ban) return { error: textError("Tài khoản đã bị khóa.", 403, "USER_BANNED") };
   }
   return { telegramId: boundTelegram, deviceId, isAdmin: false };
+}
+
+async function verifyTelemetryViewer(request, env) {
+  if (env.ALLOW_LEGACY_TEST_AUTH === "1" && !request.headers.get("authorization")) {
+    return verifyLegacyTelemetryViewer(request, env);
+  }
+  return verifiedSessionIdentity(request, env);
 }
 
 async function handleTelemetry(request, env) {
@@ -582,7 +727,10 @@ async function ensureWatchProgressTable(db) {
 async function progressOwner(request, env) {
   const identity = await verifyTelemetryViewer(request, env);
   if (identity.error) return identity;
-  const key = requestKey(request);
+  // In production the account namespace comes only from the verified server
+  // session. A caller cannot switch another account's history by supplying an
+  // x-license-key header. Legacy headers remain isolated to explicit tests.
+  const key = env.ALLOW_LEGACY_TEST_AUTH === "1" ? requestKey(request) : identity.licenseKey;
   const namespace = identity.isAdmin
     ? `admin:${normalizeId(env.ADMIN_TELEGRAM_ID)}`
     : key
@@ -787,9 +935,9 @@ async function getVerifiedAdminUpdate(db, request, forceStatus) {
   const currentVersion = appVersion(request);
   if (!platform || !/^\d+(?:\.\d+){1,3}$/.test(currentVersion)) return forceStatus;
 
-  const release = await queryOne(db, "SELECT url, version FROM downloads WHERE platform = ?", platform);
+  const release = await queryOne(db, "SELECT url, version, sha256, size_bytes, signer FROM downloads WHERE platform = ?", platform);
   const releaseVersion = String(release?.version || "").trim();
-  if (!release || !validDownloadUrl(release.url) || !/^\d+(?:\.\d+){1,3}$/.test(releaseVersion)) return forceStatus;
+  if (!release || !validDownloadUrl(release.url) || !validReleaseSha256(release.sha256) || !/^\d+(?:\.\d+){1,3}$/.test(releaseVersion)) return forceStatus;
   if (compareAppVersions(currentVersion, releaseVersion) >= 0) return forceStatus;
 
   return {
@@ -799,6 +947,9 @@ async function getVerifiedAdminUpdate(db, request, forceStatus) {
     latestVersion: releaseVersion,
     minVersion: releaseVersion,
     downloadUrl: release.url,
+    downloadSha256: String(release.sha256).toLowerCase(),
+    downloadSizeBytes: validReleaseSize(release.size_bytes) ? Number(release.size_bytes) : 0,
+    downloadSigner: cleanProgressText(release.signer, 200),
     message: `Có bản ${releaseVersion}. Hãy tải đúng bản dành cho thiết bị này để cập nhật.`,
   };
 }
@@ -997,6 +1148,105 @@ async function activationStatus({ db, key, telegramId, deviceId, request, env, a
   return json({ success: true, active: true, isAdmin: false, keyOnly: true, plan: bound.plan, expiresAt: bound.expires_at || null, ...force });
 }
 
+function sessionClientPayload(identity, tokens = {}) {
+  return {
+    success: true,
+    active: true,
+    isAdmin: Boolean(identity.isAdmin),
+    freeAccess: Boolean(identity.freeAccess),
+    keyOnly: !identity.isAdmin && !identity.freeAccess,
+    plan: identity.plan || "STANDARD",
+    keyHint: identity.keyHint || "",
+    expiresAt: identity.expiresAt || null,
+    ...tokens,
+  };
+}
+
+async function activateSession(request, env) {
+  const body = await parseBody(request);
+  const key = normalizeKey(body.key);
+  const telegramId = normalizeId(body.telegramId);
+  const deviceId = normalizeDeviceId(body.deviceId);
+  const decision = await activationStatus({ db: env.DB, key, telegramId, deviceId, request, env, activation: true });
+  if (env.ALLOW_LEGACY_TEST_AUTH === "1") return decision;
+  if (!decision.ok) return decision;
+  const payload = await decision.clone().json().catch(() => ({}));
+  if (!payload.success || !payload.active || payload.forceUpdate) {
+    return payload.forceUpdate ? json({ ...payload, active: false }) : decision;
+  }
+
+  let tokens;
+  try {
+    tokens = await issueSession({
+      db: env.DB,
+      role: payload.isAdmin ? "admin" : payload.freeAccess ? "guest" : "user",
+      licenseKey: payload.isAdmin || payload.freeAccess ? "" : key,
+      telegramId: payload.isAdmin ? telegramId : "",
+      deviceId,
+      plan: payload.plan || "STANDARD",
+      devicePublicKey: body.devicePublicKey,
+    });
+  } catch (error) {
+    if (error.message === "DEVICE_KEY_REQUIRED") {
+      return textError("Thiết bị không tạo được khóa xác thực an toàn.", 400, "DEVICE_KEY_REQUIRED");
+    }
+    throw error;
+  }
+  await logEvent(env.DB, "session_issued", {
+    actorTelegramId: payload.isAdmin ? telegramId : "",
+    targetKey: key,
+    detail: `role=${payload.isAdmin ? "admin" : payload.freeAccess ? "guest" : "user"} device=${maskedValue(deviceId, 6)}`,
+  });
+  return json({
+    ...payload,
+    keyHint: key ? maskedValue(key) : "",
+    ...tokens,
+  });
+}
+
+async function sessionStatus(request, env) {
+  const identity = await verifiedSessionIdentity(request, env);
+  if (identity.error) return identity.error;
+  let force = await getForceUpdate(env.DB, appVersion(request));
+  if (identity.isAdmin) force = await getVerifiedAdminUpdate(env.DB, request, force);
+  return json({ ...sessionClientPayload(identity), active: !force.forceUpdate, ...force });
+}
+
+async function refreshSession(request, env) {
+  const body = await parseBody(request);
+  const rotated = await rotateSession(request, env.DB, body);
+  if (rotated.error) return sessionError(rotated.error);
+  const identity = await authorizeSessionRecord(rotated.session, env);
+  if (identity.error) {
+    await revokeSession(env.DB, rotated.session.session_id);
+    return identity.error;
+  }
+  const force = identity.isAdmin
+    ? await getVerifiedAdminUpdate(env.DB, request, await getForceUpdate(env.DB, appVersion(request)))
+    : await getForceUpdate(env.DB, appVersion(request));
+  if (force.forceUpdate) {
+    await revokeSession(env.DB, rotated.session.session_id);
+    return json({ ...sessionClientPayload(identity), active: false, ...force });
+  }
+  return json({
+    ...sessionClientPayload(identity, {
+      sessionId: rotated.sessionId,
+      accessToken: rotated.accessToken,
+      accessExpiresAt: rotated.accessExpiresAt,
+      refreshToken: rotated.refreshToken,
+      refreshExpiresAt: rotated.refreshExpiresAt,
+    }),
+    ...force,
+  });
+}
+
+async function logoutSession(request, env) {
+  const authenticated = await authenticateSession(request, env.DB);
+  if (authenticated.error) return sessionError(authenticated.error);
+  await revokeSession(env.DB, authenticated.session.session_id);
+  return json({ success: true, active: false, message: "Đã đăng xuất và thu hồi phiên trên máy chủ." });
+}
+
 async function ensureDeviceAccessTable(db) {
   await db.prepare(
     "CREATE TABLE IF NOT EXISTS device_access_requests (license_key TEXT NOT NULL, device_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')), requested_at TEXT NOT NULL, decided_at TEXT, decided_by TEXT, PRIMARY KEY (license_key, device_id), FOREIGN KEY (license_key) REFERENCES license_keys(license_key) ON DELETE CASCADE)",
@@ -1032,7 +1282,7 @@ async function notifyDeviceRequest(env, key, deviceId) {
 async function requestDeviceAccess(request, env) {
   const body = await parseBody(request);
   const key = normalizeKey(body.key);
-  const deviceId = normalizeId(body.deviceId);
+  const deviceId = normalizeDeviceId(body.deviceId);
   if (!validKey(key) || !deviceId) return textError("Nhập key hợp lệ để gửi yêu cầu cho Admin.", 400, "INVALID_DEVICE_REQUEST");
   if (await verifyMasterKey(key, env, env.DB)) return textError("Key Admin bắt buộc dùng Telegram ID quản trị.", 403, "ADMIN_TELEGRAM_REQUIRED");
   const maintenance = await getMaintenance(env.DB);
@@ -1060,7 +1310,7 @@ async function deviceAccessStatus(request, env) {
   // Authentication material is header-only. Query parameters are commonly
   // retained in browser history, CDN logs and support screenshots.
   const key = requestKey(request);
-  const deviceId = normalizeId(request.headers.get('x-device-id'));
+  const deviceId = normalizeDeviceId(request.headers.get('x-device-id'));
   if (!validKey(key) || !deviceId) return textError("Thiếu key hoặc mã thiết bị.", 400, "MISSING_DEVICE_LICENSE_DATA");
   const maintenance = await getMaintenance(env.DB);
   if (maintenance.active) return maintenanceError(maintenance);
@@ -1076,7 +1326,17 @@ async function deviceAccessStatus(request, env) {
   if (isExpired(record.expires_at)) return textError("Key đã hết hạn.", 403, "KEY_EXPIRED");
   if (record.device_id !== deviceId) return textError("Quyền thiết bị đã thay đổi. Hãy gửi yêu cầu mới.", 403, "DEVICE_MISMATCH");
   const force = await getForceUpdate(env.DB, appVersion(request));
-  return json({ success: true, active: true, status: "approved", deviceOnly: true, isAdmin: false, plan: record.plan, expiresAt: record.expires_at || null, key, ...force });
+  return json({
+    success: true,
+    active: true,
+    status: "approved",
+    requiresActivation: true,
+    isAdmin: false,
+    plan: record.plan,
+    keyHint: maskedValue(key),
+    expiresAt: record.expires_at || null,
+    ...force,
+  });
 }
 
 async function listDeviceAccessRequests(request, env) {
@@ -1094,7 +1354,7 @@ async function decideDeviceAccess(request, env) {
   if (denied) return denied;
   const body = await parseBody(request);
   const key = normalizeKey(body.key);
-  const deviceId = normalizeId(body.deviceId);
+  const deviceId = normalizeDeviceId(body.deviceId);
   const decision = body.decision === "approve" ? "approved" : body.decision === "reject" ? "rejected" : "";
   if (!validKey(key) || !deviceId || !decision) return textError("Yêu cầu duyệt không hợp lệ.", 400, "INVALID_DECISION");
   await ensureDeviceAccessTable(env.DB);
@@ -1192,6 +1452,7 @@ async function updateKey(request, env, operation) {
     message = "Đã đổi trạng thái key.";
   } else if (operation === "reset-device") {
     await env.DB.prepare("UPDATE license_keys SET device_id = NULL, updated_at = ? WHERE license_key = ?").bind(timestamp, key).run();
+    await env.DB.prepare("UPDATE auth_sessions SET revoked_at = ?, updated_at = ? WHERE license_key = ? AND revoked_at IS NULL").bind(timestamp, timestamp, key).run();
     message = "Đã reset thiết bị.";
   } else if (operation === "reset-telegram") {
     const newTelegramId = normalizeId(body.newTelegramId);
@@ -1199,10 +1460,15 @@ async function updateKey(request, env, operation) {
     await env.DB.prepare("UPDATE license_keys SET assigned_telegram_id = ?, activated_telegram_id = NULL, updated_at = ? WHERE license_key = ?").bind(newTelegramId, timestamp, key).run();
     message = "Đã cập nhật Telegram cho key.";
   } else if (operation === "delete") {
+    await env.DB.prepare("UPDATE auth_sessions SET revoked_at = ?, updated_at = ? WHERE license_key = ? AND revoked_at IS NULL").bind(timestamp, timestamp, key).run();
     await env.DB.prepare("DELETE FROM license_keys WHERE license_key = ?").bind(key).run();
     message = "Đã xóa key.";
   } else {
     return textError("Thao tác key không được hỗ trợ.", 404, "UNKNOWN_KEY_OPERATION");
+  }
+  if (operation === "toggle") {
+    await env.DB.prepare("UPDATE auth_sessions SET revoked_at = ?, updated_at = ? WHERE license_key = ? AND revoked_at IS NULL")
+      .bind(timestamp, timestamp, key).run();
   }
   await logEvent(env.DB, `key_${operation}`, { actorTelegramId: requestTelegram(request), targetKey: key });
   return json({ success: true, message });
@@ -1236,7 +1502,7 @@ async function setBan(request, env, banned) {
   if (missing) return missing;
   const body = await parseBody(request);
   const key = normalizeKey(body.key || body.licenseKey);
-  const deviceId = normalizeId(body.deviceId);
+  const deviceId = normalizeDeviceId(body.deviceId);
   const telegramId = normalizeId(body.telegramId);
 
   let license = null;
@@ -1254,6 +1520,11 @@ async function setBan(request, env, banned) {
     await env.DB.prepare("UPDATE license_keys SET active = ?, updated_at = ? WHERE license_key = ?")
       .bind(banned ? 0 : 1, now(), license.license_key).run();
     if (!banned && owner) await env.DB.prepare("DELETE FROM bans WHERE telegram_id = ?").bind(owner).run();
+    if (banned) {
+      const revokedAt = now();
+      await env.DB.prepare("UPDATE auth_sessions SET revoked_at = ?, updated_at = ? WHERE license_key = ? AND revoked_at IS NULL")
+        .bind(revokedAt, revokedAt, license.license_key).run();
+    }
     await logEvent(env.DB, banned ? "user_banned" : "user_unbanned", {
       actorTelegramId: requestTelegram(request),
       targetKey: license.license_key,
@@ -1455,6 +1726,8 @@ async function rotateMasterKey(request, env) {
   await env.DB.prepare(
     "INSERT INTO app_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?) ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = excluded.updated_at",
   ).bind(ADMIN_KEY_HASH_SETTING, digest, now()).run();
+  await env.DB.prepare("UPDATE auth_sessions SET revoked_at = ?, updated_at = ? WHERE role = 'admin' AND revoked_at IS NULL")
+    .bind(now(), now()).run();
   await logEvent(env.DB, "admin_key_rotated", { actorTelegramId: requestTelegram(request), detail: "master-key-hash-updated" });
   return json({ success: true, message: "Admin key updated. Use the new key for the next admin request." });
 }
@@ -1484,7 +1757,13 @@ async function handleDownloads(request, env) {
     const rows = await env.DB.prepare("SELECT * FROM downloads").all();
     const output = {};
     for (const row of rows.results || []) {
-      if (['android', 'android_tv', 'ios', 'windows'].includes(row.platform)) output[row.platform] = { url: validDownloadUrl(row.url) ? row.url : '', version: row.version };
+      if (['android', 'android_tv', 'ios', 'windows'].includes(row.platform)) output[row.platform] = {
+        url: validDownloadUrl(row.url) ? row.url : '',
+        version: row.version,
+        sha256: validReleaseSha256(row.sha256) ? String(row.sha256).toLowerCase() : '',
+        sizeBytes: validReleaseSize(row.size_bytes) ? Number(row.size_bytes) : 0,
+        signer: cleanProgressText(row.signer, 200),
+      };
     }
     return json({
       ...output,
@@ -1498,19 +1777,27 @@ async function handleDownloads(request, env) {
   if (denied) return denied;
   const body = await parseBody(request);
   const entries = [
-    ["android", body.androidUrl, body.androidVersion],
-    ["ios", body.iosUrl, body.iosVersion],
-    ["windows", body.windowsUrl, body.windowsVersion],
-    ...(body.android_tvUrl !== undefined ? [["android_tv", body.android_tvUrl, body.android_tvVersion]] : []),
+    ["android", body.androidUrl, body.androidVersion, body.androidSha256, body.androidSizeBytes, body.androidSigner],
+    ["ios", body.iosUrl, body.iosVersion, body.iosSha256, body.iosSizeBytes, body.iosSigner],
+    ["windows", body.windowsUrl, body.windowsVersion, body.windowsSha256, body.windowsSizeBytes, body.windowsSigner],
+    ...(body.android_tvUrl !== undefined ? [["android_tv", body.android_tvUrl, body.android_tvVersion, body.android_tvSha256, body.android_tvSizeBytes, body.android_tvSigner]] : []),
   ];
   const timestamp = now();
   const statements = [];
-  for (const [platform, url, version] of entries) {
+  for (const [platform, url, version, sha256, sizeBytes, signer] of entries) {
     const safeUrl = String(url || "").trim();
     if (safeUrl && !validDownloadUrl(safeUrl)) return textError("Link tải phải dùng HTTPS, không chứa tài khoản/mật khẩu.", 400, "INVALID_DOWNLOAD_URL");
+    const safeSha256 = String(sha256 || "").trim().toLowerCase();
+    const safeSize = Number(sizeBytes || 0);
+    if (safeUrl && env.ALLOW_LEGACY_TEST_AUTH !== "1" && !validReleaseSha256(safeSha256)) {
+      return textError("Bản phát hành phải có SHA-256 hợp lệ.", 400, "RELEASE_SHA256_REQUIRED");
+    }
+    if (safeUrl && safeSize && !validReleaseSize(safeSize)) {
+      return textError("Kích thước bản phát hành không hợp lệ.", 400, "INVALID_RELEASE_SIZE");
+    }
     statements.push(env.DB.prepare(
-      "INSERT INTO downloads (platform, url, version, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(platform) DO UPDATE SET url = excluded.url, version = excluded.version, updated_at = excluded.updated_at",
-    ).bind(platform, safeUrl, String(version || "").trim().slice(0, 64), timestamp));
+      "INSERT INTO downloads (platform, url, version, sha256, size_bytes, signer, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(platform) DO UPDATE SET url = excluded.url, version = excluded.version, sha256 = excluded.sha256, size_bytes = excluded.size_bytes, signer = excluded.signer, updated_at = excluded.updated_at",
+    ).bind(platform, safeUrl, String(version || "").trim().slice(0, 64), safeSha256, validReleaseSize(safeSize) ? safeSize : 0, cleanProgressText(signer, 200), timestamp));
   }
   await env.DB.batch(statements);
   await logEvent(env.DB, 'admin_downloads_updated', { actorTelegramId: requestTelegram(request), detail: 'release-links-updated' });
@@ -1519,6 +1806,15 @@ async function handleDownloads(request, env) {
 
 export function validDownloadUrl(value) {
   return String(value || '').length <= 2048 && Boolean(safePublicHttpsUrl(value));
+}
+
+export function validReleaseSha256(value) {
+  return /^[a-f0-9]{64}$/.test(String(value || '').trim().toLowerCase());
+}
+
+function validReleaseSize(value) {
+  const size = Number(value);
+  return Number.isSafeInteger(size) && size > 0 && size <= 2 * 1024 * 1024 * 1024;
 }
 
 function catalogPage(value) {
@@ -1736,6 +2032,21 @@ async function handleProtectedMovieCatalog(request, env) {
     return json(await protectCatalogImages(HomeCuration.build(items), request, env));
   }
 
+  if (pathname === "/api/movies/catalog") {
+    const page = catalogPage(url.searchParams.get("page"));
+    const data = await fetchProtectedCatalogJson(`/danh-sach/phim-moi-cap-nhat?page=${page}`, env, { ttl: page === 1 ? 30 : 180 });
+    const pagination = data.pagination || data.data?.params?.pagination || {
+      currentPage: page,
+      totalPages: 1,
+      totalItems: catalogItems(data).length,
+    };
+    return json({
+      title: "Toàn bộ kho phim",
+      items: await protectCatalogImages(normalizedCatalogItems(data, env), request, env),
+      pagination,
+    });
+  }
+
   if (pathname === "/api/movies/filter") {
     const genre = String(url.searchParams.get("genre") || "").trim().toLowerCase();
     const country = String(url.searchParams.get("country") || "").trim().toLowerCase();
@@ -1798,7 +2109,15 @@ async function handleMoviePlayback(request, env) {
   if (!target) return textError("Server này không có luồng phát trực tiếp tương thích.", 404, "STREAM_NOT_AVAILABLE");
   const expiresAt = Math.floor(Date.now() / 1000) + (env.MEDIA_RELAY_FALLBACK === "redirect" ? 15 * 60 : STREAM_TICKET_TTL_SECONDS);
   const isHls = Boolean(hls) || /\.m3u8(?:$|[?#])/i.test(target.href);
-  return json({ success: true, streamUrl: await protectedMediaUrl(request, env, target.href, "stream", expiresAt, { format: isHls ? "hls" : "media" }), isHls, expiresAt: new Date(expiresAt * 1000).toISOString() });
+  return json({
+    success: true,
+    streamUrl: await protectedMediaUrl(request, env, target.href, "stream", expiresAt, {
+      format: isHls ? "hls" : "media",
+      sid: identity.sessionId || "",
+    }),
+    isHls,
+    expiresAt: new Date(expiresAt * 1000).toISOString(),
+  });
 }
 
 async function fetchVpsRelay(initialUrl, request, env, mediaFormat = "media") {
@@ -1869,37 +2188,48 @@ async function fetchProtectedUpstream(initialUrl, request, env, mediaFormat = "m
   throw new Error("MEDIA_REDIRECT_LIMIT");
 }
 
-async function protectHlsReference(reference, baseUrl, request, env, expiresAt) {
+async function protectHlsReference(reference, baseUrl, request, env, expiresAt, sessionId) {
   const value = String(reference || "").trim();
   if (!value || value.startsWith("data:")) throw new Error("UNSAFE_HLS_REFERENCE");
   const target = safePublicHttpsUrl(new URL(value, baseUrl).href);
   if (!target) throw new Error("UNSAFE_HLS_REFERENCE");
-  return protectedMediaUrl(request, env, target.href, "stream", expiresAt, { format: /\.m3u8(?:$|[?#])/i.test(target.href) ? "hls" : "media" });
+  return protectedMediaUrl(request, env, target.href, "stream", expiresAt, {
+    format: /\.m3u8(?:$|[?#])/i.test(target.href) ? "hls" : "media",
+    sid: sessionId,
+  });
 }
 
-async function rewriteHlsLine(line, baseUrl, request, env, expiresAt) {
+async function rewriteHlsLine(line, baseUrl, request, env, expiresAt, sessionId) {
   const trimmed = line.trim();
   if (!trimmed) return line;
-  if (!trimmed.startsWith("#")) return protectHlsReference(trimmed, baseUrl, request, env, expiresAt);
+  if (!trimmed.startsWith("#")) return protectHlsReference(trimmed, baseUrl, request, env, expiresAt, sessionId);
   const matches = [...line.matchAll(/URI="([^"]+)"/g)];
   if (!matches.length) return line;
   let output = "";
   let offset = 0;
   for (const match of matches) {
     output += line.slice(offset, match.index);
-    output += `URI="${await protectHlsReference(match[1], baseUrl, request, env, expiresAt)}"`;
+    output += `URI="${await protectHlsReference(match[1], baseUrl, request, env, expiresAt, sessionId)}"`;
     offset = match.index + match[0].length;
   }
   return output + line.slice(offset);
 }
 
 async function handleMovieStream(request, env) {
+  const missing = dbUnavailable(env);
+  if (missing) return missing;
   let ticket;
   try {
     ticket = await openMediaTicket(new URL(request.url).searchParams.get("t"), env, "stream");
   } catch (error) {
     const expired = error.message === "EXPIRED_MEDIA_TICKET";
     return textError(expired ? "Vé phát đã hết hạn." : "Vé phát không hợp lệ.", expired ? 410 : 400, expired ? "STREAM_TICKET_EXPIRED" : "INVALID_STREAM_TICKET");
+  }
+  if (!(env.ALLOW_LEGACY_TEST_AUTH === "1" && !ticket.sid)) {
+    const session = await mediaSession(env.DB, ticket.sid);
+    if (!session) return sessionError("SESSION_REVOKED");
+    const identity = await authorizeSessionRecord(session, env);
+    if (identity.error) return identity.error;
   }
   // Compatibility mode is retained only for emergency rollback. Production
   // uses the authenticated VPS relay, so the provider URL never reaches the
@@ -1928,7 +2258,7 @@ async function handleMovieStream(request, env) {
     const manifest = new TextDecoder().decode(bytes);
     if (!manifest.trimStart().startsWith("#EXTM3U")) return textError("Danh sách phát không hợp lệ.", 502, "INVALID_HLS_MANIFEST");
     try {
-      const lines = await Promise.all(manifest.split(/\r?\n/).map((line) => rewriteHlsLine(line, target.href, request, env, ticket.exp)));
+      const lines = await Promise.all(manifest.split(/\r?\n/).map((line) => rewriteHlsLine(line, target.href, request, env, ticket.exp, ticket.sid)));
       return new Response(lines.join("\n"), { status: 200, headers: { ...CORS_HEADERS, "content-type": "application/vnd.apple.mpegurl; charset=utf-8", "cache-control": "private, no-store", "x-content-type-options": "nosniff" } });
     } catch (_error) {
       return textError("Danh sách phát chứa liên kết không an toàn.", 502, "UNSAFE_HLS_MANIFEST");
@@ -1980,12 +2310,16 @@ export default {
       if (request.method === 'POST' && pathname === '/api/admin/maintenance') return await handleMaintenanceAdmin(request, env);
 
       if (request.method === "POST" && pathname === "/api/auth/activate") {
-        const body = await parseBody(request);
-        return await activationStatus({ db: env.DB, key: normalizeKey(body.key), telegramId: normalizeId(body.telegramId), deviceId: normalizeId(body.deviceId), request, env, activation: true });
+        return await activateSession(request, env);
       }
       if (request.method === "GET" && pathname === "/api/auth/status") {
-        return await activationStatus({ db: env.DB, key: requestKey(request), telegramId: requestTelegram(request), deviceId: normalizeId(request.headers.get('x-device-id')), request, env, activation: false });
+        if (env.ALLOW_LEGACY_TEST_AUTH === "1" && !request.headers.get("authorization")) {
+          return await activationStatus({ db: env.DB, key: requestKey(request), telegramId: requestTelegram(request), deviceId: normalizeDeviceId(request.headers.get('x-device-id')), request, env, activation: false });
+        }
+        return await sessionStatus(request, env);
       }
+      if (request.method === "POST" && pathname === "/api/auth/refresh") return await refreshSession(request, env);
+      if (request.method === "POST" && pathname === "/api/auth/logout") return await logoutSession(request, env);
       if (request.method === "POST" && pathname === "/api/auth/request-device-access") return await requestDeviceAccess(request, env);
       if (request.method === "GET" && pathname === "/api/auth/device-status") return await deviceAccessStatus(request, env);
       if (request.method === "GET" && (pathname === "/api/app/check-update" || pathname === "/api/app/version")) {
@@ -1994,9 +2328,12 @@ export default {
         const platform = url.searchParams.get('platform') || requestPlatform(request) || 'web';
         if (!status.forceUpdate && ['ios', 'android', 'android_tv', 'windows'].includes(platform)) {
           const release = await queryOne(env.DB, 'SELECT * FROM downloads WHERE platform = ?', platform);
-          if (release && validDownloadUrl(release.url)) {
+          if (release && validDownloadUrl(release.url) && validReleaseSha256(release.sha256)) {
             status.latestVersion = release.version;
             status.isLatest = compareAppVersions(version, release.version) >= 0;
+            status.downloadSha256 = String(release.sha256).toLowerCase();
+            status.downloadSizeBytes = validReleaseSize(release.size_bytes) ? Number(release.size_bytes) : 0;
+            status.downloadSigner = cleanProgressText(release.signer, 200);
             status.message = status.isLatest ? 'Bạn đang dùng phiên bản mới nhất.' : `Có bản ${release.version}. Mở Tải ứng dụng để cập nhật.`;
           } else {
             status.isLatest = false;

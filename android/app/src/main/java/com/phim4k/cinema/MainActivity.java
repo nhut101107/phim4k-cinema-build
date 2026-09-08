@@ -31,6 +31,7 @@ public class MainActivity extends BridgeActivity {
             return;
         }
         registerPlugin(ReleaseDownloadsPlugin.class);
+        registerPlugin(SecureSessionPlugin.class);
         super.onCreate(state);
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {

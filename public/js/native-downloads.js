@@ -11,7 +11,11 @@
   window.Phim4KNativeDownloads = {
     supported() { return /Phim4K(?:TV|Android)/.test(navigator.userAgent) && window.Capacitor?.getPlatform?.() === 'android'; },
     async status() { return plugin().status(); },
-    async open(button, url) {
+    async open(button, release) {
+      const url = String(release?.url || '');
+      const sha256 = String(release?.sha256 || '');
+      const sizeBytes = Number(release?.sizeBytes || 0);
+      if (!url || !/^[a-f0-9]{64}$/.test(sha256)) throw new Error('Bản cập nhật thiếu mã xác minh SHA-256.');
       if (jobs.has(url)) return;
       let installing = false;
       const install = async () => {
@@ -28,7 +32,7 @@
       button.textContent = 'Bắt đầu tải APK…';
       try {
         plugin();
-        let state = await native.start({ url });
+        let state = await native.start({ url, sha256, sizeBytes });
         for (let attempt = 0; attempt < 180; attempt++) {
           if (state.status === 'complete') { button.textContent = 'Đã tải xong · Bấm kiểm tra và cài đặt'; button.onclick = e => { e.preventDefault(); void install(); }; return; }
           if (state.status === 'failed' || state.status === 'missing') throw new Error('Tải thất bại · Bấm thử lại');

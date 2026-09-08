@@ -14,6 +14,7 @@ function freeViewerEnv(extra = {}) {
     MOVIE_CATALOG_ORIGIN: "https://catalog.example",
     MOVIE_IMAGE_HOSTS: "images.example",
     MEDIA_TICKET_SECRET: MEDIA_SECRET,
+    ALLOW_LEGACY_TEST_AUTH: "1",
     ...extra,
   };
 }
@@ -242,7 +243,7 @@ test("admin master key is normalized but restricted to its configured Telegram I
       return { bind() { return { first: async () => null }; } };
     },
   };
-  const env = { DB: db, ADMIN_LICENSE_KEY: "TEST-ADMIN-MASTER", ADMIN_TELEGRAM_ID: "1000000001" };
+  const env = { DB: db, ADMIN_LICENSE_KEY: "TEST-ADMIN-MASTER", ADMIN_TELEGRAM_ID: "1000000001", ALLOW_LEGACY_TEST_AUTH: "1" };
   const makeRequest = (telegramId) => new Request("https://example.workers.dev/api/auth/activate", {
     method: "POST",
     headers: { "content-type": "application/json", "cf-connecting-ip": telegramId },
@@ -302,7 +303,7 @@ test("device-only access stays pending until the verified admin approves that ex
       };
     },
   };
-  const env = { DB: db, ADMIN_LICENSE_KEY: "MASTER-DEVICE-KEY", ADMIN_TELEGRAM_ID: "1000000001" };
+  const env = { DB: db, ADMIN_LICENSE_KEY: "MASTER-DEVICE-KEY", ADMIN_TELEGRAM_ID: "1000000001", ALLOW_LEGACY_TEST_AUTH: "1" };
   const request = await worker.fetch(new Request("https://example.workers.dev/api/auth/request-device-access", {
     method: "POST",
     headers: { "content-type": "application/json", "cf-connecting-ip": "203.0.113.31" },
@@ -334,7 +335,8 @@ test("device-only access stays pending until the verified admin approves that ex
   }), env);
   const activeBody = await active.json();
   assert.equal(activeBody.active, true);
-  assert.equal(activeBody.deviceOnly, true);
+  assert.equal(activeBody.requiresActivation, true);
+  assert.equal(activeBody.key, undefined);
 });
 
 test("auth activation is rate limited with a retry window", () => {
@@ -417,7 +419,7 @@ test("viewer telemetry accepts only allowlisted fields and never stores stream U
       { action: "movie_open", context: { movie: "Phim mẫu", token: "secret", source: "https://media.example/video.m3u8" } },
       { action: "playback_error", context: { error: "Không phát được", episode: "Tập 2" } },
     ] }),
-  }), { DB: db });
+  }), { DB: db, ALLOW_LEGACY_TEST_AUTH: "1" });
   assert.equal(response.status, 202);
   assert.equal((await response.json()).accepted, 2);
   assert.equal(inserted.length, 2);
@@ -473,7 +475,7 @@ test("admin content status checks catalog and exposes only authorized provider r
     const response = await worker.fetch(new Request("https://example.workers.dev/api/admin/content-status", {
       headers: { "x-license-key": "MASTER-CONTENT-KEY", "x-telegram-id": "1000000001" },
     }), {
-      DB: db, ADMIN_LICENSE_KEY: "MASTER-CONTENT-KEY", ADMIN_TELEGRAM_ID: "1000000001",
+      DB: db, ADMIN_LICENSE_KEY: "MASTER-CONTENT-KEY", ADMIN_TELEGRAM_ID: "1000000001", ALLOW_LEGACY_TEST_AUTH: "1",
       JELLYFIN_BASE_URL: "https://media.example.com",
       MOVIE_CATALOG_ORIGIN: "https://catalog.example",
     });
@@ -525,7 +527,7 @@ test("verified admin can publish and clear a timed global announcement", async (
       };
     },
   };
-  const env = { DB: db, ADMIN_LICENSE_KEY: "MASTER-NOTICE-KEY", ADMIN_TELEGRAM_ID: "1000000001" };
+  const env = { DB: db, ADMIN_LICENSE_KEY: "MASTER-NOTICE-KEY", ADMIN_TELEGRAM_ID: "1000000001", ALLOW_LEGACY_TEST_AUTH: "1" };
   const headers = {
     "content-type": "application/json", "x-license-key": "MASTER-NOTICE-KEY", "x-telegram-id": "1000000001",
   };

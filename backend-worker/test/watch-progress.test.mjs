@@ -21,7 +21,7 @@ function fixture() {
       };
     },
   };
-  const env = { DB, ADMIN_LICENSE_KEY: 'TEST-ADMIN-SECRET', ADMIN_TELEGRAM_ID: '1000000001' };
+  const env = { DB, ADMIN_LICENSE_KEY: 'TEST-ADMIN-SECRET', ADMIN_TELEGRAM_ID: '1000000001', ALLOW_LEGACY_TEST_AUTH: '1' };
   let sequence = 0;
   const request = (path, { method = 'GET', body, headers = {} } = {}) => worker.fetch(new Request(`https://test.example${path}`, {
     method,

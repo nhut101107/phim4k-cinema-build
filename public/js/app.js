@@ -21,6 +21,8 @@ const App = {
   filterLoading: false,
   filterError: '',
   filterRequestId: 0,
+  browseAllMode: false,
+  catalogInventoryTotal: 0,
   activeMovieDetail: null,
   activeServerIndex: 0,
   searchDebounceTimer: null,
@@ -165,6 +167,7 @@ const App = {
       const signature = this.catalogSignature(data);
       if (!silent || signature !== this.homeFeedSignature) this.applyHomeFeed(data);
       else this.updateLiveFeedLabel();
+      void this.refreshCatalogInventory();
     } catch (err) {
       // Do not replace a visible fallback catalogue with a transient error.
       if (silent || renderedBundledCatalog) return;
@@ -437,7 +440,7 @@ const App = {
   renderHomeCatalog() {
     const container = document.getElementById('dynamicSections');
     if (!container) return;
-    const hasFilter = Boolean(this.activeHomeFilters.genre || this.activeHomeFilters.country);
+    const hasFilter = this.browseAllMode || Boolean(this.activeHomeFilters.genre || this.activeHomeFilters.country);
     document.getElementById('mainContent')?.classList.toggle('filter-active', hasFilter);
     const filteredMovies = hasFilter ? this.filterResults : this.moviesMatching();
     const sections = hasFilter
@@ -472,6 +475,7 @@ const App = {
   },
 
   getFilterTitle() {
+    if (this.browseAllMode) return 'Toàn bộ kho phim';
     const labels = [this.activeHomeFilters.genre, this.activeHomeFilters.country].filter(Boolean);
     return `Kết quả lọc: ${labels.join(' · ')}`;
   },
@@ -488,20 +492,22 @@ const App = {
     const countryBox = document.getElementById('countryFilterChips');
     const summary = document.getElementById('catalogFilterSummary');
     const reset = document.getElementById('resetCatalogFilter');
+    const browseAll = document.getElementById('browseAllCatalogBtn');
     if (!genreBox || !countryBox || !summary || !reset) return;
 
     const genres = this.collectFilterTags('category', ['Hành Động', 'Hoạt Hình', 'Tình Cảm', 'Viễn Tưởng', 'Cổ Trang', 'Kinh Dị', 'Hài Hước', 'Tâm Lý', 'Võ Thuật', 'Phiêu Lưu']);
     const countries = this.collectFilterTags('country', ['Việt Nam', 'Trung Quốc', 'Hàn Quốc', 'Nhật Bản', 'Âu Mỹ', 'Thái Lan']);
     this.renderFilterButtons(genreBox, genres, 'genre');
     this.renderFilterButtons(countryBox, countries, 'country');
-    const hasFilter = Boolean(this.activeHomeFilters.genre || this.activeHomeFilters.country);
+    const hasFilter = this.browseAllMode || Boolean(this.activeHomeFilters.genre || this.activeHomeFilters.country);
     reset.classList.toggle('hidden', !hasFilter);
+    browseAll?.classList.toggle('hidden', this.browseAllMode);
     const filterLabels = [this.activeHomeFilters.genre, this.activeHomeFilters.country].filter(Boolean).join(' · ');
     summary.textContent = hasFilter
       ? (this.filterLoading && !this.filterResults.length
-        ? `Đang tìm phim ${filterLabels} trong toàn bộ kho…`
-        : `${this.filterResults.length}/${this.filterPagination.totalItems || this.filterResults.length} phim ${filterLabels} đã tải.${this.filterError ? ` ${this.filterError}` : ''}`)
-      : `${this.homeCatalog.length} phim hiện có. Chọn một hoặc hai điều kiện để lọc.`;
+        ? `Đang tải ${this.browseAllMode ? 'toàn bộ kho phim' : `phim ${filterLabels}`}…`
+        : `${this.filterResults.length}/${this.filterPagination.totalItems || this.filterResults.length} phim ${this.browseAllMode ? 'trong kho' : filterLabels} đã tải.${this.filterError ? ` ${this.filterError}` : ''}`)
+      : `${this.homeCatalog.length} phim nổi bật${this.catalogInventoryTotal ? ` · ${this.catalogInventoryTotal.toLocaleString('vi-VN')} phim trong toàn kho` : ''}.`;
   },
 
   renderFilterButtons(container, values, kind) {
@@ -527,7 +533,7 @@ const App = {
   },
 
   async loadHomeFilterResults({ reset = true } = {}) {
-    const hasFilter = Boolean(this.activeHomeFilters.genre || this.activeHomeFilters.country);
+    const hasFilter = this.browseAllMode || Boolean(this.activeHomeFilters.genre || this.activeHomeFilters.country);
     if (!hasFilter) return;
     if (!reset && this.filterLoading) return;
     const requestId = reset ? ++this.filterRequestId : this.filterRequestId;
@@ -540,10 +546,12 @@ const App = {
     this.filterError = '';
     this.renderHomeCatalog();
     try {
-      const data = await API.getFilteredCatalog({
-        genre: this.filterValueToSlug(this.activeHomeFilters.genre),
-        country: this.filterValueToSlug(this.activeHomeFilters.country),
-      }, page);
+      const data = this.browseAllMode
+        ? await API.getCatalog(page)
+        : await API.getFilteredCatalog({
+          genre: this.filterValueToSlug(this.activeHomeFilters.genre),
+          country: this.filterValueToSlug(this.activeHomeFilters.country),
+        }, page);
       if (requestId !== this.filterRequestId) return;
       const incoming = this.enrichMovies(Array.isArray(data.items) ? data.items : []);
       this.filterResults = reset ? incoming : this.uniqueMovies([...this.filterResults, ...incoming]);
@@ -552,6 +560,7 @@ const App = {
         totalPages: Number(data.pagination?.totalPages || page),
         totalItems: Number(data.pagination?.totalItems || this.filterResults.length),
       };
+      this.catalogInventoryTotal = Math.max(this.catalogInventoryTotal, Number(data.pagination?.totalItems || 0));
     } catch (_error) {
       if (requestId !== this.filterRequestId) return;
       if (reset) this.filterResults = this.moviesMatching();
@@ -571,6 +580,7 @@ const App = {
 
   setHomeFilter(kind, value) {
     if (!['genre', 'country'].includes(kind)) return;
+    this.browseAllMode = false;
     this.activeHomeFilters[kind] = this.normalizeFilterValue(this.activeHomeFilters[kind]) === this.normalizeFilterValue(value) ? '' : value;
     if (this.activeHomeFilters.genre || this.activeHomeFilters.country) {
       this.loadHomeFilterResults({ reset: true });
@@ -587,11 +597,29 @@ const App = {
   clearHomeFilters() {
     this.filterRequestId += 1;
     this.activeHomeFilters = { genre: '', country: '' };
+    this.browseAllMode = false;
     this.filterResults = [];
     this.filterPagination = { currentPage: 0, totalPages: 0, totalItems: 0 };
     this.filterLoading = false;
     this.filterError = '';
     this.renderHomeCatalog();
+  },
+
+  async refreshCatalogInventory() {
+    try {
+      const data = await API.getCatalog(1);
+      this.catalogInventoryTotal = Number(data.pagination?.totalItems || data.items?.length || 0);
+      this.renderCatalogControls();
+    } catch (_error) {
+      // The curated home feed remains usable while the inventory count retries later.
+    }
+  },
+
+  browseAllCatalog() {
+    this.browseAllMode = true;
+    this.activeHomeFilters = { genre: '', country: '' };
+    void this.loadHomeFilterResults({ reset: true });
+    document.getElementById('dynamicSections')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   },
 
   startHomeFeedRefresh() {
@@ -997,7 +1025,7 @@ const App = {
         const posterUrl = this.resolveImageUrl(movie.poster_url || movie.thumb_url);
         const alternatePosterUrl = this.resolveImageUrl(movie.thumb_url || movie.poster_url);
         item.innerHTML = `
-          <img class="search-thumb" src="${posterUrl}" alt="${this.escapeHtml(movie.name || 'Poster phim')}" loading="lazy" decoding="async" width="56" height="82" />
+          <img class="search-thumb" src="${this.escapeHtml(posterUrl)}" alt="${this.escapeHtml(movie.name || 'Poster phim')}" loading="lazy" decoding="async" width="56" height="82" />
           <div class="search-info">
             <div class="search-title">${this.escapeHtml(movie.name || 'Đang cập nhật')}</div>
             <div class="search-sub">${this.escapeHtml(movie.origin_name || '')} (${this.escapeHtml(movie.year || '2026')})</div>
@@ -1109,11 +1137,11 @@ const App = {
     // Badges
     const badgesBox = document.getElementById('detailBadges');
     badgesBox.innerHTML = `
-      <span class="detail-badge badge-red">${movie.quality || 'FHD'}</span>
-      <span class="detail-badge">${movie.year || '2026'}</span>
-      <span class="detail-badge">${movie.time || 'Đang cập nhật'}</span>
-      <span class="detail-badge">${movie.episode_current || movie.episode_total || 'Trọn bộ'}</span>
-      <span class="detail-badge">${movie.lang || 'Vietsub'}</span>
+      <span class="detail-badge badge-red">${this.escapeHtml(movie.quality || 'FHD')}</span>
+      <span class="detail-badge">${this.escapeHtml(movie.year || '2026')}</span>
+      <span class="detail-badge">${this.escapeHtml(movie.time || 'Đang cập nhật')}</span>
+      <span class="detail-badge">${this.escapeHtml(movie.episode_current || movie.episode_total || 'Trọn bộ')}</span>
+      <span class="detail-badge">${this.escapeHtml(movie.lang || 'Vietsub')}</span>
     `;
 
     // Synopsis
@@ -1133,10 +1161,10 @@ const App = {
     const directors = (movie.director || []).join(', ') || 'Đang cập nhật';
 
     metaGrid.innerHTML = `
-      <div><strong>Thể loại:</strong> ${categories}</div>
-      <div><strong>Quốc gia:</strong> ${countries}</div>
-      <div><strong>Đạo diễn:</strong> ${directors}</div>
-      <div><strong>Diễn viên:</strong> ${actors}</div>
+      <div><strong>Thể loại:</strong> ${this.escapeHtml(categories)}</div>
+      <div><strong>Quốc gia:</strong> ${this.escapeHtml(countries)}</div>
+      <div><strong>Đạo diễn:</strong> ${this.escapeHtml(directors)}</div>
+      <div><strong>Diễn viên:</strong> ${this.escapeHtml(actors)}</div>
     `;
 
     // Render Server Tabs

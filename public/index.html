@@ -12,12 +12,12 @@
   <title>4K Cinema</title>
   
   <!-- HLS.js for streaming m3u8 -->
-  <script src="/vendor/hls.min.js?v=3.4.36"></script>
+  <script src="/vendor/hls.min.js?v=3.4.39"></script>
 
-  <link rel="stylesheet" href="/css/style.css?v=3.4.36">
-  <link rel="stylesheet" href="/css/modal.css?v=3.4.36">
-  <link rel="stylesheet" href="/css/player.css?v=3.4.36">
-  <link rel="stylesheet" href="/css/tv.css?v=3.4.36">
+  <link rel="stylesheet" href="/css/style.css?v=3.4.39">
+  <link rel="stylesheet" href="/css/modal.css?v=3.4.39">
+  <link rel="stylesheet" href="/css/player.css?v=3.4.39">
+  <link rel="stylesheet" href="/css/tv.css?v=3.4.39">
 </head>
 <body class="activation-locked">
 
@@ -27,7 +27,7 @@
   <div id="activationGate" class="gate-overlay">
     <div class="gate-card">
       <div class="gate-logo">
-        <img src="/media/phim4k-avatar.png?v=3.4.36" class="app-avatar" alt="Biểu tượng 4K Cinema" width="88" height="88">
+        <img src="/media/phim4k-avatar.png?v=3.4.39" class="app-avatar" alt="Biểu tượng 4K Cinema" width="88" height="88">
         <div class="gate-brand-copy">
           <div class="logo-badge">4K Cinema</div>
           <span class="pro-tag">CINEMA 4K PRO</span>
@@ -115,7 +115,7 @@
     <header class="navbar" id="navbar">
       <div class="nav-left">
         <a href="#" class="brand-logo" onclick="switchCategory('home')">
-          <img src="/media/phim4k-avatar.png?v=3.4.36" class="brand-avatar" alt="Biểu tượng 4K Cinema" width="38" height="38">
+          <img src="/media/phim4k-avatar.png?v=3.4.39" class="brand-avatar" alt="Biểu tượng 4K Cinema" width="38" height="38">
           <span class="logo-gradient">4K Cinema</span>
           <span class="badge-noads">CINEMA 4K</span>
         </a>
@@ -272,7 +272,8 @@
           <span class="catalog-filter-label">Quốc gia</span>
           <div class="catalog-chip-row" id="countryFilterChips"></div>
         </div>
-        <p id="catalogFilterSummary" class="catalog-filter-summary" role="status">Chọn thể loại hoặc quốc gia bạn muốn xem.</p>
+        <p id="catalogFilterSummary" class="catalog-filter-summary" role="status">Chọn thể loại, quốc gia hoặc mở toàn bộ kho phim.</p>
+        <button id="browseAllCatalogBtn" class="catalog-load-more-btn catalog-browse-all-btn" type="button" onclick="App.browseAllCatalog()">Xem toàn bộ kho phim</button>
       </section>
 
       <!-- 4. Main Movie Rows Feed -->
@@ -348,7 +349,7 @@
     <!-- ================= TAB 4: TÀI KHOẢN (ACCOUNT) ================= -->
     <div id="accountTabContent" class="tab-content hidden account-tab-view">
       <div class="account-card">
-        <img class="account-avatar" src="/media/phim4k-avatar.png?v=3.4.36" alt="Avatar mặc định 4K Cinema" width="76" height="76">
+        <img class="account-avatar" src="/media/phim4k-avatar.png?v=3.4.39" alt="Avatar mặc định 4K Cinema" width="76" height="76">
         <div class="account-default-name">4K Cinema</div>
         <h2 id="accPlan">Chưa kích hoạt</h2>
         <div class="account-details-list">
@@ -366,7 +367,7 @@
           </div>
           <div class="acc-detail-item">
             <span>Phiên bản ứng dụng:</span>
-            <span id="accAppVersion">v3.4.36</span>
+            <span id="accAppVersion">v3.4.39</span>
           </div>
         </div>
 
@@ -547,14 +548,8 @@
             <!-- Time Display -->
           </div>
 
-          <!-- Right Controls: Aspect Ratio/Sub Safe, Speed, Quality, Fullscreen -->
+          <!-- Right Controls: Speed, adaptive quality, fullscreen -->
           <div class="controls-right">
-            <button id="btnAudioMode" class="ctrl-btn-text" type="button" onclick="Player.toggleAudioMode()" aria-pressed="false" title="Rõ thoại chỉ dùng với nguồn hỗ trợ; nguồn khác giữ âm gốc">Âm gốc</button>
-            <!-- Subtitle-safe mode is intentionally locked because many sources burn captions into the picture. -->
-            <button id="btnAspectFit" class="ctrl-btn-text" onclick="toggleAspectRatio()" title="Luôn giữ toàn bộ hình và phụ đề gốc" aria-pressed="true">
-              Giữ trọn hình
-            </button>
-
             <!-- Speed Menu -->
             <div class="dropdown-control">
               <button id="btnSpeed" class="ctrl-btn-text" onclick="toggleSpeedMenu()">1x</button>
@@ -568,12 +563,11 @@
               </div>
             </div>
 
-            <!-- Quality Menu -->
-            <div class="dropdown-control">
-              <button id="btnQuality" class="ctrl-btn-text" onclick="toggleQualityMenu()">Tự động</button>
-              <div id="qualityMenu" class="ctrl-dropdown hidden">
-                <button class="active" onclick="setQuality(-1)">Tự động</button>
-              </div>
+            <button id="btnQuality" class="ctrl-btn-text quality-auto" type="button" disabled title="Tự động chọn chất lượng phù hợp mạng">Tự động</button>
+
+            <div class="aspect-mode-control" role="group" aria-label="Chế độ hiển thị hình ảnh">
+              <button id="btnAspectContain" class="ctrl-btn-text active" type="button" onclick="setAspectRatio('contain')" aria-pressed="true" title="Giữ nguyên toàn bộ khung hình và phụ đề">Giữ trọn</button>
+              <button id="btnAspectCover" class="ctrl-btn-text" type="button" onclick="setAspectRatio('cover')" aria-pressed="false" title="Lấp đầy màn hình; có thể cắt mép hình">Lấp đầy</button>
             </div>
 
             <!-- One fullscreen path: native orientation on iPhone, browser fullscreen elsewhere. -->
@@ -647,7 +641,7 @@
           <button class="admin-close-action" type="button" onclick="hideAdminModal()">Đóng</button>
         </div>
         <p class="admin-desc">Quản lý toàn diện: Cấp phát key, Quản lý & Ban người dùng, Tường lửa chống DDoS và Nhật ký hoạt động.</p>
-        <p id="adminBuildVersion" class="admin-build-version">4K Cinema 3.4.36 · BẢN ĐỒNG BỘ ĐA THIẾT BỊ</p>
+        <p id="adminBuildVersion" class="admin-build-version">4K Cinema 3.4.39 · BẢN ĐỒNG BỘ ĐA THIẾT BỊ</p>
         <div class="admin-quick-actions">
           <button type="button" id="adminReadLogsBtn" class="btn-primary" onclick="Admin.showTab('logs')">📜 Đọc log người dùng</button>
           <button type="button" id="adminGetUpdateBtn" class="btn-secondary" onclick="openDownloadModal()">📥 Tải phiên bản mới</button>
@@ -1000,7 +994,7 @@
             <button class="btn-refresh-keys" onclick="Admin.loadDownloadsConfig()">🔄 Tải Lại Cấu Hình</button>
           </div>
           <p class="admin-desc" style="margin-bottom: 16px;">
-            Cập nhật link tải trực tiếp cho người dùng ngay trong app. Bạn có thể để link máy chủ nội bộ (VD: <code>/download/apk</code>, <code>/download/ipa</code>, <code>/download/exe</code>) hoặc dán link ngoài (Google Drive, Telegram, Mediafire...).
+            Chỉ phát hành qua URL HTTPS. SHA-256 là bắt buộc để ứng dụng phát hiện file bị thay thế; kích thước byte giúp chặn file tải thiếu. Android còn kiểm tra đúng package và chữ ký của bản đang cài trước khi mở trình cài đặt.
           </p>
 
           <form id="updateDownloadsForm" onsubmit="Admin.handleUpdateDownloads(event)" class="update-downloads-box">
@@ -1021,6 +1015,14 @@
                 <label>Phiên bản:</label>
                 <input type="text" id="adminVersionApkInput" placeholder="3.0.0" />
               </div>
+              <div class="integrity-col">
+                <label>SHA-256 (64 ký tự):</label>
+                <input type="text" id="adminSha256ApkInput" maxlength="64" spellcheck="false" autocomplete="off" placeholder="sha256 của APK" />
+              </div>
+              <div class="size-col">
+                <label>Kích thước byte:</label>
+                <input type="number" id="adminSizeApkInput" min="1" step="1" placeholder="Tùy chọn" />
+              </div>
             </div>
 
             <!-- Row 2: iOS (IPA) -->
@@ -1039,6 +1041,14 @@
               <div class="ver-col">
                 <label>Phiên bản:</label>
                 <input type="text" id="adminVersionIpaInput" placeholder="3.0.0" />
+              </div>
+              <div class="integrity-col">
+                <label>SHA-256 (64 ký tự):</label>
+                <input type="text" id="adminSha256IpaInput" maxlength="64" spellcheck="false" autocomplete="off" placeholder="sha256 của IPA" />
+              </div>
+              <div class="size-col">
+                <label>Kích thước byte:</label>
+                <input type="number" id="adminSizeIpaInput" min="1" step="1" placeholder="Tùy chọn" />
               </div>
             </div>
 
@@ -1059,11 +1069,21 @@
                 <label>Phiên bản:</label>
                 <input type="text" id="adminVersionExeInput" placeholder="3.0.0" />
               </div>
+              <div class="integrity-col">
+                <label>SHA-256 (64 ký tự):</label>
+                <input type="text" id="adminSha256ExeInput" maxlength="64" spellcheck="false" autocomplete="off" placeholder="sha256 của EXE" />
+              </div>
+              <div class="size-col">
+                <label>Kích thước byte:</label>
+                <input type="number" id="adminSizeExeInput" min="1" step="1" placeholder="Tùy chọn" />
+              </div>
             </div>
 
             <div class="download-link-row">
               <label>Android TV — link APK HTTPS<input id="adminDownloadTvInput" type="url" placeholder="https://.../4K-TV.apk" /></label>
               <label>Phiên bản TV<input id="adminVersionTvInput" type="text" placeholder="3.4.18" /></label>
+              <label class="integrity-col">SHA-256 (64 ký tự)<input id="adminSha256TvInput" type="text" maxlength="64" spellcheck="false" autocomplete="off" placeholder="sha256 của APK TV" /></label>
+              <label class="size-col">Kích thước byte<input id="adminSizeTvInput" type="number" min="1" step="1" placeholder="Tùy chọn" /></label>
             </div>
             <div id="adminDownloadsAlert" class="gate-message hidden" style="margin-top: 12px;"></div>
 
@@ -1292,21 +1312,22 @@
   </div>
 
   <!-- Scripts -->
-  <script src="/js/mobile-config.js?v=3.4.36"></script>
-  <script src="/js/runtime-config.js?v=3.4.36"></script>
-  <script src="/js/catalog-fallback.js?v=3.4.36"></script>
-  <script src="/js/home-curation.js?v=3.4.36"></script>
-  <script src="/js/api.js?v=3.4.36"></script>
-  <script src="/js/platform.js?v=3.4.36"></script>
-  <script src="/js/native-downloads.js?v=3.4.36"></script>
-  <script src="/js/auth.js?v=3.4.36"></script>
-  <script src="/js/admin.js?v=3.4.36"></script>
-  <script src="/js/player-core.js?v=3.4.36"></script>
-  <script src="/js/audio-enhancer.js?v=3.4.36"></script>
-  <script src="/js/player.js?v=3.4.36"></script>
-  <script src="/js/coverflow.js?v=3.4.36"></script>
-  <script src="/js/app.js?v=3.4.36"></script>
-  <script src="/js/tv.js?v=3.4.36"></script>
-  <script src="/js/diagnostics.js?v=3.4.36"></script>
+  <script src="/js/mobile-config.js?v=3.4.39"></script>
+  <script src="/js/session-vault.js?v=3.4.39"></script>
+  <script src="/js/runtime-config.js?v=3.4.39"></script>
+  <script src="/js/catalog-fallback.js?v=3.4.39"></script>
+  <script src="/js/home-curation.js?v=3.4.39"></script>
+  <script src="/js/api.js?v=3.4.39"></script>
+  <script src="/js/platform.js?v=3.4.39"></script>
+  <script src="/js/native-downloads.js?v=3.4.39"></script>
+  <script src="/js/auth.js?v=3.4.39"></script>
+  <script src="/js/admin.js?v=3.4.39"></script>
+  <script src="/js/player-core.js?v=3.4.39"></script>
+  <script src="/js/audio-enhancer.js?v=3.4.39"></script>
+  <script src="/js/player.js?v=3.4.39"></script>
+  <script src="/js/coverflow.js?v=3.4.39"></script>
+  <script src="/js/app.js?v=3.4.39"></script>
+  <script src="/js/tv.js?v=3.4.39"></script>
+  <script src="/js/diagnostics.js?v=3.4.39"></script>
 </body>
 </html>

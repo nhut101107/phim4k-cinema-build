@@ -29,6 +29,7 @@ const Auth = {
   activeKeyData: null,
   heartbeatTimer: null,
   deviceApprovalTimer: null,
+  initializingPromise: null,
 
   getDeviceId() {
     let id = localStorage.getItem('phim4k_device_id') || getPersistentCookie('phim4k_device_id');
@@ -45,15 +46,17 @@ const Auth = {
   },
 
   async init() {
-    // Migrate legacy cookie-backed sessions without exposing credentials in
-    // future HTTP cookie headers.
+    await SessionVault.init();
+    // One-time migration from old releases: use the saved key only to obtain
+    // a server session, then erase the long-lived credential immediately.
     const savedKey = localStorage.getItem('phim4k_key') || getPersistentCookie('phim4k_key');
     const savedTeleId = localStorage.getItem('phim4k_telegram_id') || getPersistentCookie('phim4k_telegram_id');
-    if (savedKey) localStorage.setItem('phim4k_key', savedKey);
-    if (savedTeleId) localStorage.setItem('phim4k_telegram_id', savedTeleId);
+    localStorage.removeItem('phim4k_key');
+    localStorage.removeItem('phim4k_telegram_id');
+    localStorage.removeItem('phim4k_plan');
+    localStorage.removeItem('phim4k_device_only');
     deletePersistentCookie('phim4k_key');
     deletePersistentCookie('phim4k_telegram_id');
-    const deviceOnly = localStorage.getItem('phim4k_device_only') === '1';
     const deviceId = this.getDeviceId();
 
     const teleInput = document.getElementById('telegramInput');
@@ -64,76 +67,51 @@ const Auth = {
     if (teleInput) teleInput.value = '';
     if (keyInput) keyInput.value = '';
 
-    // Check the shared Admin policy before using a saved key. A stale or
-    // disabled key must not keep a device trapped at the gate after Admin has
-    // switched the whole app to free access.
+    const restore = async (result) => {
+      if (result?.forceUpdate || result?.code === 'FORCE_UPDATE_REQUIRED') {
+        showForceUpdateModal(result);
+        return true;
+      }
+      if (result?.code === 'MAINTENANCE_MODE' || result?.maintenance?.active === true) {
+        this.showMaintenance(result.maintenance || { active: true, message: result.message });
+        return true;
+      }
+      if (result?.active && result.accessToken && result.refreshToken) await SessionVault.save(result);
+      if (result?.active) {
+        this.unlockApp(result);
+        this.startHeartbeat();
+        return true;
+      }
+      return false;
+    };
+
+    if (SessionVault.hasSession()) {
+      try {
+        if (await restore(await API.checkStatus('', '', deviceId))) return;
+      } catch (_error) {}
+      await SessionVault.clear();
+    }
+
+    if (savedKey) {
+      try {
+        if (await restore(await API.activate(savedKey, savedTeleId, deviceId))) return;
+      } catch (_error) {}
+    }
+
     try {
       const policy = await this.getAccessPolicy();
-      if (policy.maintenance?.active === true && !savedKey) {
+      if (policy.maintenance?.active === true) {
         this.showMaintenance(policy.maintenance);
         return;
       }
       if (policy.freeAccess === true && policy.maintenance?.active !== true) {
-        const guest = await API.checkStatus('', '', deviceId);
-        if (guest.active && guest.freeAccess && !guest.forceUpdate) {
-          this.unlockApp({ ...guest, key: '', telegramId: '' });
-          return;
-        }
+        if (await restore(await API.activate('', '', deviceId))) return;
       }
-    } catch (_) { /* The normal key check below still fails closed. */ }
+    } catch (_error) {}
 
-    if (!savedKey) {
-      const pendingDeviceKey = localStorage.getItem('phim4k_pending_device_key');
-      this.triggerLock();
-      if (pendingDeviceKey) {
-        if (keyInput) keyInput.value = pendingDeviceKey;
-        beginDeviceApprovalPolling(pendingDeviceKey);
-      }
-      return;
-    }
-
-    try {
-      const res = deviceOnly
-        ? await API.checkDeviceAccess(savedKey, deviceId)
-        : await API.checkStatus(savedKey, savedTeleId, deviceId);
-      if (res.forceUpdate || res.code === 'FORCE_UPDATE_REQUIRED') {
-        showForceUpdateModal(res);
-        return;
-      }
-      if (res.code === 'MAINTENANCE_MODE' || res.maintenance?.active === true) {
-        this.showMaintenance(res.maintenance || { active: true, message: res.message });
-        return;
-      }
-      if (res.active) {
-        // Automatically unlock without requiring re-entry
-        this.unlockApp({ ...res, key: savedKey, telegramId: deviceOnly ? '' : savedTeleId, deviceOnly });
-        this.startHeartbeat();
-      } else if (res.code === 'KEY_EXPIRED') {
-        if (teleInput) teleInput.value = '';
-        localStorage.removeItem('phim4k_telegram_id');
-        deletePersistentCookie('phim4k_telegram_id');
-        const keyInput = document.getElementById('keyInput');
-        if (keyInput) {
-          keyInput.value = '';
-          keyInput.placeholder = 'Nhập mã Key mới để gia hạn';
-          keyInput.focus();
-        }
-        this.triggerLock(`⚠️ Gói License Key của bạn đã hết hạn! Vui lòng nhập mã Key mới để tiếp tục xem phim.`);
-      } else {
-        this.clearStoredSession();
-        this.triggerLock(activationFailureMessage(res, 'Thông tin bản quyền không còn hợp lệ'));
-      }
-    } catch (err) {
-      console.warn('Network issue on init, keeping persistent state:', err);
-      this.triggerLock('Không thể kiểm tra bản quyền khi máy chủ không phản hồi. Vui lòng thử lại khi có mạng.');
-      return;
-      // Don't lock user on network glitch if previously authenticated
-      if (savedKey && savedTeleId) {
-        this.unlockApp({ key: savedKey, telegramId: savedTeleId, plan: 'VIP' });
-      } else {
-        this.triggerLock('Không thể kết nối đến máy chủ xác thực');
-      }
-    }
+    const pendingDeviceKey = sessionStorage.getItem('phim4k_pending_device_key');
+    this.triggerLock(savedKey ? 'Key cũ không còn tạo được phiên an toàn. Vui lòng nhập lại key.' : '');
+    if (pendingDeviceKey) beginDeviceApprovalPolling(pendingDeviceKey);
   },
 
   triggerLock(errorMessage = '') {
@@ -202,6 +180,7 @@ const Auth = {
 
   clearStoredSession() {
     this.activeKeyData = null;
+    void SessionVault.clear();
     localStorage.removeItem('phim4k_key');
     localStorage.removeItem('phim4k_telegram_id');
     localStorage.removeItem('phim4k_plan');
@@ -234,22 +213,12 @@ const Auth = {
       deviceRequestButton.textContent = 'Báo Admin duyệt thiết bị này';
     }
     
-    // Capacitor/Electron isolate localStorage per app identifier. Avoid a
-    // duplicate cookie copy because cookies are attached to HTTP requests.
-    localStorage.setItem('phim4k_key', keyData.key || '');
-
-    if (keyData.telegramId) {
-      localStorage.setItem('phim4k_telegram_id', keyData.telegramId);
-    }
-    if (keyData.deviceOnly || keyData.keyOnly || keyData.freeAccess) {
-      if (keyData.deviceOnly) localStorage.setItem('phim4k_device_only', '1');
-      else localStorage.removeItem('phim4k_device_only');
-      localStorage.removeItem('phim4k_telegram_id');
-      deletePersistentCookie('phim4k_telegram_id');
-    } else {
-      localStorage.removeItem('phim4k_device_only');
-    }
-    localStorage.setItem('phim4k_plan', keyData.isAdmin ? 'SUPER ADMIN' : (keyData.plan || 'VIP PRO'));
+    // License/admin keys are deliberately absent after activation. Only the
+    // rotating session envelope remains in the platform secure store.
+    localStorage.removeItem('phim4k_key');
+    localStorage.removeItem('phim4k_telegram_id');
+    localStorage.removeItem('phim4k_plan');
+    localStorage.removeItem('phim4k_device_only');
 
     document.body.classList.remove('activation-locked');
     const gate = document.getElementById('activationGate');
@@ -286,8 +255,7 @@ const Auth = {
     }
     const footerBadge = document.getElementById('footerKeyBadge');
     if (footerBadge) {
-      const rawKey = String(keyData.key || '');
-      const maskedKey = rawKey ? `${rawKey.slice(0, 4)}••••${rawKey.slice(-4)}` : 'Chưa có key';
+      const maskedKey = keyData.keyHint || (keyData.freeAccess ? 'Không yêu cầu' : 'Phiên an toàn');
       footerBadge.textContent = `${maskedKey} (${keyData.plan || 'VIP'})`;
     }
     const footerExpiry = document.getElementById('footerExpiryBadge');
@@ -311,15 +279,10 @@ const Auth = {
   startHeartbeat() {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     this.heartbeatTimer = setInterval(async () => {
-      const key = localStorage.getItem('phim4k_key');
-      const teleId = localStorage.getItem('phim4k_telegram_id');
-      const deviceOnly = localStorage.getItem('phim4k_device_only') === '1';
-      if (!key && !this.activeKeyData?.freeAccess) return;
+      if (!SessionVault.hasSession()) return;
 
       try {
-        const res = deviceOnly
-          ? await API.checkDeviceAccess(key, this.getDeviceId())
-          : await API.checkStatus(key, teleId, this.getDeviceId());
+        const res = await API.checkStatus('', '', this.getDeviceId());
         if (res.code === 'MAINTENANCE_MODE' || res.maintenance?.active === true) {
           this.showMaintenance(res.maintenance || { active: true, message: res.message });
           return;
@@ -333,13 +296,6 @@ const Auth = {
           }
 
           if (res.code === 'KEY_EXPIRED') {
-            // Remove expired key, keep telegramId so user only has to enter the new key
-            localStorage.removeItem('phim4k_key');
-            deletePersistentCookie('phim4k_key');
-            
-            const teleInput = document.getElementById('telegramInput');
-            if (teleInput) teleInput.value = teleId;
-
             const keyInput = document.getElementById('keyInput');
             if (keyInput) {
               keyInput.value = '';
@@ -369,6 +325,13 @@ window.Auth = Auth;
 // Form submit event
 async function handleActivation(e) {
   e.preventDefault();
+  // Do not let a stale startup status/policy response race a successful
+  // explicit activation and lock the UI again afterwards.
+  if (Auth.initializingPromise) {
+    try {
+      await Auth.initializingPromise;
+    } catch (_error) {}
+  }
   const teleInput = document.getElementById('telegramInput');
   const keyInput = document.getElementById('keyInput');
   const btn = document.getElementById('btnActivate');
@@ -392,22 +355,19 @@ async function handleActivation(e) {
   try {
     const deviceId = Auth.getDeviceId();
     const res = await API.activate(key, telegramId, deviceId);
-    if (res.success) {
+    if (res.forceUpdate) {
+      showForceUpdateModal(res);
+      return;
+    }
+    if (res.success && res.active && res.accessToken && res.refreshToken) {
+      await SessionVault.save(res);
       msgEl.textContent = `✔ Xác thực thành công! ${Auth.formatExpiry(res.expiresAt)}. Đang vào ứng dụng...`;
       msgEl.className = 'gate-message success';
       msgEl.classList.remove('hidden');
       
-      if (res.forceUpdate) {
-        showForceUpdateModal(res);
-        return;
-      }
       setTimeout(() => {
-        // Bind the verified session to the values submitted for this request.
-        // Some valid server responses intentionally omit the raw key and ID;
-        // without this merge the UI would open and then render as inactive.
-        const verifiedSession = { ...res, key, telegramId };
-        Auth.unlockApp(verifiedSession);
-        if (verifiedSession.isAdmin === true) {
+        Auth.unlockApp(res);
+        if (res.isAdmin === true) {
           setTimeout(() => Admin.open(), 400);
         }
       }, 500);
@@ -458,7 +418,7 @@ async function requestDeviceOnlyAccess() {
     msgEl.textContent = response.message || 'Đã gửi yêu cầu. Đang chờ Admin duyệt…';
     msgEl.className = response.status === 'approved' ? 'gate-message success' : 'gate-message pending';
     msgEl.classList.remove('hidden');
-    localStorage.setItem('phim4k_pending_device_key', key);
+    sessionStorage.setItem('phim4k_pending_device_key', key);
     await beginDeviceApprovalPolling(key);
   } catch (error) {
     msgEl.textContent = error.message || 'Không thể gửi yêu cầu cho Admin.';
@@ -494,18 +454,23 @@ async function beginDeviceApprovalPolling(key) {
     try {
       const status = await API.checkDeviceAccess(cleanKey, deviceId);
       if (status.active && status.status === 'approved') {
-        localStorage.removeItem('phim4k_pending_device_key');
+        sessionStorage.removeItem('phim4k_pending_device_key');
+        const activated = await API.activate(cleanKey, '', deviceId);
+        if (!activated.active || !activated.accessToken || !activated.refreshToken) {
+          throw new Error(activated.message || 'Không tạo được phiên an toàn sau khi Admin duyệt.');
+        }
+        await SessionVault.save(activated);
         if (msgEl) {
           msgEl.textContent = 'Admin đã cấp phép thiết bị. Đang mở ứng dụng…';
           msgEl.className = 'gate-message success';
           msgEl.classList.remove('hidden');
         }
-        Auth.unlockApp({ ...status, key: cleanKey, telegramId: '', deviceOnly: true });
+        Auth.unlockApp(activated);
         return;
       }
 
       if (status.status === 'rejected') {
-        localStorage.removeItem('phim4k_pending_device_key');
+        sessionStorage.removeItem('phim4k_pending_device_key');
         if (msgEl) {
           msgEl.textContent = 'Admin đã từ chối yêu cầu cho thiết bị này.';
           msgEl.className = 'gate-message error';
@@ -554,8 +519,7 @@ function openLicenseModal() {
           ? 'Tài khoản quản trị đã xác thực'
           : 'Key người xem';
   document.getElementById('licPlan').textContent = d.plan || '-';
-  const rawKey = String(d.key || '');
-  document.getElementById('licKey').textContent = rawKey ? `${rawKey.slice(0, 4)}••••${rawKey.slice(-4)}` : '-';
+  document.getElementById('licKey').textContent = d.keyHint || (d.freeAccess ? 'Không yêu cầu' : 'Phiên an toàn');
   
   if (d.expiresAt) {
     const date = new Date(d.expiresAt);
@@ -588,8 +552,9 @@ function closeLicenseModal(e) {
   }
 }
 
-function logoutKey() {
+async function logoutKey() {
   if (confirm('Đăng xuất trên máy này? Key vẫn gắn với thiết bị; chỉ Admin có thể reset để đổi máy.')) {
+    await API.logout();
     Auth.clearStoredSession();
     hideLicenseModal();
     Auth.triggerLock('Nhập key để đăng nhập. Admin dùng mục Đăng nhập quản trị.');
@@ -657,19 +622,20 @@ async function refreshPublicDownloads() {
     for (const [key, [id, format]] of Object.entries(ids)) {
       const entry = Phim4KPlatform.release(data, key);
       const releaseState = Phim4KPlatform.releaseState(entry, API.getVersion());
+      const trustedRelease = Boolean(entry.url && entry.sha256);
       for (const prefix of ['btnDownload', 'forceBtn']) {
         const btn = document.getElementById(prefix + id);
         if (!btn) continue;
         btn.removeAttribute('download');
         btn.removeAttribute('href');
-        btn.setAttribute('aria-disabled', entry.url ? 'false' : 'true');
+        btn.setAttribute('aria-disabled', trustedRelease ? 'false' : 'true');
         const older = key === platform && releaseState === 'older';
-        btn.textContent = entry.url ? `Tải ${format}${older ? ' · Bản công khai cũ hơn' : key === platform ? ' · Phù hợp thiết bị này' : ''}` : (failed ? 'Chưa tải được link · Thử lại' : 'Chưa phát hành');
+        btn.textContent = trustedRelease ? `Tải ${format}${older ? ' · Bản công khai cũ hơn' : key === platform ? ' · Phù hợp thiết bị này' : ''}` : (failed ? 'Chưa tải được link · Thử lại' : entry.url ? 'Thiếu mã xác minh SHA-256' : 'Chưa phát hành');
         btn.onclick = null;
-        if (entry.url) {
+        if (trustedRelease) {
           btn.href = entry.url; btn.target = '_blank'; btn.rel = 'noopener noreferrer';
           if ((key === 'android' || key === 'android_tv') && window.Phim4KNativeDownloads?.supported()) {
-            btn.onclick = event => { event.preventDefault(); void Phim4KNativeDownloads.open(btn, entry.url); };
+            btn.onclick = event => { event.preventDefault(); void Phim4KNativeDownloads.open(btn, entry); };
           }
         }
         const card = btn.closest('.download-card');
@@ -677,8 +643,8 @@ async function refreshPublicDownloads() {
         card?.classList.toggle('current-release', releaseState === 'current');
       }
       const meta = document.getElementById(`meta${id}Ver`);
-      if (meta) meta.textContent = entry.url
-        ? `v${entry.version || '?'} · ${Phim4KPlatform.labels[key]}${releaseState === 'current' ? ' · Mới nhất' : ''}`
+      if (meta) meta.textContent = trustedRelease
+        ? `v${entry.version || '?'} · ${Phim4KPlatform.labels[key]} · SHA ${entry.sha256.slice(0, 10)}…${releaseState === 'current' ? ' · Mới nhất' : ''}`
         : 'Chỉ hiển thị bản đã phát hành';
     }
   };
@@ -826,9 +792,15 @@ window.checkAppUpdate = checkAppUpdate;
 
 // Auto init on page load
 document.addEventListener('DOMContentLoaded', () => {
-  Auth.init().then(() => {
+  const activateButton = document.getElementById('btnActivate');
+  if (activateButton) activateButton.disabled = true;
+  const initialization = Auth.init();
+  Auth.initializingPromise = initialization;
+  initialization.then(() => {
     if (window.location.search.includes('admin') && Auth.activeKeyData?.isAdmin) {
       setTimeout(() => Admin.open(), 400);
     }
+  }).finally(() => {
+    if (activateButton) activateButton.disabled = false;
   });
 });

@@ -38,6 +38,9 @@
 }
 
 .video-element {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
   display: block;
   width: 100%;
   height: 100%;
@@ -47,6 +50,16 @@
   object-position: center center;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+}
+
+.cinema-player-wrapper.aspect-cover .video-element {
+  height: 100%;
+  margin: 0;
+  object-fit: cover;
+}
+
+.cinema-player-wrapper.aspect-contain .video-element {
+  object-fit: contain;
 }
 
 .platform-android .video-element {
@@ -374,6 +387,16 @@ video::cue {
   white-space: nowrap;
 }
 .ctrl-btn-text:hover, .btn-player-server:hover { background: rgba(255, 255, 255, .23); }
+.ctrl-btn-text.quality-auto:disabled {
+  color: #ddd6fe;
+  border-color: rgba(196, 181, 253, .5);
+  background: rgba(109, 40, 217, .26);
+  cursor: default;
+  opacity: 1;
+}
+.aspect-mode-control { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid rgba(255,255,255,.18); border-radius: 10px; background: rgba(0,0,0,.3); }
+.aspect-mode-control .ctrl-btn-text { border: 0; background: transparent; }
+.aspect-mode-control .ctrl-btn-text.active { color: #111827; background: #facc15; }
 .volume-container { display: flex; align-items: center; gap: 2px; }
 .volume-slider { width: 72px; accent-color: #e50914; }
 .time-display { display: block; margin: 0 0 6px; color: #e5e7eb; font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -426,8 +449,8 @@ video::cue {
   .controls-left, .controls-right { gap: 2px; }
   .ctrl-btn { width: 38px; height: 38px; }
   .volume-slider { display: none; }
-  #btnAspectFit { padding-inline: 8px; }
   .ctrl-btn-text, .btn-player-server { min-height: 32px; font-size: 11px; }
+  .aspect-mode-control .ctrl-btn-text { padding-inline: 7px; }
 }
 
 @media (max-width: 560px) and (orientation: portrait) {
@@ -448,5 +471,6 @@ video::cue {
   .ctrl-btn { width: 34px; height: 34px; }
   .ctrl-btn svg { width: 20px; height: 20px; }
   .ctrl-btn-text { min-height: 30px; padding: 4px 8px; }
+  .aspect-mode-control .ctrl-btn-text { padding-inline: 6px; }
   .volume-slider { display: none; }
 }

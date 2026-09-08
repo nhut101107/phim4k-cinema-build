@@ -326,35 +326,36 @@ const Player = {
     if (button) button.classList.toggle('hidden', !(this.episodesList.length > 1 && this.currentEpIndex < this.episodesList.length - 1));
   },
 
-  setAspectRatio(_mode, { silent = false } = {}) {
-    // The upstream Vietsub is burned into the picture on a number of titles.
-    // Cropping even a few pixels therefore removes dialogue permanently. Keep
-    // one subtitle-safe mode on every device instead of remembering a crop.
-    this.aspectMode = 'contain';
-    this.wrapper.classList.add('aspect-contain');
-    this.wrapper.classList.remove('aspect-cover');
+  setAspectRatio(mode, { silent = false } = {}) {
+    const nextMode = mode === 'cover' ? 'cover' : 'contain';
+    this.aspectMode = nextMode;
+    this.wrapper.classList.toggle('aspect-contain', nextMode === 'contain');
+    this.wrapper.classList.toggle('aspect-cover', nextMode === 'cover');
     window.requestAnimationFrame?.(() => this.updateSubtitleSafeArea());
-    const button = document.getElementById('btnAspectFit');
-    if (button) {
-      button.textContent = 'Giữ trọn hình';
-      button.title = 'Luôn giữ toàn bộ hình và phụ đề gốc';
-      button.setAttribute('aria-pressed', 'true');
-    }
-    if (!silent) this.showAlert('Đang giữ trọn khung hình để không mất phụ đề.');
+    const contain = document.getElementById('btnAspectContain');
+    const cover = document.getElementById('btnAspectCover');
+    contain?.classList.toggle('active', nextMode === 'contain');
+    cover?.classList.toggle('active', nextMode === 'cover');
+    contain?.setAttribute('aria-pressed', String(nextMode === 'contain'));
+    cover?.setAttribute('aria-pressed', String(nextMode === 'cover'));
+    try { localStorage.setItem('phim4k-player-aspect-v3', nextMode); } catch (_) {}
+    if (!silent) this.showAlert(nextMode === 'cover'
+      ? 'Lấp đầy màn hình: mép hình và phụ đề sát mép có thể bị cắt.'
+      : 'Giữ trọn hình: bảo toàn toàn bộ khung hình và phụ đề.');
   },
 
   applyPreferredAspect() {
-    // Remove preferences written by older builds so an old "fill" choice can
-    // never crop burned-in subtitles after an update.
+    let preferred = 'contain';
     try {
       localStorage.removeItem('phim4k-player-fit');
       localStorage.removeItem('phim4k-player-fit-v2');
+      preferred = localStorage.getItem('phim4k-player-aspect-v3') === 'cover' ? 'cover' : 'contain';
     } catch (_) {}
-    this.setAspectRatio('contain', { silent: true });
+    this.setAspectRatio(preferred, { silent: true });
   },
 
   toggleAspectRatio() {
-    this.setAspectRatio('contain');
+    this.setAspectRatio(this.aspectMode === 'contain' ? 'cover' : 'contain');
   },
 
   updateSubtitleSafeArea() {
@@ -544,53 +545,21 @@ const Player = {
   },
 
   populateQualityMenu(options) {
-    const menu = document.getElementById('qualityMenu');
-    if (!menu) return;
-    menu.replaceChildren();
-    const auto = document.createElement('button');
-    auto.type = 'button';
-    auto.dataset.level = '-1';
-    auto.className = 'active';
-    auto.textContent = 'Tự động';
-    auto.onclick = () => this.setQuality(-1);
-    menu.appendChild(auto);
-    options.forEach((option) => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.dataset.level = String(option.levelIndex);
-      button.textContent = option.label;
-      button.onclick = () => this.setQuality(option.levelIndex);
-      menu.appendChild(button);
-    });
+    if (this.hls) this.hls.currentLevel = -1;
+    this.qualityMode = 'auto';
     this.setQualityButtonLabel('Tự động');
   },
 
   populateNativeHlsMenu() {
-    const menu = document.getElementById('qualityMenu');
-    if (!menu) return;
-    menu.replaceChildren();
-    const item = document.createElement('button');
-    item.type = 'button';
-    item.disabled = true;
-    item.className = 'quality-note';
-    const device = this.nativePlatform() === 'ios' ? 'iPhone' : 'Thiết bị';
-    item.textContent = `${device} tự chọn chất lượng HLS`;
-    menu.appendChild(item);
-    this.setQualityButtonLabel(this.nativePlatform() === 'ios' ? 'Tự động iOS' : 'Tự động');
+    this.qualityMode = 'auto';
+    this.setQualityButtonLabel('Tự động');
   },
 
   setQuality(levelIndex) {
-    if (!this.hls) {
-      const device = this.nativePlatform() === 'ios' ? 'iPhone' : 'Thiết bị';
-      this.showAlert(this.usingNativeHls ? `${device} đang tự chọn chất lượng HLS phù hợp mạng.` : 'Luồng này không có danh sách chất lượng để chọn.');
-      document.getElementById('qualityMenu')?.classList.add('hidden');
-      return;
-    }
-    this.qualityMode = levelIndex === -1 ? 'auto' : 'manual';
-    this.hls.currentLevel = levelIndex;
-    const option = levelIndex === -1 ? null : this.qualityOptions.find((item) => item.levelIndex === levelIndex);
-    this.setQualityButtonLabel(option?.label || 'Tự động');
-    this.updateQualityMenuSelection(levelIndex);
+    this.qualityMode = 'auto';
+    if (this.hls) this.hls.currentLevel = -1;
+    this.setQualityButtonLabel('Tự động');
+    this.updateQualityMenuSelection(-1);
     document.getElementById('qualityMenu')?.classList.add('hidden');
   },
 
@@ -813,14 +782,19 @@ const Player = {
       this.closeDropdowns();
       this.wrapper.classList.add('inactive');
     }
+    window.requestAnimationFrame?.(() => this.updateSubtitleSafeArea());
   },
 
   resetInactivityTimer() {
     if (!this.wrapper || this.modal?.classList.contains('hidden')) return;
     this.wrapper.classList.remove('inactive');
+    window.requestAnimationFrame?.(() => this.updateSubtitleSafeArea());
     clearTimeout(this.inactivityTimer);
     this.inactivityTimer = window.setTimeout(() => {
-      if (!this.video?.paused) this.wrapper.classList.add('inactive');
+      if (!this.video?.paused) {
+        this.wrapper.classList.add('inactive');
+        this.updateSubtitleSafeArea();
+      }
     }, 3200);
   },
 
@@ -892,6 +866,7 @@ function seekRelative(seconds) { Player.seekRelative(seconds); }
 function toggleMute() { Player.toggleMute(); }
 function toggleCinemaFullscreen() { void Player.toggleCinemaFullscreen(); }
 function toggleAspectRatio() { Player.toggleAspectRatio(); }
+function setAspectRatio(mode) { Player.setAspectRatio(mode); }
 function playNextEpisode() { Player.playNextEpisode(); }
 function closePlayer() { Player.close(); }
 function togglePlayerServerMenu() {

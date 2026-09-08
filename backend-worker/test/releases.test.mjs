@@ -20,7 +20,7 @@ test('release URLs reject non-HTTPS and embedded credentials', () => {
 });
 test('downloads admin route is authorized, atomic and compatible with clients', async () => {
   const f = fixture();
-  const env = { DB: f.db, ADMIN_LICENSE_KEY: 'MASTER-RELEASE-KEY', ADMIN_TELEGRAM_ID: '1000000001' };
+  const env = { DB: f.db, ADMIN_LICENSE_KEY: 'MASTER-RELEASE-KEY', ADMIN_TELEGRAM_ID: '1000000001', ALLOW_LEGACY_TEST_AUTH: '1' };
   const send = (body, admin = true) => worker.fetch(new Request('https://example.test/api/admin/update-downloads', { method: 'POST', headers: { 'content-type': 'application/json', 'x-license-key': admin ? 'MASTER-RELEASE-KEY' : 'USER-KEY', 'x-telegram-id': '1000000001' }, body: JSON.stringify(body) }), env);
   assert.equal((await send({}, false)).status, 403);
   assert.equal((await send({ androidUrl: 'https://example.com/a.apk', windowsUrl: 'javascript:bad' })).status, 400);
@@ -34,7 +34,7 @@ test('downloads admin route is authorized, atomic and compatible with clients', 
 });
 test('streamed JSON body is bounded even without Content-Length', async () => {
   const f = fixture();
-  const response = await worker.fetch(new Request('https://example.test/api/admin/update-downloads', { method: 'POST', headers: { 'x-license-key': 'MASTER-BODY-LIMIT', 'x-telegram-id': '1000000001' }, body: JSON.stringify({ androidUrl: 'a'.repeat(18000) }) }), { DB: f.db, ADMIN_LICENSE_KEY: 'MASTER-BODY-LIMIT', ADMIN_TELEGRAM_ID: '1000000001' });
+  const response = await worker.fetch(new Request('https://example.test/api/admin/update-downloads', { method: 'POST', headers: { 'x-license-key': 'MASTER-BODY-LIMIT', 'x-telegram-id': '1000000001' }, body: JSON.stringify({ androidUrl: 'a'.repeat(18000) }) }), { DB: f.db, ADMIN_LICENSE_KEY: 'MASTER-BODY-LIMIT', ADMIN_TELEGRAM_ID: '1000000001', ALLOW_LEGACY_TEST_AUTH: '1' });
   assert.equal(response.status, 413);
   assert.equal(f.writes(), 0);
 });

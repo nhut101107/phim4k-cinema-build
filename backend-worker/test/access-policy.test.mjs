@@ -12,7 +12,7 @@ function fixture() {
     async run() {return sqlite.prepare(sql).run(...args);},
     async all() {return {results:sqlite.prepare(sql).all(...args)};}
   };}};}};
-  const env = {DB, ADMIN_LICENSE_KEY:'TEST-ADMIN-SECRET', ADMIN_TELEGRAM_ID:'1000000001'};
+  const env = {DB, ADMIN_LICENSE_KEY:'TEST-ADMIN-SECRET', ADMIN_TELEGRAM_ID:'1000000001', ALLOW_LEGACY_TEST_AUTH:'1'};
   let sequence = 0;
   const request = async (path, body, headers = {}) => worker.fetch(new Request(`https://test.example${path}`, {
     method:body === undefined ? 'GET':'POST', headers:{'content-type':'application/json','cf-connecting-ip':`192.0.2.${++sequence}`, ...headers},
@@ -147,8 +147,9 @@ test('verified admin on an outdated iPhone is directed to the current iOS releas
   const f=fixture();
   try {
     const publishedAt='2026-09-06T00:00:00.000Z';
-    f.sqlite.prepare('INSERT INTO downloads (platform,url,version,updated_at) VALUES (?,?,?,?)').run('ios','https://downloads.example/Phim4K-iOS-3.4.24.ipa','3.4.24',publishedAt);
-    f.sqlite.prepare('INSERT INTO downloads (platform,url,version,updated_at) VALUES (?,?,?,?)').run('windows','https://downloads.example/Phim4K-Windows-3.4.17.exe','3.4.17',publishedAt);
+    const sha='a'.repeat(64);
+    f.sqlite.prepare('INSERT INTO downloads (platform,url,version,sha256,size_bytes,updated_at) VALUES (?,?,?,?,?,?)').run('ios','https://downloads.example/Phim4K-iOS-3.4.24.ipa','3.4.24',sha,1234,publishedAt);
+    f.sqlite.prepare('INSERT INTO downloads (platform,url,version,sha256,size_bytes,updated_at) VALUES (?,?,?,?,?,?)').run('windows','https://downloads.example/Phim4K-Windows-3.4.17.exe','3.4.17',sha,1234,publishedAt);
 
     const iosAdmin=await (await f.request('/api/auth/status',undefined,{
       ...f.admin,
@@ -162,6 +163,7 @@ test('verified admin on an outdated iPhone is directed to the current iOS releas
     assert.equal(iosAdmin.latestVersion,'3.4.24');
     assert.equal(iosAdmin.minVersion,'3.4.24');
     assert.equal(iosAdmin.downloadUrl,'https://downloads.example/Phim4K-iOS-3.4.24.ipa');
+    assert.equal(iosAdmin.downloadSha256,sha);
 
     const windowsAdmin=await (await f.request('/api/auth/status',undefined,{
       ...f.admin,

@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import worker, { openMediaTicket } from '../src/worker.mjs';
 
 const env = {
+  ALLOW_LEGACY_TEST_AUTH: '1',
   DB: {
     prepare(sql) {
       return { bind() { return { async first() { return { setting_value: 'true' }; } }; } };
