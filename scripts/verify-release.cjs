@@ -7,7 +7,7 @@ const yauzl = require('yauzl');
 const crc32 = require('buffer-crc32');
 const plist = require('bplist-parser');
 
-const version = process.env.RELEASE_VERSION || '3.4.39';
+const version = process.env.RELEASE_VERSION || '3.4.40';
 const build = version.split('.').at(-1);
 const root = path.resolve(__dirname, '..', 'builds', `4K-Cinema-${version}`);
 const files = [

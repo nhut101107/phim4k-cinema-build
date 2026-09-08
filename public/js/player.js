@@ -184,10 +184,14 @@ const Player = {
       const result = await API.getPlaybackTicket(episode.stream_ref);
       if (requestId !== this.playbackTicketRequest || this.modal?.classList.contains('hidden')) return;
       this.loadStream(result.streamUrl, { ...options, isHls: Boolean(result.isHls) });
-    } catch (_error) {
+    } catch (error) {
       if (requestId !== this.playbackTicketRequest) return;
       this.showBuffering(false);
-      this.showAlert('Không lấy được vé phát. Đang thử server khác…');
+      const sourceOffline = ['STREAM_SOURCE_OFFLINE', 'STREAM_SOURCE_UNREACHABLE', 'INVALID_STREAM_SOURCE']
+        .includes(error?.payload?.code);
+      this.showAlert(sourceOffline
+        ? 'Nguồn phim đã bị gỡ hoặc tạm lỗi. Đang thử server khác…'
+        : 'Không lấy được vé phát. Đang thử server khác…');
       this.fallbackToNextServer();
     }
   },

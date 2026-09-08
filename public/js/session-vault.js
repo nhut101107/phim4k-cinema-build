@@ -212,6 +212,8 @@
       if (!url.pathname.startsWith('/api/') || PUBLIC_PATHS.has(url.pathname) || !session?.accessToken) return init;
       const method = String(init.method || (typeof input === 'object' && input.method) || 'GET').toUpperCase();
       const headers = new Headers(init.headers || (typeof input === 'object' ? input.headers : undefined));
+      const deviceId = String(localStorage.getItem('phim4k_device_id') || '').trim();
+      if (deviceId) headers.set('x-device-id', deviceId);
       headers.set('authorization', `Bearer ${session.accessToken}`);
       for (const [name, value] of Object.entries(await proofHeaders(method, url.href, session.accessToken))) headers.set(name, value);
       return { ...init, headers };

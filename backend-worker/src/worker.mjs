@@ -2107,8 +2107,35 @@ async function handleMoviePlayback(request, env) {
   const directEmbed = embedded && /\.(?:m3u8|mp4|m4v|mov)(?:$|[?#])/i.test(embedded.href) ? embedded : null;
   const target = hls || directEmbed;
   if (!target) return textError("Server này không có luồng phát trực tiếp tương thích.", 404, "STREAM_NOT_AVAILABLE");
-  const expiresAt = Math.floor(Date.now() / 1000) + (env.MEDIA_RELAY_FALLBACK === "redirect" ? 15 * 60 : STREAM_TICKET_TTL_SECONDS);
   const isHls = Boolean(hls) || /\.m3u8(?:$|[?#])/i.test(target.href);
+  // Catalog entries can outlive their provider files. Verify the selected
+  // stream before issuing a ticket so the client can immediately try another
+  // server instead of remaining at 00:00 with a native-player error.
+  try {
+    const probeRequest = new Request(request.url, { method: "GET", headers: request.headers });
+    const { response: probe } = await fetchProtectedUpstream(target.href, probeRequest, env, isHls ? "hls" : "media");
+    if (!probe.ok && probe.status !== 206) {
+      probe.body?.cancel?.().catch?.(() => {});
+      return textError("Nguồn phim này đã bị gỡ hoặc tạm thời không phản hồi.", 404, "STREAM_SOURCE_OFFLINE");
+    }
+    if (isHls) {
+      const declaredLength = Number.parseInt(probe.headers.get("content-length") || "0", 10) || 0;
+      if (declaredLength > MAX_HLS_MANIFEST_BYTES) return textError("Nguồn phim trả về dữ liệu không hợp lệ.", 502, "INVALID_STREAM_SOURCE");
+      const bytes = new Uint8Array(await probe.arrayBuffer());
+      if (bytes.byteLength > MAX_HLS_MANIFEST_BYTES || !new TextDecoder().decode(bytes).trimStart().startsWith("#EXTM3U")) {
+        return textError("Nguồn phim trả về dữ liệu không hợp lệ.", 502, "INVALID_STREAM_SOURCE");
+      }
+    } else {
+      const contentType = String(probe.headers.get("content-type") || "").toLowerCase();
+      probe.body?.cancel?.().catch?.(() => {});
+      if (!/^(?:video\/|audio\/|application\/(?:octet-stream|mp2t))/.test(contentType)) {
+        return textError("Nguồn phim trả về dữ liệu không hợp lệ.", 502, "INVALID_STREAM_SOURCE");
+      }
+    }
+  } catch (_error) {
+    return textError("Không kết nối được nguồn phim. Đang thử server khác.", 503, "STREAM_SOURCE_UNREACHABLE");
+  }
+  const expiresAt = Math.floor(Date.now() / 1000) + (env.MEDIA_RELAY_FALLBACK === "redirect" ? 15 * 60 : STREAM_TICKET_TTL_SECONDS);
   return json({
     success: true,
     streamUrl: await protectedMediaUrl(request, env, target.href, "stream", expiresAt, {

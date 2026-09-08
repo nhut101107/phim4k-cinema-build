@@ -148,7 +148,29 @@ test('streaming through the VPS relay uses a signed server-to-server request and
     assert.equal(stream.status, 200);
     assert.equal(stream.headers.get('location'), null);
     assert.doesNotMatch(await stream.text(), /video\.example|master\.m3u8/);
-    assert.equal(relayCalls, 1);
+    assert.equal(relayCalls, 2, 'playback preflight and the client stream request must both use the relay');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('playback rejects a stale catalog stream before issuing a ticket', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const target = String(input);
+    if (target.startsWith('https://catalog.example/')) {
+      return new Response(JSON.stringify(detailPayload), { headers: { 'content-type': 'application/json' } });
+    }
+    if (target === 'https://video.example/path/master.m3u8') return new Response('removed', { status: 404 });
+    throw new Error(`unexpected upstream: ${target}`);
+  };
+  try {
+    const playback = await worker.fetch(viewerRequest('/api/movies/play', {
+      method: 'POST',
+      body: JSON.stringify({ movie: 'phim-kiem-thu', server: 0, episode: 0 }),
+    }), env);
+    assert.equal(playback.status, 404);
+    assert.equal((await playback.json()).code, 'STREAM_SOURCE_OFFLINE');
   } finally {
     globalThis.fetch = originalFetch;
   }

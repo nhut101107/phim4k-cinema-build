@@ -19,7 +19,7 @@ const API = {
   },
 
   getVersion() {
-    return '3.4.39';
+    return '3.4.40';
   },
 
   getSessionId() {
@@ -163,6 +163,7 @@ const API = {
       if (!response.ok) {
         const error = new Error(payload.message || payload.error || `HTTP ${response.status}`);
         error.status = response.status;
+        error.payload = payload;
         throw error;
       }
       return payload;
