@@ -64,9 +64,10 @@ function loadDownloadsConfig() {
     return JSON.parse(raw);
   } catch (err) {
     return {
-      android: { name: 'Phim 4K Cinema Android (ADR / APK)', url: '/download/apk', version: '3.0.0', note: 'Điện thoại & TV Android' },
-      ios: { name: 'Phim 4K Cinema iOS (IPA)', url: '/download/ipa', version: '3.0.0', note: 'iPhone & iPad' },
-      windows: { name: 'Phim 4K Cinema Windows (EXE)', url: '/download/exe', version: '3.0.0', note: 'Máy tính Windows' }
+      android: { name: 'Phim 4K Cinema Android (ADR / APK)', url: 'https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.50/4K-Cinema-Android-3.50.apk', version: '3.50', note: 'Điện thoại Android' },
+      android_tv: { name: 'Phim 4K Cinema Android TV (APK)', url: 'https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.50/4K-Cinema-Android-TV-3.50.apk', version: '3.50', note: 'Android TV & TV Box' },
+      ios: { name: 'Phim 4K Cinema iOS (IPA)', url: 'https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.50/4K-Cinema-iOS-3.50-unsigned.ipa', version: '3.50', note: 'iPhone & iPad' },
+      windows: { name: 'Phim 4K Cinema Windows (EXE)', url: 'https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.50/4K-Cinema-Windows-3.50-x64.exe', version: '3.50', note: 'Máy tính Windows' }
     };
   }
 }
