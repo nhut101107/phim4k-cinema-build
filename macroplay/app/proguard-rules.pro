@@ -1,0 +1,3 @@
+-keep class com.pthelper.autofishing.AutomationAccessibilityService { *; }
+-keep class com.pthelper.autofishing.FishingService { *; }
+-keep class com.pthelper.autofishing.CalibrationOverlayService { *; }

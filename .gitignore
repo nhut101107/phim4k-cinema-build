@@ -7,6 +7,11 @@ relay/supervisor.private.lock
 relay/windows-service/*.exe
 relay/windows-service/*.pdb
 tools/cloudflared/cloudflared.exe
+tools/mingit/
+tools/mingit-download/
+macroplay/.gradle/
+macroplay/**/build/
+macroplay/local.properties
 ios/App/App/public/
 ios/App/build/
 DerivedData/
