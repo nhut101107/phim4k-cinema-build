@@ -38,3 +38,16 @@ test('never resumes beyond the playable duration', () => {
   assert.equal(Core.clampResumeTime(-1, 40), 0);
   assert.equal(Core.clampResumeTime(12, Number.NaN), 12);
 });
+
+test('skips the embedded iOS ad window at each 15 minute marker', () => {
+  assert.deepEqual(Core.autoAdSkipTarget(902, 7000), { marker: 900, target: 935 });
+  assert.deepEqual(Core.autoAdSkipTarget(1800, 7000), { marker: 1800, target: 1835 });
+  assert.equal(Core.autoAdSkipTarget(899.9, 7000), null);
+  assert.equal(Core.autoAdSkipTarget(935, 7000), null);
+});
+
+test('does not repeat a skipped ad or seek beyond the playable end', () => {
+  assert.equal(Core.autoAdSkipTarget(905, 7000, new Set([900])), null);
+  assert.deepEqual(Core.autoAdSkipTarget(900, 920), { marker: 900, target: 919.5 });
+  assert.equal(Core.autoAdSkipTarget(Number.NaN, 7000), null);
+});

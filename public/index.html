@@ -12,12 +12,12 @@
   <title>4K Cinema</title>
   
   <!-- HLS.js for streaming m3u8 -->
-  <script src="/vendor/hls.min.js?v=3.4.40"></script>
+  <script src="/vendor/hls.min.js?v=3.50"></script>
 
-  <link rel="stylesheet" href="/css/style.css?v=3.4.40">
-  <link rel="stylesheet" href="/css/modal.css?v=3.4.40">
-  <link rel="stylesheet" href="/css/player.css?v=3.4.40">
-  <link rel="stylesheet" href="/css/tv.css?v=3.4.40">
+  <link rel="stylesheet" href="/css/style.css?v=3.50">
+  <link rel="stylesheet" href="/css/modal.css?v=3.50">
+  <link rel="stylesheet" href="/css/player.css?v=3.50">
+  <link rel="stylesheet" href="/css/tv.css?v=3.50">
 </head>
 <body class="activation-locked">
 
@@ -27,7 +27,7 @@
   <div id="activationGate" class="gate-overlay">
     <div class="gate-card">
       <div class="gate-logo">
-        <img src="/media/phim4k-avatar.png?v=3.4.40" class="app-avatar" alt="Biểu tượng 4K Cinema" width="88" height="88">
+        <img src="/media/phim4k-avatar.png?v=3.50" class="app-avatar" alt="Biểu tượng 4K Cinema" width="88" height="88">
         <div class="gate-brand-copy">
           <div class="logo-badge">4K Cinema</div>
           <span class="pro-tag">CINEMA 4K PRO</span>
@@ -115,7 +115,7 @@
     <header class="navbar" id="navbar">
       <div class="nav-left">
         <a href="#" class="brand-logo" onclick="switchCategory('home')">
-          <img src="/media/phim4k-avatar.png?v=3.4.40" class="brand-avatar" alt="Biểu tượng 4K Cinema" width="38" height="38">
+          <img src="/media/phim4k-avatar.png?v=3.50" class="brand-avatar" alt="Biểu tượng 4K Cinema" width="38" height="38">
           <span class="logo-gradient">4K Cinema</span>
           <span class="badge-noads">CINEMA 4K</span>
         </a>
@@ -349,7 +349,7 @@
     <!-- ================= TAB 4: TÀI KHOẢN (ACCOUNT) ================= -->
     <div id="accountTabContent" class="tab-content hidden account-tab-view">
       <div class="account-card">
-        <img class="account-avatar" src="/media/phim4k-avatar.png?v=3.4.40" alt="Avatar mặc định 4K Cinema" width="76" height="76">
+        <img class="account-avatar" src="/media/phim4k-avatar.png?v=3.50" alt="Avatar mặc định 4K Cinema" width="76" height="76">
         <div class="account-default-name">4K Cinema</div>
         <h2 id="accPlan">Chưa kích hoạt</h2>
         <div class="account-details-list">
@@ -367,7 +367,7 @@
           </div>
           <div class="acc-detail-item">
             <span>Phiên bản ứng dụng:</span>
-            <span id="accAppVersion">v3.4.40</span>
+            <span id="accAppVersion">v3.50</span>
           </div>
         </div>
 
@@ -564,6 +564,7 @@
             </div>
 
             <button id="btnQuality" class="ctrl-btn-text quality-auto" type="button" disabled title="Tự động chọn chất lượng phù hợp mạng">Tự động</button>
+            <button id="btnAutoSkipAds" class="ctrl-btn-text active" type="button" onclick="toggleAutoSkipAds()" aria-pressed="true" title="Tự động tua qua quảng cáo chèn trong phim">Bỏ QC: Bật</button>
 
             <div class="aspect-mode-control" role="group" aria-label="Chế độ hiển thị hình ảnh">
               <button id="btnAspectContain" class="ctrl-btn-text active" type="button" onclick="setAspectRatio('contain')" aria-pressed="true" title="Giữ nguyên toàn bộ khung hình và phụ đề">Giữ trọn</button>
@@ -641,7 +642,7 @@
           <button class="admin-close-action" type="button" onclick="hideAdminModal()">Đóng</button>
         </div>
         <p class="admin-desc">Quản lý toàn diện: Cấp phát key, Quản lý & Ban người dùng, Tường lửa chống DDoS và Nhật ký hoạt động.</p>
-        <p id="adminBuildVersion" class="admin-build-version">4K Cinema 3.4.40 · BẢN ĐỒNG BỘ ĐA THIẾT BỊ</p>
+        <p id="adminBuildVersion" class="admin-build-version">4K Cinema 3.50 · BẢN ĐỒNG BỘ ĐA THIẾT BỊ</p>
         <div class="admin-quick-actions">
           <button type="button" id="adminReadLogsBtn" class="btn-primary" onclick="Admin.showTab('logs')">📜 Đọc log người dùng</button>
           <button type="button" id="adminGetUpdateBtn" class="btn-secondary" onclick="openDownloadModal()">📥 Tải phiên bản mới</button>
@@ -1312,22 +1313,22 @@
   </div>
 
   <!-- Scripts -->
-  <script src="/js/mobile-config.js?v=3.4.40"></script>
-  <script src="/js/session-vault.js?v=3.4.40"></script>
-  <script src="/js/runtime-config.js?v=3.4.40"></script>
-  <script src="/js/catalog-fallback.js?v=3.4.40"></script>
-  <script src="/js/home-curation.js?v=3.4.40"></script>
-  <script src="/js/api.js?v=3.4.40"></script>
-  <script src="/js/platform.js?v=3.4.40"></script>
-  <script src="/js/native-downloads.js?v=3.4.40"></script>
-  <script src="/js/auth.js?v=3.4.40"></script>
-  <script src="/js/admin.js?v=3.4.40"></script>
-  <script src="/js/player-core.js?v=3.4.40"></script>
-  <script src="/js/audio-enhancer.js?v=3.4.40"></script>
-  <script src="/js/player.js?v=3.4.40"></script>
-  <script src="/js/coverflow.js?v=3.4.40"></script>
-  <script src="/js/app.js?v=3.4.40"></script>
-  <script src="/js/tv.js?v=3.4.40"></script>
-  <script src="/js/diagnostics.js?v=3.4.40"></script>
+  <script src="/js/mobile-config.js?v=3.50"></script>
+  <script src="/js/session-vault.js?v=3.50"></script>
+  <script src="/js/runtime-config.js?v=3.50"></script>
+  <script src="/js/catalog-fallback.js?v=3.50"></script>
+  <script src="/js/home-curation.js?v=3.50"></script>
+  <script src="/js/api.js?v=3.50"></script>
+  <script src="/js/platform.js?v=3.50"></script>
+  <script src="/js/native-downloads.js?v=3.50"></script>
+  <script src="/js/auth.js?v=3.50"></script>
+  <script src="/js/admin.js?v=3.50"></script>
+  <script src="/js/player-core.js?v=3.50"></script>
+  <script src="/js/audio-enhancer.js?v=3.50"></script>
+  <script src="/js/player.js?v=3.50"></script>
+  <script src="/js/coverflow.js?v=3.50"></script>
+  <script src="/js/app.js?v=3.50"></script>
+  <script src="/js/tv.js?v=3.50"></script>
+  <script src="/js/diagnostics.js?v=3.50"></script>
 </body>
 </html>

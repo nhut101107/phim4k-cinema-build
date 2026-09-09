@@ -62,7 +62,7 @@ test('account version and a verified session do not fall back to stale WebView s
   const auth = read('../public/js/auth.js');
   assert.match(api, /window\.API = API/);
   assert.match(auth, /window\.Auth = Auth/);
-  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.4\.40'/);
+  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.50'/);
   assert.match(auth, /SessionVault\.hasSession\(\)/);
   assert.match(auth, /await SessionVault\.save\(result\)/);
   assert.doesNotMatch(account, /localStorage\.getItem\('phim4k_key'\)/);
@@ -98,11 +98,11 @@ test('web, iOS and Windows release versions stay aligned', () => {
   const api = read('../public/js/api.js');
   const iosProject = read('../ios/App/App.xcodeproj/project.pbxproj');
   const desktop = JSON.parse(read('../electron-builder.json'));
-  const webVersion = api.match(/return '(\d+\.\d+\.\d+)'/)?.[1];
-  assert.equal(webVersion, '3.4.40');
+  const webVersion = api.match(/return '(\d+\.\d+(?:\.\d+)?)'/)?.[1];
+  assert.equal(webVersion, '3.50');
   assert.equal(desktop.extraMetadata.version, webVersion);
   assert.deepEqual([...iosProject.matchAll(/MARKETING_VERSION = ([^;]+);/g)].map((match) => match[1]), [webVersion, webVersion]);
-  assert.deepEqual([...iosProject.matchAll(/CURRENT_PROJECT_VERSION = ([^;]+);/g)].map((match) => match[1]), ['40', '40']);
+  assert.deepEqual([...iosProject.matchAll(/CURRENT_PROJECT_VERSION = ([^;]+);/g)].map((match) => match[1]), ['50', '50']);
   assert.equal(JSON.parse(read('../capacitor.config.json')).appName, '4K Cinema');
   assert.equal(desktop.productName, '4K Cinema');
   assert.equal(desktop.win.artifactName, '4K-Cinema-Windows-${version}-x64.exe');
@@ -167,8 +167,8 @@ test('iOS entry point cache-busts every bundled script and stylesheet', () => {
   const html = read('../public/index.html');
   const localAssets = [...html.matchAll(/(?:src|href)="\/(?:js|css|vendor)\/[^"?]+(?:\?[^" ]+)?"/g)].map(match => match[0]);
   assert.ok(localAssets.length >= 20);
-  assert.ok(localAssets.every(asset => asset.includes('?v=3.4.40')), localAssets.join('\n'));
-  assert.match(html, /4K Cinema 3\.4\.40[^<]*BẢN ĐỒNG BỘ ĐA THIẾT BỊ/);
+  assert.ok(localAssets.every(asset => asset.includes('?v=3.50')), localAssets.join('\n'));
+  assert.match(html, /4K Cinema 3\.50[^<]*BẢN ĐỒNG BỘ ĐA THIẾT BỊ/);
 });
 
 test('movie modal is scrollable and sized for a phone viewport', () => {
@@ -213,7 +213,7 @@ test('native catalog falls back immediately instead of leaving the UI loading', 
   vm.runInContext(read('../public/js/home-curation.js'), sandbox);
   sandbox.Phim4KHome = sandbox.window.Phim4KHome;
   vm.runInContext(`${read('../public/js/api.js')}\nglobalThis.__api = API;`, sandbox);
-  assert.equal(sandbox.window.API.getVersion(), '3.4.40');
+  assert.equal(sandbox.window.API.getVersion(), '3.50');
   const home = await sandbox.__api.getHomeFeed();
   const detail = await sandbox.__api.getDetail(home.hero[0].slug);
   assert.ok(home.hero.length > 0);
@@ -366,7 +366,7 @@ test('iOS workflow audits the completed IPA before uploading it', () => {
   const upload = workflow.indexOf('actions/upload-artifact@');
   assert.ok(audit >= 0 && upload > audit);
   assert.match(workflow, /CFBundleDisplayName[^\n]*"4K Cinema"/);
-  assert.match(workflow, /4K-Cinema-iOS-3\.4\.40-unsigned\.ipa/);
+  assert.match(workflow, /4K-Cinema-iOS-3\.50-unsigned\.ipa/);
 });
 
 test('user activity is batched without stream URLs and admin logs support user filters and pagination', () => {

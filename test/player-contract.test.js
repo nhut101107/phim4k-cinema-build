@@ -104,3 +104,11 @@ test('native playback and HLS.js expose automatic quality only', () => {
   assert.match(player, /if \(this\.hls\) this\.hls\.currentLevel = -1/);
   assert.doesNotMatch(index, /onclick="setQuality\((?!-1)/);
 });
+
+test('iPhone auto-skips embedded ad windows once and keeps a user toggle', () => {
+  assert.match(index, /id="btnAutoSkipAds"[^>]*onclick="toggleAutoSkipAds\(\)"/);
+  assert.match(player, /this\.nativePlatform\(\) !== 'ios'/);
+  assert.match(player, /PlayerCore\.autoAdSkipTarget/);
+  assert.match(player, /this\.skippedAdMarkers\.add\(result\.marker\)/);
+  assert.match(player, /phim4k-ios-auto-skip-ads-v1/);
+});

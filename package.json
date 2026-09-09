@@ -1,6 +1,6 @@
 {
   "name": "phim4k-app",
-  "version": "3.4.40",
+  "version": "3.50",
   "description": "4K Cinema Streaming App with License Key Gate and Ad-Free HLS Player",
   "main": "server.js",
   "overrides": {

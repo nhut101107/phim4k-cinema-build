@@ -28,6 +28,8 @@ const Player = {
   playbackStartLogged: false,
   watchedSeconds: 0,
   activePlayStartedAt: 0,
+  autoSkipAdsEnabled: true,
+  skippedAdMarkers: new Set(),
 
   init() {
     if (this.video) return;
@@ -97,6 +99,7 @@ const Player = {
       if (document.visibilityState === 'hidden') this.saveProgressNow({ flush: true });
     });
     document.addEventListener('fullscreenchange', () => this.onBrowserFullscreenChange());
+    this.loadAutoSkipPreference();
   },
 
   open(movie, episode, episodesList = [], epIndex = 0, allServers = [], serverIndex = 0) {
@@ -116,6 +119,8 @@ const Player = {
     this.playbackStartLogged = false;
     this.watchedSeconds = 0;
     this.activePlayStartedAt = 0;
+    this.skippedAdMarkers.clear();
+    this.loadAutoSkipPreference();
     API.trackUsage('episode_open', this.usageContext(movie, episode));
 
     document.getElementById('playerMovieTitle').textContent = movie.name || 'Phim';
@@ -493,8 +498,50 @@ const Player = {
     this.showAlert(seconds > 0 ? `+${seconds}s` : `${seconds}s`);
   },
 
+  loadAutoSkipPreference() {
+    try {
+      this.autoSkipAdsEnabled = localStorage.getItem('phim4k-ios-auto-skip-ads-v1') !== 'off';
+    } catch (_) {
+      this.autoSkipAdsEnabled = true;
+    }
+    this.updateAutoSkipButton();
+  },
+
+  toggleAutoSkipAds() {
+    this.autoSkipAdsEnabled = !this.autoSkipAdsEnabled;
+    try {
+      localStorage.setItem('phim4k-ios-auto-skip-ads-v1', this.autoSkipAdsEnabled ? 'on' : 'off');
+    } catch (_) {}
+    this.updateAutoSkipButton();
+    this.showAlert(this.autoSkipAdsEnabled ? 'Đã bật tự bỏ quảng cáo' : 'Đã tắt tự bỏ quảng cáo');
+  },
+
+  updateAutoSkipButton() {
+    const button = document.getElementById('btnAutoSkipAds');
+    if (!button) return;
+    const enabled = this.autoSkipAdsEnabled;
+    button.textContent = enabled ? 'Bỏ QC: Bật' : 'Bỏ QC: Tắt';
+    button.classList.toggle('active', enabled);
+    button.setAttribute('aria-pressed', String(enabled));
+  },
+
+  maybeAutoSkipAd() {
+    if (!this.autoSkipAdsEnabled || this.nativePlatform() !== 'ios') return false;
+    const result = PlayerCore.autoAdSkipTarget(
+      this.video?.currentTime,
+      this.video?.duration,
+      this.skippedAdMarkers
+    );
+    if (!result) return false;
+    this.skippedAdMarkers.add(result.marker);
+    this.video.currentTime = result.target;
+    this.showAlert(`Đã tự tua qua quảng cáo +${Math.round(result.target - result.marker)}s`);
+    return true;
+  },
+
   onTimeUpdate() {
     if (!this.video || !Number.isFinite(this.video.duration) || this.video.duration <= 0) return;
+    this.maybeAutoSkipAd();
     const percent = Math.max(0, Math.min(100, (this.video.currentTime / this.video.duration) * 100));
     const current = document.getElementById('progressCurrent');
     const thumb = document.getElementById('progressThumb');
@@ -867,6 +914,7 @@ const Player = {
 
 function togglePlayPause() { Player.togglePlayPause(); }
 function seekRelative(seconds) { Player.seekRelative(seconds); }
+function toggleAutoSkipAds() { Player.toggleAutoSkipAds(); }
 function toggleMute() { Player.toggleMute(); }
 function toggleCinemaFullscreen() { void Player.toggleCinemaFullscreen(); }
 function toggleAspectRatio() { Player.toggleAspectRatio(); }

@@ -1447,9 +1447,9 @@ app.get('/download/ipa', (req, res) => {
     return res.redirect(url);
   }
 
-  const ipaPath = path.join(__dirname, '..', 'Phim4K_v3.1.0_VIP_Cinema.ipa');
+  const ipaPath = path.join(__dirname, 'release-3.50', '4K-Cinema-iOS-3.50-unsigned.ipa');
   if (fs.existsSync(ipaPath)) {
-    res.download(ipaPath, 'Phim4K_v3.1.0_VIP_Cinema.ipa');
+    res.download(ipaPath, '4K-Cinema-iOS-3.50-unsigned.ipa');
   } else {
     res.status(404).send('Bản cài đặt iOS (IPA) chưa sẵn sàng.');
   }

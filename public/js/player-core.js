@@ -78,5 +78,29 @@
     const direction = zone(next.x);
     return direction && direction === zone(first.x) && Math.abs(next.x - first.x) < 0.2 ? direction * 10 : 0;
   }
-  return { findEquivalentEpisode, uniqueQualityOptions, clampResumeTime, qualityOption, doubleTapSeek };
+
+  function autoAdSkipTarget(currentTime, duration, skippedMarkers = [], intervalSeconds = 900, adSeconds = 35) {
+    const current = Number(currentTime);
+    const total = Number(duration);
+    const interval = Number(intervalSeconds);
+    const length = Number(adSeconds);
+    if (![current, total, interval, length].every(Number.isFinite)
+      || current < 0 || total <= 1 || interval <= 0 || length <= 0) return null;
+
+    const marker = Math.floor(current / interval) * interval;
+    if (marker < interval || marker >= total - 1 || current >= marker + length) return null;
+    if (new Set(skippedMarkers).has(marker)) return null;
+
+    const target = clampResumeTime(marker + length, total);
+    return target > current ? { marker, target } : null;
+  }
+
+  return {
+    findEquivalentEpisode,
+    uniqueQualityOptions,
+    clampResumeTime,
+    qualityOption,
+    doubleTapSeek,
+    autoAdSkipTarget
+  };
 });

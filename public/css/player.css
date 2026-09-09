@@ -387,6 +387,7 @@ video::cue {
   white-space: nowrap;
 }
 .ctrl-btn-text:hover, .btn-player-server:hover { background: rgba(255, 255, 255, .23); }
+.ctrl-btn-text.active { color: #111827; background: #facc15; }
 .ctrl-btn-text.quality-auto:disabled {
   color: #ddd6fe;
   border-color: rgba(196, 181, 253, .5);

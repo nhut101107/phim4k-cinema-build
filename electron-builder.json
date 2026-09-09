@@ -1,8 +1,8 @@
 {
   "appId": "com.phim4k.cinema.desktop",
   "productName": "4K Cinema",
-  "extraMetadata": { "main": "desktop/main.cjs", "version": "3.4.40", "dependencies": {} },
-  "directories": { "output": "builds/windows-3.4.40" },
+  "extraMetadata": { "main": "desktop/main.cjs", "version": "3.50", "dependencies": {} },
+  "directories": { "output": "builds/windows-3.50" },
   "compression": "normal",
   "files": ["desktop/**", "public/**", "!public/standalone.html", "package.json"],
   "asar": true,
