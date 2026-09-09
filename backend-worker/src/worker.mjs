@@ -54,6 +54,26 @@ const RATE_LIMITS = Object.freeze({
   default: { limit: 240, windowSeconds: 60 },
 });
 
+const INSTALLER_RELEASES = Object.freeze({
+  "/download/android": {
+    filename: "4K-Cinema-Android-3.50.apk",
+    contentType: "application/vnd.android.package-archive",
+  },
+  "/download/android-tv": {
+    filename: "4K-Cinema-Android-TV-3.50.apk",
+    contentType: "application/vnd.android.package-archive",
+  },
+  "/download/ios": {
+    filename: "4K-Cinema-iOS-3.50-unsigned.ipa",
+    contentType: "application/octet-stream",
+  },
+  "/download/windows": {
+    filename: "4K-Cinema-Windows-3.50-x64.exe",
+    contentType: "application/vnd.microsoft.portable-executable",
+  },
+});
+const INSTALLER_RELEASE_ORIGIN = "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.50";
+
 // Provider configuration belongs in encrypted Worker Secrets. The client only
 // receives this Worker's origin plus short-lived, opaque AES-GCM capabilities.
 const MEDIA_TICKET_AAD = new TextEncoder().encode("phim4k-media-ticket-v1");
@@ -238,6 +258,35 @@ function normalizeKey(value) {
 
 function normalizeId(value) {
   return String(value || "").trim().slice(0, 128);
+}
+
+async function handleInstallerDownload(request, pathname) {
+  const release = INSTALLER_RELEASES[pathname];
+  if (!release || !["GET", "HEAD"].includes(request.method)) {
+    return textError("Không tìm thấy bản cài đặt.", 404, "INSTALLER_NOT_FOUND");
+  }
+  const upstreamHeaders = new Headers({ "user-agent": "4K-Cinema-Release/3.50" });
+  const range = request.headers.get("range");
+  if (range && /^bytes=\d*-\d*$/.test(range)) upstreamHeaders.set("range", range);
+  const upstream = await fetch(`${INSTALLER_RELEASE_ORIGIN}/${release.filename}`, {
+    method: request.method,
+    headers: upstreamHeaders,
+    redirect: "follow",
+  });
+  if (!upstream.ok && upstream.status !== 206) {
+    try { await upstream.body?.cancel(); } catch (_error) {}
+    return textError("Bản cài đặt tạm thời chưa tải được.", 502, "INSTALLER_UPSTREAM_ERROR");
+  }
+  const headers = new Headers(CORS_HEADERS);
+  headers.set("content-type", release.contentType);
+  headers.set("content-disposition", `attachment; filename="${release.filename}"`);
+  headers.set("cache-control", "public, max-age=3600, immutable");
+  headers.set("x-content-type-options", "nosniff");
+  for (const name of ["accept-ranges", "content-length", "content-range", "etag", "last-modified"]) {
+    const value = upstream.headers.get(name);
+    if (value) headers.set(name, value);
+  }
+  return new Response(request.method === "HEAD" ? null : upstream.body, { status: upstream.status, headers });
 }
 
 function normalizeDeviceId(value) {
@@ -2324,6 +2373,9 @@ export default {
       }
       if (request.method === "GET" && pathname === "/api/health") {
         return json({ ready: Boolean(env.DB), service: "phim4k-license-api" });
+      }
+      if ((request.method === "GET" || request.method === "HEAD") && INSTALLER_RELEASES[pathname]) {
+        return await handleInstallerDownload(request, pathname);
       }
       if (request.method === "GET" && pathname === "/api/media/image") return await handleProtectedMovieImage(request, env, executionContext);
       if (request.method === "GET" && pathname === "/api/media/stream") return await handleMovieStream(request, env);

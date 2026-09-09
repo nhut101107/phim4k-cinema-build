@@ -18,6 +18,29 @@ test('release URLs reject non-HTTPS and embedded credentials', () => {
   for (const bad of ['https://', 'http://example.com', 'javascript:alert(1)', 'https://u:p@example.com', 'https://localhost/app.apk', 'https://127.0.0.1/app.apk', 'https://files.internal/app.apk']) assert.equal(validDownloadUrl(bad), false);
   assert.equal(validDownloadUrl('https://github.com/org/repo/releases/download/v1/a.apk'), true);
 });
+test('public installer routes stream the fixed 3.50 files without exposing a redirect', async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (input, options = {}) => {
+    requests.push({ url: String(input), options });
+    return new Response(new Uint8Array([1, 2, 3]), {
+      status: 206,
+      headers: { 'content-length': '3', 'content-range': 'bytes 0-2/4422377', 'accept-ranges': 'bytes' },
+    });
+  };
+  try {
+    const response = await worker.fetch(new Request('https://api.example/download/ios', {
+      headers: { range: 'bytes=0-2' },
+    }), {});
+    assert.equal(response.status, 206);
+    assert.equal(response.headers.get('content-disposition'), 'attachment; filename="4K-Cinema-iOS-3.50-unsigned.ipa"');
+    assert.equal(response.headers.get('content-range'), 'bytes 0-2/4422377');
+    assert.equal(requests[0].options.headers.get('range'), 'bytes=0-2');
+    assert.match(requests[0].url, /4K-Cinema-iOS-3\.50-unsigned\.ipa$/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 test('downloads admin route is authorized, atomic and compatible with clients', async () => {
   const f = fixture();
   const env = { DB: f.db, ADMIN_LICENSE_KEY: 'MASTER-RELEASE-KEY', ADMIN_TELEGRAM_ID: '1000000001', ALLOW_LEGACY_TEST_AUTH: '1' };
