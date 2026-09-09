@@ -121,8 +121,8 @@ test('Android phone and TV are separate optimized release flavors', () => {
   const styles = read('../public/css/style.css');
   const player = read('../public/js/player.js');
 
-  assert.match(gradle, /versionCode 40/);
-  assert.match(gradle, /versionName "3\.4\.40"/);
+  assert.match(gradle, /versionCode 50/);
+  assert.match(gradle, /versionName "3\.50"/);
   assert.match(gradle, /phone\s*\{[\s\S]*?applicationId "com\.phim4k\.cinema"[\s\S]*?PHIM4K_PLATFORM[^\n]*android/);
   assert.match(gradle, /tv\s*\{[\s\S]*?applicationId "com\.phim4k\.cinema\.tv"[\s\S]*?PHIM4K_PLATFORM[^\n]*android_tv/);
   assert.match(gradle, /debug\.assets\.srcDir\(layout\.buildDirectory\.dir\('generated\/qaAssets'\)\)/);
@@ -151,14 +151,14 @@ test('Android CI builds, signs and device-tests the correct flavor', () => {
   assert.match(phoneWorkflow, /assemblePhoneRelease/);
   assert.match(phoneWorkflow, /connectedPhoneDebugAndroidTest/);
   assert.match(phoneWorkflow, /package: name='com\.phim4k\.cinema'/);
-  assert.match(phoneWorkflow, /4K-Cinema-Android-3\.4\.40\.apk/);
+  assert.match(phoneWorkflow, /4K-Cinema-Android-3\.50\.apk/);
   assert.match(phoneWorkflow, /application-label:'4K Cinema'/);
   assert.match(phoneWorkflow, /apksigner" verify/);
   assert.match(phoneWorkflow, /ABAFDA2EAD9478B2540328C98774B4B0A9432014F7B31CBF40FB3EF1F6FECBC8/);
   assert.match(tvWorkflow, /assembleTvRelease/);
   assert.match(tvWorkflow, /connectedTvDebugAndroidTest/);
   assert.match(tvWorkflow, /package: name='com\.phim4k\.cinema\.tv'/);
-  assert.match(tvWorkflow, /4K-Cinema-Android-TV-3\.4\.40\.apk/);
+  assert.match(tvWorkflow, /4K-Cinema-Android-TV-3\.50\.apk/);
   assert.match(tvWorkflow, /application-label:'4K Cinema'/);
   assert.match(tvWorkflow, /ABAFDA2EAD9478B2540328C98774B4B0A9432014F7B31CBF40FB3EF1F6FECBC8/);
 });

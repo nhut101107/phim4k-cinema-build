@@ -41,12 +41,12 @@ jobs:
           printf '%s' "$ANDROID_KEYSTORE" | base64 --decode > "$RUNNER_TEMP/android.jks"
           chmod 600 "$RUNNER_TEMP/android.jks"
           "$ANDROID_HOME/build-tools/36.0.0/zipalign" -p -f 4 android/app/build/outputs/apk/phone/release/app-phone-release-unsigned.apk "$RUNNER_TEMP/phone-aligned.apk"
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign --ks "$RUNNER_TEMP/android.jks" --ks-key-alias phim4k-tv --ks-pass env:ANDROID_STORE_PASSWORD --out 4K-Cinema-Android-3.4.40.apk "$RUNNER_TEMP/phone-aligned.apk"
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs 4K-Cinema-Android-3.4.40.apk | tee "$RUNNER_TEMP/phone-cert.txt"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign --ks "$RUNNER_TEMP/android.jks" --ks-key-alias phim4k-tv --ks-pass env:ANDROID_STORE_PASSWORD --out 4K-Cinema-Android-3.50.apk "$RUNNER_TEMP/phone-aligned.apk"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs 4K-Cinema-Android-3.50.apk | tee "$RUNNER_TEMP/phone-cert.txt"
           grep -qi 'ABAFDA2EAD9478B2540328C98774B4B0A9432014F7B31CBF40FB3EF1F6FECBC8' "$RUNNER_TEMP/phone-cert.txt"
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging 4K-Cinema-Android-3.4.40.apk | grep "package: name='com.phim4k.cinema'.*versionCode='40'.*versionName='3.4.40'"
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging 4K-Cinema-Android-3.4.40.apk | grep "application-label:'4K Cinema'"
-          python3 scripts/package_ios_web_update.py --audit-only 4K-Cinema-Android-3.4.40.apk
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging 4K-Cinema-Android-3.50.apk | grep "package: name='com.phim4k.cinema'.*versionCode='50'.*versionName='3.50'"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging 4K-Cinema-Android-3.50.apk | grep "application-label:'4K Cinema'"
+          python3 scripts/package_ios_web_update.py --audit-only 4K-Cinema-Android-3.50.apk
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -68,6 +68,6 @@ jobs:
           path: android/app/build/reports/androidTests/
       - uses: actions/upload-artifact@v4
         with:
-          name: 4K-Cinema-Android-3.4.40
-          path: 4K-Cinema-Android-3.4.40.apk
+          name: 4K-Cinema-Android-3.50
+          path: 4K-Cinema-Android-3.50.apk
           if-no-files-found: error
