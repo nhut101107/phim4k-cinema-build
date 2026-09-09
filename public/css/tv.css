@@ -9,7 +9,17 @@
 .tv-mode .modal-dialog { width: min(1100px, 90vw); max-height: 86vh; }
 .tv-mode .movie-card { scroll-margin: 90px; }
 .tv-mode .coverflow-card, .tv-mode .movie-card, .tv-mode .modal-dialog { backdrop-filter: none !important; }
-.tv-mode .bottom-nav { padding-bottom: 10px; }
+.tv-mode .bottom-tab-bar { padding-bottom: 10px; }
+.tv-mode *, .tv-mode *::before, .tv-mode *::after {
+  scroll-behavior: auto !important;
+  animation-duration: .01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: .01ms !important;
+}
+.tv-mode .movie-card,
+.tv-mode .coverflow-card,
+.tv-mode .player-controls,
+.tv-mode .player-top-bar { box-shadow: none !important; filter: none !important; }
 .tv-mode #playerModal { padding: 0; }
 .tv-mode .cinema-player-wrapper.inactive .player-controls { opacity: 1; pointer-events: auto; }
 .tv-mode .download-cards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

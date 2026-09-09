@@ -249,9 +249,17 @@ const Player = {
 
     const HlsEngine = window.Hls;
     if (isHls && HlsEngine?.isSupported?.()) {
+      const isTv = this.nativePlatform() === 'android_tv';
       const hls = new HlsEngine({
-        maxBufferLength: 30,
-        maxMaxBufferLength: 60,
+        maxBufferLength: isTv ? 45 : 30,
+        maxMaxBufferLength: isTv ? 90 : 60,
+        backBufferLength: isTv ? 15 : 30,
+        capLevelToPlayerSize: isTv,
+        startFragPrefetch: isTv,
+        abrEwmaDefaultEstimate: isTv ? 1500000 : 500000,
+        maxStarvationDelay: isTv ? 2 : 4,
+        maxLoadingDelay: isTv ? 2 : 4,
+        lowLatencyMode: false,
         enableWorker: true,
         xhrSetup: (xhr) => { xhr.withCredentials = false; }
       });

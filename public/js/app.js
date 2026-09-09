@@ -624,11 +624,13 @@ const App = {
 
   startHomeFeedRefresh() {
     clearInterval(this.feedRefreshTimer);
+    const isTv = Phim4KPlatform.detect(navigator.userAgent, window.PHIM4K_PLATFORM) === 'android_tv';
     this.feedRefreshTimer = setInterval(() => {
-      if (!document.hidden && this.currentCategory === 'home') {
+      const playerOpen = !document.getElementById('playerModal')?.classList.contains('hidden');
+      if (!document.hidden && !playerOpen && this.currentCategory === 'home') {
         this.loadHomeFeed({ silent: true });
       }
-    }, 30000);
+    }, isTv ? 180000 : 30000);
   },
 
   startAnnouncementRefresh() {

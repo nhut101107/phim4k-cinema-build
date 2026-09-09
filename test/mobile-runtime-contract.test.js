@@ -140,8 +140,13 @@ test('Android phone and TV are separate optimized release flavors', () => {
   assert.match(activity, /com\.phim4k\.cinema\.tv/);
   assert.match(platform, /platform-\$\{current\.replace\('_', '-'\)\}/);
   assert.match(navigation, /window\.Phim4KNavigation/);
+  assert.match(navigation, /#bottomTabBar, \.bottom-tab-bar/);
+  assert.match(navigation, /pool = pool\.filter\(el => !inBottomTabs\(el\)\)/);
+  assert.match(navigation, /restoreMovieFocus/);
   assert.match(styles, /\.platform-android \.cinema-rail/);
   assert.match(player, /this\.nativePlatform\(\) === 'ios'/);
+  assert.match(player, /capLevelToPlayerSize: isTv/);
+  assert.match(read('../public/js/app.js'), /!playerOpen && this\.currentCategory === 'home'/);
   assert.match(read('../public/js/auth.js'), /key === 'android' \|\| key === 'android_tv'/);
 });
 
