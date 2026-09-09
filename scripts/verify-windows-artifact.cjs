@@ -2,8 +2,8 @@ const path = require('node:path');
 const asar = require('@electron/asar');
 
 const root = path.resolve(__dirname, '..');
-const { version } = require(path.join(root, 'package.json'));
-const archive = path.join(root, 'builds', `windows-${version}`, 'win-unpacked', 'resources', 'app.asar');
+const desktopConfig = require(path.join(root, 'electron-builder.json'));
+const archive = path.join(root, desktopConfig.directories.output, 'win-unpacked', 'resources', 'app.asar');
 const entries = asar.listPackage(archive);
 const required = [
   'desktop/main.cjs',

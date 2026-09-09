@@ -100,12 +100,12 @@ test('web, iOS and Windows release versions stay aligned', () => {
   const desktop = JSON.parse(read('../electron-builder.json'));
   const webVersion = api.match(/return '(\d+\.\d+(?:\.\d+)?)'/)?.[1];
   assert.equal(webVersion, '3.50');
-  assert.equal(desktop.extraMetadata.version, webVersion);
+  assert.equal(desktop.extraMetadata.version, `${webVersion}.0`);
   assert.deepEqual([...iosProject.matchAll(/MARKETING_VERSION = ([^;]+);/g)].map((match) => match[1]), [webVersion, webVersion]);
   assert.deepEqual([...iosProject.matchAll(/CURRENT_PROJECT_VERSION = ([^;]+);/g)].map((match) => match[1]), ['50', '50']);
   assert.equal(JSON.parse(read('../capacitor.config.json')).appName, '4K Cinema');
   assert.equal(desktop.productName, '4K Cinema');
-  assert.equal(desktop.win.artifactName, '4K-Cinema-Windows-${version}-x64.exe');
+  assert.equal(desktop.win.artifactName, '4K-Cinema-Windows-3.50-x64.exe');
   assert.match(read('../desktop/main.cjs'), /setPath\('userData',[\s\S]*?'Phim4K Cinema'/);
   assert.match(read('../ios/App/App/Info.plist'), /<key>CFBundleDisplayName<\/key>\s*<string>4K Cinema<\/string>/);
   assert.match(read('../android/app/src/main/res/values/strings.xml'), /<string name="app_name">4K Cinema<\/string>/);
