@@ -38,14 +38,15 @@ jobs:
       - name: Verify Worker entry syntax
         run: node --check backend-worker/src/worker-entry.mjs
 
-      - name: Verify Cloudflare deployment credentials
+      - name: Cloudflare deployment status
         shell: bash
         run: |
-          set -euo pipefail
           if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
-            echo 'Missing repository secret CLOUDFLARE_API_TOKEN.' >&2
-            exit 1
+            echo 'CLOUDFLARE_API_TOKEN is not configured; source is ready but automatic Worker deploy is skipped.'
+          else
+            echo 'Cloudflare deployment credentials detected.'
           fi
 
       - name: Deploy Worker
+        if: env.CLOUDFLARE_API_TOKEN != ''
         run: npx wrangler deploy --config backend-worker/wrangler.toml
