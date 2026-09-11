@@ -215,7 +215,7 @@
   };
 
   // If player.js initialized before this late-loaded hotfix, attach recovery now.
-  this?.Player?.bindReliabilityEvents?.();
+  window.Player?.bindReliabilityEvents?.();
 })();
 
 // Keep all built-in installer links aligned with the Worker's real download routes.
