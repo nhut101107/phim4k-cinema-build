@@ -248,3 +248,136 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', apply, { once: true });
   else apply();
 })();
+
+// Download metadata is release-authoritative. Native builds query GitHub's
+// latest published release directly, cache it briefly, and merge it over the
+// backend list. This prevents an old D1 row from sending users to stale builds.
+(() => {
+  if (!window.API?.fetchJson) return;
+
+  const RELEASE_API = 'https://api.github.com/repos/nhut101107/phim4k-cinema-build/releases/latest';
+  const CACHE_KEY = 'phim4k_release_manifest_v2';
+  const CACHE_TTL = 10 * 60 * 1000;
+  const platformMatchers = {
+    android_tv: (name) => /^4K-Cinema-Android-TV-[0-9.]+\.apk$/i.test(name),
+    android: (name) => /^4K-Cinema-Android-[0-9.]+\.apk$/i.test(name),
+    ios: (name) => /^4K-Cinema-iOS-[0-9.]+(?:-unsigned)?\.ipa$/i.test(name),
+    windows: (name) => /^4K-Cinema-Windows-[0-9.]+-x64\.exe$/i.test(name),
+  };
+
+  const digest = (value) => {
+    const match = String(value || '').trim().toLowerCase().match(/^sha256:([a-f0-9]{64})$/);
+    return match ? match[1] : '';
+  };
+
+  const versionOf = (release, assetName) => {
+    for (const value of [assetName, release?.tag_name, release?.name]) {
+      const match = String(value || '').match(/(?:^|[^0-9])v?(\d+\.\d+(?:\.\d+)?)(?:[^0-9]|$)/i);
+      if (match) return match[1];
+    }
+    return '';
+  };
+
+  const normalize = (downloads) => ({
+    ...downloads,
+    androidUrl: downloads.android?.url || '',
+    androidVersion: downloads.android?.version || '',
+    iosUrl: downloads.ios?.url || '',
+    iosVersion: downloads.ios?.version || '',
+    windowsUrl: downloads.windows?.url || '',
+    windowsVersion: downloads.windows?.version || '',
+    android_tvUrl: downloads.android_tv?.url || '',
+    android_tvVersion: downloads.android_tv?.version || '',
+  });
+
+  const fromRelease = (release) => {
+    const assets = Array.isArray(release?.assets) ? release.assets : [];
+    const output = {};
+    for (const [platform, matches] of Object.entries(platformMatchers)) {
+      const asset = assets.find((candidate) => matches(String(candidate?.name || '')));
+      if (!asset) continue;
+      const sha256 = digest(asset.digest);
+      const sizeBytes = Number(asset.size || 0);
+      const url = String(asset.browser_download_url || '').trim();
+      const version = versionOf(release, asset.name);
+      if (!/^https:\/\/github\.com\//i.test(url) || !sha256 || !Number.isSafeInteger(sizeBytes) || sizeBytes <= 0 || !version) continue;
+      output[platform] = {
+        url,
+        version,
+        sha256,
+        sizeBytes,
+        signer: String(asset?.uploader?.login || 'github-actions').slice(0, 200),
+      };
+    }
+    return normalize(output);
+  };
+
+  const cachedRelease = () => {
+    try {
+      const value = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
+      if (!value?.savedAt || Date.now() - value.savedAt > CACHE_TTL) return null;
+      return value.downloads || null;
+    } catch (_error) {
+      return null;
+    }
+  };
+
+  const fetchRelease = () => new Promise((resolve, reject) => {
+    const cached = cachedRelease();
+    if (cached) {
+      resolve(cached);
+      return;
+    }
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', RELEASE_API, true);
+    xhr.responseType = 'json';
+    xhr.timeout = 12000;
+    xhr.setRequestHeader('Accept', 'application/vnd.github+json');
+    xhr.setRequestHeader('X-GitHub-Api-Version', '2022-11-28');
+    xhr.onload = () => {
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new Error(`GITHUB_RELEASE_HTTP_${xhr.status}`));
+        return;
+      }
+      const downloads = fromRelease(xhr.response || {});
+      const validCount = ['android', 'android_tv', 'ios', 'windows'].filter((key) => downloads[key]?.url).length;
+      if (!validCount) {
+        reject(new Error('GITHUB_RELEASE_HAS_NO_VALID_ASSETS'));
+        return;
+      }
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: Date.now(), downloads })); } catch (_error) {}
+      resolve(downloads);
+    };
+    xhr.onerror = () => reject(new Error('GITHUB_RELEASE_NETWORK_ERROR'));
+    xhr.ontimeout = () => reject(new Error('GITHUB_RELEASE_TIMEOUT'));
+    xhr.send();
+  });
+
+  const originalFetchJson = API.fetchJson.bind(API);
+  API.fetchJson = async function releaseAwareFetchJson(input, options = {}, timeoutMs = 15000) {
+    const endpoint = typeof input === 'string' ? input.split('?')[0] : '';
+    if (endpoint !== '/api/app/downloads') return originalFetchJson(input, options, timeoutMs);
+
+    let backend = {};
+    let backendError = null;
+    try {
+      backend = await originalFetchJson(input, options, timeoutMs);
+    } catch (error) {
+      backendError = error;
+    }
+
+    let live = {};
+    try { live = await fetchRelease(); } catch (_error) {}
+
+    const merged = {};
+    for (const platform of ['android', 'android_tv', 'ios', 'windows']) {
+      merged[platform] = live?.[platform]?.url ? live[platform] : backend?.[platform];
+    }
+    const result = normalize(merged);
+    const validCount = ['android', 'android_tv', 'ios', 'windows'].filter((key) => result[key]?.url && result[key]?.sha256).length;
+    if (validCount) return result;
+    if (backendError) throw backendError;
+    return backend;
+  };
+})();
