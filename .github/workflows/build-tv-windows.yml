@@ -1,7 +1,12 @@
 name: Build TV and Windows
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/rebuild-release.flag
 permissions:
-  contents: read
+  contents: write
 jobs:
   windows:
     runs-on: windows-latest
@@ -28,6 +33,11 @@ jobs:
           name: 4K-Cinema-Windows-3.50
           path: builds/windows-3.50/4K-Cinema-Windows-3.50-x64.exe
           if-no-files-found: error
+      - name: Refresh public Windows release asset
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload ios-v3.50 "builds/windows-3.50/4K-Cinema-Windows-3.50-x64.exe" --clobber
   android-tv:
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -94,3 +104,7 @@ jobs:
           name: 4K-Cinema-Android-TV-3.50
           path: 4K-Cinema-Android-TV-3.50.apk
           if-no-files-found: error
+      - name: Refresh public Android TV release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload ios-v3.50 4K-Cinema-Android-TV-3.50.apk --clobber
