@@ -213,4 +213,38 @@
     if (!currentSource || !this.isActiveStreamSource(currentSource)) return;
     void this.refreshPlaybackTicketAndResume('native-error');
   };
+
+  // If player.js initialized before this late-loaded hotfix, attach recovery now.
+  this?.Player?.bindReliabilityEvents?.();
+})();
+
+// Keep all built-in installer links aligned with the Worker's real download routes.
+(() => {
+  const routes = {
+    forceBtnApk: '/download/android',
+    forceBtnIpa: '/download/ios',
+    forceBtnExe: '/download/windows',
+    forceBtnTv: '/download/android-tv',
+  };
+  const apply = () => {
+    for (const [id, href] of Object.entries(routes)) {
+      const element = document.getElementById(id);
+      if (!element) continue;
+      element.href = href;
+      element.removeAttribute('aria-disabled');
+      if (id === 'forceBtnTv' && element.textContent.includes('Chưa phát hành')) element.textContent = 'Tải Bản Mới (.APK)';
+    }
+    const placeholders = {
+      adminDownloadApkInput: '/download/android',
+      adminDownloadIpaInput: '/download/ios',
+      adminDownloadExeInput: '/download/windows',
+      adminDownloadTvInput: '/download/android-tv',
+    };
+    for (const [id, value] of Object.entries(placeholders)) {
+      const input = document.getElementById(id);
+      if (input) input.placeholder = value;
+    }
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', apply, { once: true });
+  else apply();
 })();
