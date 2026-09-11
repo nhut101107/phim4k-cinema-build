@@ -5,18 +5,19 @@ on:
     inputs:
       api_base_url:
         description: Public HTTPS origin of the 4K Cinema API (for example https://api.example.com)
-        required: true
+        required: false
         type: string
+  push:
+    branches: [main]
+    paths:
+      - scripts/rebuild-release.flag
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-ios:
     name: Build unsigned iPhone IPA
-    # macos-13 was retired from GitHub-hosted runners. Use the supported
-    # Intel image so the iPhone SDK build remains compatible with this
-    # Capacitor project.
     runs-on: macos-15-intel
     timeout-minutes: 30
 
@@ -44,7 +45,7 @@ jobs:
 
       - name: Set public API origin for this build
         env:
-          PHIM4K_API_BASE_URL: ${{ inputs.api_base_url }}
+          PHIM4K_API_BASE_URL: ${{ inputs.api_base_url || 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev' }}
         run: node scripts/set-mobile-api-url.js
 
       - name: Sync Capacitor iOS project
@@ -95,3 +96,8 @@ jobs:
           path: 4K-Cinema-iOS-3.50-unsigned.ipa
           if-no-files-found: error
           retention-days: 7
+
+      - name: Refresh public iOS release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload ios-v3.50 4K-Cinema-iOS-3.50-unsigned.ipa --clobber
