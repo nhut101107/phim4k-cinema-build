@@ -1,7 +1,12 @@
 name: Build Android Phone
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/rebuild-release.flag
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   android-phone:
@@ -71,3 +76,7 @@ jobs:
           name: 4K-Cinema-Android-3.50
           path: 4K-Cinema-Android-3.50.apk
           if-no-files-found: error
+      - name: Refresh public Android release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload ios-v3.50 4K-Cinema-Android-3.50.apk --clobber
