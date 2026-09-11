@@ -1,0 +1,51 @@
+name: Deploy Cloudflare Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend-worker/**'
+      - '.github/workflows/deploy-worker.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-phim4k-worker
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Verify Worker entry syntax
+        run: node --check backend-worker/src/worker-entry.mjs
+
+      - name: Verify Cloudflare deployment credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo 'Missing repository secret CLOUDFLARE_API_TOKEN.' >&2
+            exit 1
+          fi
+
+      - name: Deploy Worker
+        run: npx wrangler deploy --config backend-worker/wrangler.toml
