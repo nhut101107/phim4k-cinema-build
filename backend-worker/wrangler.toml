@@ -1,5 +1,5 @@
 name = "phim4k-license-api"
-main = "src/worker-entry.mjs"
+main = "src/worker.mjs"
 compatibility_date = "2026-09-04"
 
 # Create the D1 database after logging in, then replace this placeholder with
