@@ -3,6 +3,12 @@ import coreWorker from './worker.mjs';
 const RELEASE_API = 'https://api.github.com/repos/nhut101107/phim4k-cinema-build/releases/latest';
 const RELEASE_CACHE_KEY = 'https://phim4k-release-metadata.invalid/latest-v1';
 const RELEASE_CACHE_SECONDS = 300;
+const RELAY_HEALTH_TTL_MS = 30_000;
+const RELAY_HEALTH_TIMEOUT_MS = 2_500;
+const MEDIA_PATHS = new Set(['/api/media/image', '/api/media/stream', '/api/movies/play']);
+const RETRYABLE_RELAY_STATUSES = new Set([502, 503, 504]);
+
+let relayHealth = { origin: '', checkedAt: 0, healthy: true };
 
 const RELEASE_MATCHERS = Object.freeze({
   android_tv: (name) => /^4K-Cinema-Android-TV-[0-9.]+\.apk$/i.test(name),
@@ -121,6 +127,81 @@ async function fetchLiveDownloads(executionContext) {
   return downloads;
 }
 
+function configuredRelayOrigin(env) {
+  const raw = String(env?.VPS_RELAY_ORIGIN || '').trim();
+  if (!raw) return '';
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== 'https:' || url.username || url.password || url.port || url.search || url.hash) return '';
+    return url.origin;
+  } catch (_error) {
+    return '';
+  }
+}
+
+function directWorkerEnv(env) {
+  return new Proxy(env, {
+    get(target, property, receiver) {
+      if (property === 'VPS_RELAY_ORIGIN') return '';
+      return Reflect.get(target, property, receiver);
+    },
+  });
+}
+
+async function isRelayHealthy(env) {
+  const origin = configuredRelayOrigin(env);
+  if (!origin) return false;
+  const timestamp = Date.now();
+  if (relayHealth.origin === origin && timestamp - relayHealth.checkedAt < RELAY_HEALTH_TTL_MS) {
+    return relayHealth.healthy;
+  }
+
+  let healthy = false;
+  try {
+    const response = await fetch(`${origin}/healthz`, {
+      method: 'GET',
+      redirect: 'manual',
+      signal: AbortSignal.timeout(RELAY_HEALTH_TIMEOUT_MS),
+      headers: { accept: 'text/plain' },
+    });
+    healthy = response.ok;
+    try { await response.body?.cancel(); } catch (_error) {}
+  } catch (_error) {
+    healthy = false;
+  }
+
+  relayHealth = { origin, checkedAt: timestamp, healthy };
+  return healthy;
+}
+
+function markRelayUnhealthy(env) {
+  const origin = configuredRelayOrigin(env);
+  if (!origin) return;
+  relayHealth = { origin, checkedAt: Date.now(), healthy: false };
+}
+
+async function resilientCoreFetch(request, env, executionContext) {
+  const pathname = new URL(request.url).pathname;
+  const origin = configuredRelayOrigin(env);
+  if (!origin || !MEDIA_PATHS.has(pathname)) {
+    return coreWorker.fetch(request, env, executionContext);
+  }
+
+  const directEnv = directWorkerEnv(env);
+  if (!await isRelayHealthy(env)) {
+    return coreWorker.fetch(request, directEnv, executionContext);
+  }
+
+  const retryRequest = request.method === 'GET' || request.method === 'HEAD' ? request.clone() : null;
+  const response = await coreWorker.fetch(request, env, executionContext);
+  if (!RETRYABLE_RELAY_STATUSES.has(response.status)) return response;
+
+  markRelayUnhealthy(env);
+  if (!retryRequest) return response;
+  try { await response.body?.cancel(); } catch (_error) {}
+  return coreWorker.fetch(retryRequest, directEnv, executionContext);
+}
+
 async function coreJson(request, env, executionContext) {
   const response = await coreWorker.fetch(request, env, executionContext);
   let payload = {};
@@ -184,6 +265,6 @@ export default {
     if (request.method === 'GET' && (url.pathname === '/api/app/check-update' || url.pathname === '/api/app/version')) {
       return mergedUpdateStatus(request, env, executionContext);
     }
-    return coreWorker.fetch(request, env, executionContext);
+    return resilientCoreFetch(request, env, executionContext);
   },
 };
