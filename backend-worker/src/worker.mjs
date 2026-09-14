@@ -105,10 +105,13 @@ const now = () => new Date().toISOString();
 function configuredCatalogOrigin(env) {
   // Keep the catalogue available when a Worker secret is accidentally missing.
   // The fallback is the same public provider used by the audited route set below.
-  const raw = String(env?.MOVIE_CATALOG_ORIGIN || "https://ophim1.com").trim();
+  const raw = String(env?.MOVIE_CATALOG_ORIGIN || "https://phimapi.com").trim();
   try {
     const url = new URL(raw);
     if (url.protocol !== "https:" || url.username || url.password || url.port || url.search || url.hash) return null;
+    // OPhim retired ophim1.com; transparently migrate a stale Worker secret
+    // so production does not keep serving cached titles with broken artwork.
+    if (url.hostname.toLowerCase() === "ophim1.com") url.hostname = "phimapi.com";
     url.pathname = url.pathname === "/" ? "" : url.pathname.replace(/\/+$/, "");
     return url;
   } catch (_error) {
@@ -121,9 +124,9 @@ function configuredImageHosts(env) {
     .split(",")
     .map((value) => value.trim().toLowerCase())
     .filter((value) => /^[a-z0-9.-]+$/.test(value) && !value.startsWith(".") && !value.endsWith("."));
-  // OPhim currently serves artwork from this dedicated CDN. Keeping it in the
-  // source allowlist prevents a missing secret from blanking every poster.
-  return new Set([...configured, "img.ophim.live"]);
+  // Keep the current CDN plus the legacy hostname during provider migration.
+  // Without phimimg.com the catalog succeeds but every protected poster is blank.
+  return new Set([...configured, "phimimg.com", "img.ophim.live"]);
 }
 
 function configuredRelayOrigin(env) {
