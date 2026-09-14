@@ -147,37 +147,22 @@ test("maintenance settings support timed and manual windows and expire closed", 
   assert.equal(normalizeMaintenanceSetting(JSON.stringify({ enabled: true, message: "Nâng cấp", expiresAt: "2026-09-07T13:00:00.000Z" }), timestamp).active, true);
 });
 
-test("image relay uses the authenticated VPS path when it is configured", async () => {
+test("image CDN bypasses the video VPS relay when it is configured", async () => {
   const relayEnv = freeViewerEnv({
     VPS_RELAY_ORIGIN: "https://relay.example",
     VPS_RELAY_SECRET: "fixture-vps-relay-secret-at-least-32-characters",
   });
   const source = "https://images.example/uploads/movies/fixture.webp";
   const originalFetch = globalThis.fetch;
-  let relayCalls = 0;
+  let directCalls = 0;
   globalThis.fetch = async (input, options = {}) => {
-    assert.equal(String(input), "https://relay.example/v1/media");
-    relayCalls += 1;
-    const body = String(options.body);
-    const timestamp = options.headers["x-phim4k-relay-timestamp"];
-    const nonce = options.headers["x-phim4k-relay-nonce"];
-    const expected = crypto.createHmac("sha256", relayEnv.VPS_RELAY_SECRET)
-      .update(`phim4k-vps-relay-v1\n${timestamp}\n${nonce}\n${body}`)
-      .digest("base64url");
-    assert.equal(options.headers["x-phim4k-relay-signature"], expected);
-    assert.deepEqual(JSON.parse(body), {
-      v: 1,
-      url: source,
-      range: "",
-      format: "media",
-      referer: "https://catalog.example/",
-    });
+    assert.equal(String(input), source);
+    assert.equal(options.redirect, "manual");
+    assert.equal(options.method, undefined);
+    directCalls += 1;
     return new Response(new Uint8Array([0x52, 0x49, 0x46, 0x46]), {
       status: 200,
-      headers: {
-        "content-type": "image/webp",
-        "x-phim4k-relay-final": Buffer.from(source).toString("base64url"),
-      },
+      headers: { "content-type": "image/webp" },
     });
   };
   try {
@@ -185,7 +170,7 @@ test("image relay uses the authenticated VPS path when it is configured", async 
     const response = await worker.fetch(new Request(`https://example.workers.dev/api/media/image?t=${token}`), relayEnv);
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("content-type"), "image/webp");
-    assert.equal(relayCalls, 1);
+    assert.equal(directCalls, 1);
   } finally {
     globalThis.fetch = originalFetch;
   }
