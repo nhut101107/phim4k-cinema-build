@@ -1927,7 +1927,7 @@ function normalizedCatalogItems(data, env) {
 
 function homeCatalogPaths(year) {
   return [
-    ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((page) => `/danh-sach/phim-moi-cap-nhat?page=${page}`),
+    ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((page) => `/v1/api/danh-sach/phim-moi-cap-nhat?page=${page}&limit=64&sort_field=modified.time&sort_type=desc`),
     ...['phim-chieu-rap', 'phim-le', 'phim-bo', 'hoat-hinh', 'tv-shows']
       .flatMap((category) => [1, 2, 3].map((page) =>
         `/v1/api/danh-sach/${category}?page=${page}&limit=64&year=${year}&sort_field=modified.time&sort_type=desc`)),
@@ -1966,7 +1966,7 @@ async function handleProtectedMovieImage(request, env, executionContext) {
   let upstream;
   let finalTarget;
   try {
-    ({ response: upstream, target: finalTarget } = await fetchProtectedUpstream(target.href, request, env, "media"));
+    ({ response: upstream, target: finalTarget } = await fetchProtectedUpstream(target.href, request, env, "media", 4, false));
   } catch (_error) {
     return textError("Không tải được ảnh phim.", 502, "IMAGE_UPSTREAM_ERROR");
   }
@@ -2085,7 +2085,7 @@ async function handleProtectedMovieCatalog(request, env) {
 
   if (pathname === "/api/movies/catalog") {
     const page = catalogPage(url.searchParams.get("page"));
-    const data = await fetchProtectedCatalogJson(`/danh-sach/phim-moi-cap-nhat?page=${page}`, env, { ttl: page === 1 ? 30 : 180 });
+    const data = await fetchProtectedCatalogJson(`/v1/api/danh-sach/phim-moi-cap-nhat?page=${page}&limit=48&sort_field=modified.time&sort_type=desc`, env, { ttl: page === 1 ? 30 : 180 });
     const pagination = data.pagination || data.data?.params?.pagination || {
       currentPage: page,
       totalPages: 1,
@@ -2118,7 +2118,7 @@ async function handleProtectedMovieCatalog(request, env) {
     const category = categoryMatch[1];
     if (!MOVIE_CATALOG_CATEGORIES.has(category)) return textError("Danh mục phim không hợp lệ.", 400, "INVALID_CATEGORY");
     const page = catalogPage(url.searchParams.get("page"));
-    const target = category === "phim-moi-cap-nhat" ? `/danh-sach/phim-moi-cap-nhat?page=${page}` : `/v1/api/danh-sach/${category}?page=${page}&limit=48`;
+    const target = `/v1/api/danh-sach/${category}?page=${page}&limit=48&sort_field=modified.time&sort_type=desc`;
     const data = await fetchProtectedCatalogJson(target, env);
     return json({ title: category, items: await protectCatalogImages(normalizedCatalogItems(data, env), request, env), pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1 } });
   }
@@ -2242,9 +2242,9 @@ async function fetchVpsRelay(initialUrl, request, env, mediaFormat = "media") {
   return { response, target: finalTarget };
 }
 
-async function fetchProtectedUpstream(initialUrl, request, env, mediaFormat = "media", maxRedirects = 4) {
+async function fetchProtectedUpstream(initialUrl, request, env, mediaFormat = "media", maxRedirects = 4, allowRelay = true) {
   const format = mediaFormat === "hls" ? "hls" : "media";
-  if (configuredRelayOrigin(env)) return fetchVpsRelay(initialUrl, request, env, format);
+  if (allowRelay && configuredRelayOrigin(env)) return fetchVpsRelay(initialUrl, request, env, format);
   let target = safePublicHttpsUrl(initialUrl);
   if (!target) throw new Error("UNSAFE_MEDIA_TARGET");
   for (let attempt = 0; attempt <= maxRedirects; attempt += 1) {
