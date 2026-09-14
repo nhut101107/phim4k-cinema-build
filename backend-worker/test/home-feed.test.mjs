@@ -72,3 +72,26 @@ test('full catalog exposes real paginated inventory above one thousand without b
     assert.match(data.items[0].poster_url,/\/api\/media\/image\?t=/);
   } finally {globalThis.fetch=original;}
 });
+
+
+test('a stale OPhim origin migrates to the live catalog and phimimg CDN remains allowed',async()=>{
+  const fallbackEnv={...env,MOVIE_CATALOG_ORIGIN:'https://ophim1.com',MOVIE_IMAGE_HOSTS:''};
+  const original=globalThis.fetch;
+  globalThis.fetch=async(input)=>{
+    const url=new URL(input);
+    assert.equal(url.origin,'https://phimapi.com');
+    assert.equal(url.pathname,'/v1/api/danh-sach/phim-moi-cap-nhat');
+    return new Response(JSON.stringify({data:{
+      APP_DOMAIN_CDN_IMAGE:'https://phimimg.com',
+      items:[{slug:'live-title',name:'Live title',poster_url:'uploads/movies/live-poster.webp'}],
+      params:{pagination:{currentPage:1,totalPages:1,totalItems:1,totalItemsPerPage:48}},
+    }}),{headers:{'content-type':'application/json'}});
+  };
+  try {
+    const res=await worker.fetch(new Request('https://example.workers.dev/api/movies/catalog?page=1',{headers:{'x-device-id':'catalog-fixture'}}),fallbackEnv);
+    const data=await res.json();
+    assert.equal(res.status,200);
+    const ticket=await openMediaTicket(new URL(data.items[0].poster_url).searchParams.get('t'),fallbackEnv,'image');
+    assert.equal(ticket.url,'https://phimimg.com/uploads/movies/live-poster.webp');
+  } finally {globalThis.fetch=original;}
+});
