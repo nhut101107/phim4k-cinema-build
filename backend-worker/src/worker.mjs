@@ -103,7 +103,9 @@ const MOVIE_FILTER_COUNTRIES = new Set([
 const now = () => new Date().toISOString();
 
 function configuredCatalogOrigin(env) {
-  const raw = String(env?.MOVIE_CATALOG_ORIGIN || "").trim();
+  // Keep the catalogue available when a Worker secret is accidentally missing.
+  // The fallback is the same public provider used by the audited route set below.
+  const raw = String(env?.MOVIE_CATALOG_ORIGIN || "https://ophim1.com").trim();
   try {
     const url = new URL(raw);
     if (url.protocol !== "https:" || url.username || url.password || url.port || url.search || url.hash) return null;
@@ -115,10 +117,13 @@ function configuredCatalogOrigin(env) {
 }
 
 function configuredImageHosts(env) {
-  return new Set(String(env?.MOVIE_IMAGE_HOSTS || "")
+  const configured = String(env?.MOVIE_IMAGE_HOSTS || "")
     .split(",")
     .map((value) => value.trim().toLowerCase())
-    .filter((value) => /^[a-z0-9.-]+$/.test(value) && !value.startsWith(".") && !value.endsWith(".")));
+    .filter((value) => /^[a-z0-9.-]+$/.test(value) && !value.startsWith(".") && !value.endsWith("."));
+  // OPhim currently serves artwork from this dedicated CDN. Keeping it in the
+  // source allowlist prevents a missing secret from blanking every poster.
+  return new Set([...configured, "img.ophim.live"]);
 }
 
 function configuredRelayOrigin(env) {
@@ -1948,8 +1953,7 @@ async function handleProtectedMovieImage(request, env, executionContext) {
   }
   const target = safePublicHttpsUrl(ticket.url);
   const hosts = configuredImageHosts(env);
-  const safePath = target && (target.pathname.startsWith("/upload/") || target.pathname.startsWith("/uploads/"));
-  if (!target || !hosts.has(target.hostname.toLowerCase()) || !safePath) return textError("Nguồn ảnh không được phép.", 400, "IMAGE_HOST_NOT_ALLOWED");
+  if (!target || !hosts.has(target.hostname.toLowerCase())) return textError("Nguồn ảnh không được phép.", 400, "IMAGE_HOST_NOT_ALLOWED");
   const cache = typeof caches !== "undefined" ? caches.default : null;
   const cacheKey = cache ? await protectedImageCacheKey(request, target) : null;
   if (cache && cacheKey) {
@@ -1966,8 +1970,7 @@ async function handleProtectedMovieImage(request, env, executionContext) {
   } catch (_error) {
     return textError("Không tải được ảnh phim.", 502, "IMAGE_UPSTREAM_ERROR");
   }
-  const finalSafePath = finalTarget && (finalTarget.pathname.startsWith("/upload/") || finalTarget.pathname.startsWith("/uploads/"));
-  if (!finalTarget || !hosts.has(finalTarget.hostname.toLowerCase()) || !finalSafePath) {
+  if (!finalTarget || !hosts.has(finalTarget.hostname.toLowerCase())) {
     try { await upstream.body?.cancel(); } catch (_error) {}
     return textError("Nguồn ảnh chuyển hướng không được phép.", 502, "IMAGE_REDIRECT_NOT_ALLOWED");
   }
@@ -2032,7 +2035,6 @@ async function protectImageValue(value, request, env, expiresAt, extra = {}) {
     if (host) target = safePublicHttpsUrl(`https://${host}/${raw.replace(/^\/+/, "")}`);
   }
   if (!target || !hosts.has(target.hostname.toLowerCase())) return "";
-  if (!target.pathname.startsWith("/upload/") && !target.pathname.startsWith("/uploads/")) return "";
   return protectedMediaUrl(request, env, target.href, "image", expiresAt, extra);
 }
 
@@ -2228,6 +2230,7 @@ async function fetchVpsRelay(initialUrl, request, env, mediaFormat = "media") {
     },
     body: payload,
     redirect: "manual",
+    signal: AbortSignal.timeout(15000),
   });
   let finalTarget = target;
   const encodedFinalUrl = response.headers.get("x-phim4k-relay-final");
@@ -2254,7 +2257,11 @@ async function fetchProtectedUpstream(initialUrl, request, env, mediaFormat = "m
     if (catalogOrigin) headers.set("referer", `${catalogOrigin.origin}/`);
     const range = format === "hls" ? "" : request.headers.get("range");
     if (range && /^bytes=\d*-\d*$/.test(range)) headers.set("range", range);
-    const response = await fetch(target.href, { headers, redirect: "manual" });
+    const response = await fetch(target.href, {
+      headers,
+      redirect: "manual",
+      signal: AbortSignal.timeout(format === "hls" ? 15000 : 30000),
+    });
     if (![301, 302, 303, 307, 308].includes(response.status)) return { response, target };
     if (attempt === maxRedirects) throw new Error("MEDIA_REDIRECT_LIMIT");
     const location = response.headers.get("location");
