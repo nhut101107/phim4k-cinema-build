@@ -14,7 +14,7 @@ test('a failing cinema source does not blank the new series feed; requests are b
   globalThis.fetch=async(input,options)=>{
     const url=new URL(input); calls.push({url,options});
     if(url.pathname.includes('phim-chieu-rap'))throw new Error('offline');
-    const old=url.pathname==='/danh-sach/phim-moi-cap-nhat';
+    const old=url.pathname==='/v1/api/danh-sach/phim-moi-cap-nhat';
     return new Response(JSON.stringify({data:{APP_DOMAIN_CDN_IMAGE:'https://images.example',items:[{slug:old?'old':'new-series',year:old?1999:new Date().getUTCFullYear(),type:'series',poster_url:'uploads/movies/poster.webp'}]}}),{headers:{'content-type':'application/json'}});
   };
   try {
@@ -25,8 +25,9 @@ test('a failing cinema source does not blank the new series feed; requests are b
     assert.equal(imageTicket.url,'https://images.example/uploads/movies/poster.webp');
     assert.equal(calls.length,27);
     assert.ok(calls.every(c=>c.url.origin==='https://catalog.example'&&c.options.signal&&c.options.redirect==='manual'));
-    const newest=calls.filter(c=>c.url.pathname==='/danh-sach/phim-moi-cap-nhat');
+    const newest=calls.filter(c=>c.url.pathname==='/v1/api/danh-sach/phim-moi-cap-nhat');
     assert.deepEqual(newest.map(c=>c.url.searchParams.get('page')),['1','2','3','4','5','6','7','8','9','10','11','12']);
+    assert.ok(newest.every(c=>c.url.searchParams.get('limit')==='64'&&c.url.searchParams.get('sort_field')==='modified.time'&&c.url.searchParams.get('sort_type')==='desc'));
     const categories=calls.filter(c=>c.url.pathname.startsWith('/v1/api/danh-sach/'));
     assert.equal(categories.length,15);
     assert.ok(categories.every(c=>c.url.searchParams.get('year')===String(new Date().getUTCFullYear())&&c.url.searchParams.get('limit')==='64'));
@@ -50,8 +51,11 @@ test('full catalog exposes real paginated inventory above one thousand without b
   globalThis.fetch=async(input)=>{
     const url=new URL(input);
     assert.equal(url.origin,'https://catalog.example');
-    assert.equal(url.pathname,'/danh-sach/phim-moi-cap-nhat');
+    assert.equal(url.pathname,'/v1/api/danh-sach/phim-moi-cap-nhat');
     assert.equal(url.searchParams.get('page'),'7');
+    assert.equal(url.searchParams.get('limit'),'48');
+    assert.equal(url.searchParams.get('sort_field'),'modified.time');
+    assert.equal(url.searchParams.get('sort_type'),'desc');
     return new Response(JSON.stringify({data:{
       APP_DOMAIN_CDN_IMAGE:'https://images.example',
       items:[{slug:'licensed-direct-title',name:'Licensed title',poster_url:'uploads/poster.webp'}],
