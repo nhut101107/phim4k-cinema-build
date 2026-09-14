@@ -38,6 +38,9 @@ jobs:
       - name: Verify Worker entry syntax
         run: node --check backend-worker/src/worker-entry.mjs
 
+      - name: Run Worker regression tests
+        run: node --test backend-worker/test/*.test.mjs
+
       - name: Cloudflare deployment status
         shell: bash
         run: |
