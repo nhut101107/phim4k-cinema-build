@@ -1,6 +1,10 @@
 name: Actions availability probe
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/actions-probe.yml'
   workflow_dispatch:
     inputs:
       health_url:
@@ -18,10 +22,40 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 4
     steps:
       - name: Confirm hosted runner availability
         run: echo "GitHub Actions runner is available"
+
+      - name: Probe live OPhim catalog and artwork
+        shell: bash
+        run: |
+          set -euo pipefail
+          old_url='https://ophim1.com/danh-sach/phim-moi-cap-nhat?page=1'
+          new_url='https://ophim1.com/v1/api/danh-sach/phim-moi-cap-nhat?page=1&limit=24&sort_field=modified.time&sort_type=desc'
+          for label in old new; do
+            if [ "$label" = old ]; then url="$old_url"; else url="$new_url"; fi
+            body="$(mktemp)"
+            status="$(curl --silent --show-error --location --max-time 20 --output "$body" --write-out '%{http_code}' --header 'accept: application/json' "$url")"
+            type="$(curl --silent --show-error --location --max-time 20 --output /dev/null --write-out '%{content_type}' --header 'accept: application/json' "$url")"
+            echo "$label status=$status type=$type"
+            if [ "$label" = new ]; then
+              test "$status" = 200
+              jq -e '.data.items | length > 0' "$body" >/dev/null
+              base="$(jq -r '.data.APP_DOMAIN_CDN_IMAGE // .APP_DOMAIN_CDN_IMAGE // empty' "$body")"
+              poster="$(jq -r '.data.items[0].poster_url // .items[0].poster_url // empty' "$body")"
+              thumb="$(jq -r '.data.items[0].thumb_url // .items[0].thumb_url // empty' "$body")"
+              echo "new base=$base poster=$poster thumb=$thumb"
+              test -n "$base"
+              test -n "$poster"
+              artwork="${base%/}/${poster#/}"
+              artwork_status="$(curl --silent --show-error --location --max-time 20 --output /dev/null --write-out '%{http_code}' --header 'referer: https://ophim1.com/' "$artwork")"
+              artwork_type="$(curl --silent --show-error --location --max-time 20 --output /dev/null --write-out '%{content_type}' --header 'referer: https://ophim1.com/' "$artwork")"
+              echo "artwork status=$artwork_status type=$artwork_type host=$(printf '%s' "$artwork" | cut -d/ -f3)"
+              test "$artwork_status" = 200
+              case "$artwork_type" in image/*) ;; *) exit 1 ;; esac
+            fi
+          done
 
       - name: Verify public backend health
         if: ${{ inputs.health_url != '' }}
