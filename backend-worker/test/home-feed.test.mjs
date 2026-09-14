@@ -28,7 +28,7 @@ test('a failing cinema source does not blank the new series feed; requests are b
     const newest=calls.filter(c=>c.url.pathname==='/v1/api/danh-sach/phim-moi-cap-nhat');
     assert.deepEqual(newest.map(c=>c.url.searchParams.get('page')),['1','2','3','4','5','6','7','8','9','10','11','12']);
     assert.ok(newest.every(c=>c.url.searchParams.get('limit')==='64'&&c.url.searchParams.get('sort_field')==='modified.time'&&c.url.searchParams.get('sort_type')==='desc'));
-    const categories=calls.filter(c=>c.url.pathname.startsWith('/v1/api/danh-sach/'));
+    const categories=calls.filter(c=>c.url.pathname.startsWith('/v1/api/danh-sach/')&&!c.url.pathname.endsWith('/phim-moi-cap-nhat'));
     assert.equal(categories.length,15);
     assert.ok(categories.every(c=>c.url.searchParams.get('year')===String(new Date().getUTCFullYear())&&c.url.searchParams.get('limit')==='64'));
     for (const category of ['phim-chieu-rap', 'phim-le', 'phim-bo', 'hoat-hinh', 'tv-shows']) {
