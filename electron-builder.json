@@ -4,7 +4,11 @@
   "extraMetadata": { "main": "desktop/main.cjs", "version": "3.50.0", "dependencies": {} },
   "directories": { "output": "builds/windows-3.50" },
   "compression": "normal",
-  "files": ["desktop/**", "public/**", "!public/standalone.html", "package.json"],
+  "files": [
+    "desktop/**",
+    { "from": "dist-ios", "to": "public", "filter": ["**/*"] },
+    "package.json"
+  ],
   "asar": true,
   "electronFuses": {
     "runAsNode": false,
@@ -24,4 +28,3 @@
     "deleteAppDataOnUninstall": false
   }
 }
-

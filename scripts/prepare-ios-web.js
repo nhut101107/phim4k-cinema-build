@@ -28,6 +28,14 @@ fs.cpSync(source, output, {
   }
 });
 
+// Native and desktop releases ship only this generated copy. Minification is
+// a defense-in-depth layer: it removes comments and stable local identifiers,
+// while authorization and media secrets remain exclusively on the Worker.
+require('node:child_process').execFileSync(process.execPath, [path.join(__dirname, 'harden-web-bundle.js')], {
+  cwd: root,
+  stdio: 'inherit',
+});
+
 const outputIndex = path.join(output, "index.html");
 if (!fs.existsSync(outputIndex)) {
   throw new Error("iOS web bundle did not contain index.html");

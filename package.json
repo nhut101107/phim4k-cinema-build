@@ -39,6 +39,7 @@
     "@capacitor/cli": "8.5.1",
     "electron": "44.2.0",
     "electron-builder": "26.15.3",
+    "terser": "^5.44.0",
     "wrangler": "4.129.0"
   }
 }
