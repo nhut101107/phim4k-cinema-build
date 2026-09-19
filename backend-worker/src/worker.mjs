@@ -271,7 +271,7 @@ function normalizeId(value) {
 async function handleInstallerDownload(request, pathname) {
   const release = INSTALLER_RELEASES[pathname];
   if (!release || !["GET", "HEAD"].includes(request.method)) {
-    return textError("Không tìm thấy bản cài đặt.", 404, "INSTALLER_NOT_FOUND");
+    return textError("KhÃ´ng tÃ¬m tháº¥y báº£n cÃ i Ä‘áº·t.", 404, "INSTALLER_NOT_FOUND");
   }
   const upstreamHeaders = new Headers({ "user-agent": "4K-Cinema-Release/3.50" });
   const range = request.headers.get("range");
@@ -283,7 +283,7 @@ async function handleInstallerDownload(request, pathname) {
   });
   if (!upstream.ok && upstream.status !== 206) {
     try { await upstream.body?.cancel(); } catch (_error) {}
-    return textError("Bản cài đặt tạm thời chưa tải được.", 502, "INSTALLER_UPSTREAM_ERROR");
+    return textError("Báº£n cÃ i Ä‘áº·t táº¡m thá»i chÆ°a táº£i Ä‘Æ°á»£c.", 502, "INSTALLER_UPSTREAM_ERROR");
   }
   const headers = new Headers(CORS_HEADERS);
   headers.set("content-type", release.contentType);
@@ -419,7 +419,7 @@ function isAdmin(request, env) {
 }
 
 async function requireAdmin(request, env) {
-  return isAdmin(request, env) ? null : textError("Không có quyền quản trị.", 403, "ADMIN_REQUIRED");
+  return isAdmin(request, env) ? null : textError("KhÃ´ng cÃ³ quyá»n quáº£n trá»‹.", 403, "ADMIN_REQUIRED");
 }
 
 function getClientIp(request) {
@@ -594,21 +594,21 @@ async function queryOne(db, statement, ...values) {
 
 function sessionError(code) {
   const values = {
-    ACCESS_TOKEN_REQUIRED: ["Phiên đăng nhập là bắt buộc.", 401],
-    ACCESS_TOKEN_EXPIRED: ["Phiên truy cập đã hết hạn.", 401],
-    SESSION_EXPIRED: ["Phiên đăng nhập đã hết hạn.", 401],
-    SESSION_REVOKED: ["Phiên đăng nhập đã bị thu hồi.", 401],
-    REFRESH_TOKEN_REQUIRED: ["Thiếu mã làm mới phiên.", 401],
-    REFRESH_TOKEN_INVALID: ["Mã làm mới phiên không hợp lệ.", 401],
-    REFRESH_TOKEN_REUSED: ["Phát hiện mã làm mới đã được dùng lại; toàn bộ phiên đã bị thu hồi.", 401],
-    DEVICE_MISMATCH: ["Thiết bị không khớp với phiên đã kích hoạt.", 403],
-    DEVICE_PROOF_REQUIRED: ["Thiếu chữ ký xác thực thiết bị.", 401],
-    DEVICE_PROOF_KEY_INVALID: ["Khóa xác thực thiết bị không hợp lệ.", 401],
-    DEVICE_PROOF_INVALID: ["Chữ ký thiết bị không hợp lệ.", 401],
-    DEVICE_PROOF_EXPIRED: ["Chữ ký thiết bị đã quá hạn.", 401],
-    DEVICE_PROOF_REPLAYED: ["Yêu cầu đã được sử dụng trước đó.", 409],
+    ACCESS_TOKEN_REQUIRED: ["PhiÃªn Ä‘Äƒng nháº­p lÃ  báº¯t buá»™c.", 401],
+    ACCESS_TOKEN_EXPIRED: ["PhiÃªn truy cáº­p Ä‘Ã£ háº¿t háº¡n.", 401],
+    SESSION_EXPIRED: ["PhiÃªn Ä‘Äƒng nháº­p Ä‘Ã£ háº¿t háº¡n.", 401],
+    SESSION_REVOKED: ["PhiÃªn Ä‘Äƒng nháº­p Ä‘Ã£ bá»‹ thu há»“i.", 401],
+    REFRESH_TOKEN_REQUIRED: ["Thiáº¿u mÃ£ lÃ m má»›i phiÃªn.", 401],
+    REFRESH_TOKEN_INVALID: ["MÃ£ lÃ m má»›i phiÃªn khÃ´ng há»£p lá»‡.", 401],
+    REFRESH_TOKEN_REUSED: ["PhÃ¡t hiá»‡n mÃ£ lÃ m má»›i Ä‘Ã£ Ä‘Æ°á»£c dÃ¹ng láº¡i; toÃ n bá»™ phiÃªn Ä‘Ã£ bá»‹ thu há»“i.", 401],
+    DEVICE_MISMATCH: ["Thiáº¿t bá»‹ khÃ´ng khá»›p vá»›i phiÃªn Ä‘Ã£ kÃ­ch hoáº¡t.", 403],
+    DEVICE_PROOF_REQUIRED: ["Thiáº¿u chá»¯ kÃ½ xÃ¡c thá»±c thiáº¿t bá»‹.", 401],
+    DEVICE_PROOF_KEY_INVALID: ["KhÃ³a xÃ¡c thá»±c thiáº¿t bá»‹ khÃ´ng há»£p lá»‡.", 401],
+    DEVICE_PROOF_INVALID: ["Chá»¯ kÃ½ thiáº¿t bá»‹ khÃ´ng há»£p lá»‡.", 401],
+    DEVICE_PROOF_EXPIRED: ["Chá»¯ kÃ½ thiáº¿t bá»‹ Ä‘Ã£ quÃ¡ háº¡n.", 401],
+    DEVICE_PROOF_REPLAYED: ["YÃªu cáº§u Ä‘Ã£ Ä‘Æ°á»£c sá»­ dá»¥ng trÆ°á»›c Ä‘Ã³.", 409],
   };
-  const [message, status] = values[code] || ["Phiên đăng nhập không hợp lệ.", 401];
+  const [message, status] = values[code] || ["PhiÃªn Ä‘Äƒng nháº­p khÃ´ng há»£p lá»‡.", 401];
   return textError(message, status, code || "SESSION_INVALID");
 }
 
@@ -638,7 +638,7 @@ async function authorizeSessionRecord(session, env) {
   if (session.role === "guest") {
     if (!await freeAccessEnabled(env.DB)) {
       await revokeSession(env.DB, session.session_id);
-      return { error: textError("Chế độ không cần key đã được tắt.", 401, "FREE_ACCESS_DISABLED") };
+      return { error: textError("Cháº¿ Ä‘á»™ khÃ´ng cáº§n key Ä‘Ã£ Ä‘Æ°á»£c táº¯t.", 401, "FREE_ACCESS_DISABLED") };
     }
     return {
       session,
@@ -647,7 +647,7 @@ async function authorizeSessionRecord(session, env) {
       deviceId: session.device_id,
       isAdmin: false,
       freeAccess: true,
-      plan: "MIỄN KEY",
+      plan: "MIá»„N KEY",
       keyHint: "",
       expiresAt: null,
     };
@@ -660,11 +660,11 @@ async function authorizeSessionRecord(session, env) {
   const record = await queryOne(env.DB, "SELECT * FROM license_keys WHERE license_key = ?", normalizeKey(session.license_key));
   if (!record || !record.active) {
     await revokeSession(env.DB, session.session_id);
-    return { error: textError("Key đã bị vô hiệu hóa.", 403, "KEY_DISABLED") };
+    return { error: textError("Key Ä‘Ã£ bá»‹ vÃ´ hiá»‡u hÃ³a.", 403, "KEY_DISABLED") };
   }
   if (isExpired(record.expires_at)) {
     await revokeSession(env.DB, session.session_id);
-    return { error: textError("Key đã hết hạn.", 403, "KEY_EXPIRED") };
+    return { error: textError("Key Ä‘Ã£ háº¿t háº¡n.", 403, "KEY_EXPIRED") };
   }
   if (!record.device_id || record.device_id !== session.device_id) {
     await revokeSession(env.DB, session.session_id);
@@ -673,7 +673,7 @@ async function authorizeSessionRecord(session, env) {
   const owner = normalizeId(record.activated_telegram_id || record.assigned_telegram_id);
   if (owner && await queryOne(env.DB, "SELECT reason FROM bans WHERE telegram_id = ?", owner)) {
     await revokeSession(env.DB, session.session_id);
-    return { error: textError("Tài khoản đã bị khóa.", 403, "USER_BANNED") };
+    return { error: textError("TÃ i khoáº£n Ä‘Ã£ bá»‹ khÃ³a.", 403, "USER_BANNED") };
   }
   return {
     session,
@@ -709,34 +709,34 @@ async function verifyLegacyTelemetryViewer(request, env) {
   const key = requestKey(request);
   const telegramId = requestTelegram(request);
   const deviceId = normalizeDeviceId(request.headers.get("x-device-id"));
-  if (!deviceId) return { error: textError("Thiếu phiên người dùng hợp lệ.", 401, "VIEWER_SESSION_REQUIRED") };
+  if (!deviceId) return { error: textError("Thiáº¿u phiÃªn ngÆ°á»i dÃ¹ng há»£p lá»‡.", 401, "VIEWER_SESSION_REQUIRED") };
   if (!key) {
     const maintenance = await getMaintenance(env.DB);
     if (maintenance.active) return { error: maintenanceError(maintenance) };
     if (await freeAccessEnabled(env.DB)) return {telegramId: '', deviceId, isAdmin: false};
   }
-  if (!key) return {error: textError('Vui lòng nhập key.', 401, 'KEY_REQUIRED')};
+  if (!key) return {error: textError('Vui lÃ²ng nháº­p key.', 401, 'KEY_REQUIRED')};
 
   if (await verifyMasterKey(key, env, env.DB)) {
     if (!await verifyAdminIdentity(key, telegramId, env, env.DB)) {
-      return { error: textError("Phiên quản trị không hợp lệ.", 403, "ADMIN_TELEGRAM_REQUIRED") };
+      return { error: textError("PhiÃªn quáº£n trá»‹ khÃ´ng há»£p lá»‡.", 403, "ADMIN_TELEGRAM_REQUIRED") };
     }
     return { telegramId, deviceId, isAdmin: true };
   }
   const maintenance = await getMaintenance(env.DB);
   if (maintenance.active) return { error: maintenanceError(maintenance) };
-  if (!validKey(key)) return { error: textError("Key không hợp lệ.", 401, "INVALID_KEY_FORMAT") };
+  if (!validKey(key)) return { error: textError("Key khÃ´ng há»£p lá»‡.", 401, "INVALID_KEY_FORMAT") };
   const record = await queryOne(env.DB, "SELECT * FROM license_keys WHERE license_key = ?", key);
   if (!record || !record.active || isExpired(record.expires_at)) {
-    return { error: textError("Phiên người dùng đã hết hiệu lực.", 403, "VIEWER_SESSION_INACTIVE") };
+    return { error: textError("PhiÃªn ngÆ°á»i dÃ¹ng Ä‘Ã£ háº¿t hiá»‡u lá»±c.", 403, "VIEWER_SESSION_INACTIVE") };
   }
   if (!record.device_id || record.device_id !== deviceId) {
-    return { error: textError("Thiết bị không khớp với phiên đã kích hoạt.", 403, "DEVICE_MISMATCH") };
+    return { error: textError("Thiáº¿t bá»‹ khÃ´ng khá»›p vá»›i phiÃªn Ä‘Ã£ kÃ­ch hoáº¡t.", 403, "DEVICE_MISMATCH") };
   }
   const boundTelegram = normalizeId(record.activated_telegram_id || record.assigned_telegram_id);
   if (boundTelegram) {
     const ban = await queryOne(env.DB, "SELECT reason FROM bans WHERE telegram_id = ?", boundTelegram);
-    if (ban) return { error: textError("Tài khoản đã bị khóa.", 403, "USER_BANNED") };
+    if (ban) return { error: textError("TÃ i khoáº£n Ä‘Ã£ bá»‹ khÃ³a.", 403, "USER_BANNED") };
   }
   return { telegramId: boundTelegram, deviceId, isAdmin: false };
 }
@@ -753,7 +753,7 @@ async function handleTelemetry(request, env) {
   if (identity.error) return identity.error;
   const body = await parseBody(request);
   const events = normalizeTelemetryEvents(body.events);
-  if (!events.length) return textError("Không có hoạt động hợp lệ để ghi.", 400, "INVALID_TELEMETRY");
+  if (!events.length) return textError("KhÃ´ng cÃ³ hoáº¡t Ä‘á»™ng há»£p lá»‡ Ä‘á»ƒ ghi.", 400, "INVALID_TELEMETRY");
   const device = maskedValue(identity.deviceId, 6);
   for (const event of events) {
     const context = { device, version: String(appVersion(request)).slice(0, 24), ...event.context };
@@ -921,7 +921,7 @@ async function handleWatchProgress(request, env) {
   const requestOrigin = new URL(request.url).origin;
   const items = source.map((item) => normalizeWatchProgressItem(item, requestOrigin));
   if (!items.length || items.some((item) => !item)) {
-    return textError("Dữ liệu xem tiếp không hợp lệ.", 400, "INVALID_WATCH_PROGRESS");
+    return textError("Dá»¯ liá»‡u xem tiáº¿p khÃ´ng há»£p lá»‡.", 400, "INVALID_WATCH_PROGRESS");
   }
   const timestamp = now();
   for (const item of items) {
@@ -945,7 +945,7 @@ async function handleWatchProgress(request, env) {
 }
 
 function dbUnavailable(env) {
-  return !env.DB ? textError("Backend chưa được gắn D1 database.", 503, "DATABASE_NOT_CONFIGURED") : null;
+  return !env.DB ? textError("Backend chÆ°a Ä‘Æ°á»£c gáº¯n D1 database.", 503, "DATABASE_NOT_CONFIGURED") : null;
 }
 
 function keyPayload(record, isAdminUser = false) {
@@ -967,7 +967,7 @@ function keyPayload(record, isAdminUser = false) {
 
 async function getForceUpdate(db, version) {
   const row = await queryOne(db, "SELECT setting_value FROM app_settings WHERE setting_key = ?", "force_update");
-  if (!row) return { forceUpdate: false, isLatest: true, message: "Bạn đang dùng phiên bản mới nhất." };
+  if (!row) return { forceUpdate: false, isLatest: true, message: "Báº¡n Ä‘ang dÃ¹ng phiÃªn báº£n má»›i nháº¥t." };
   try {
     const setting = JSON.parse(row.setting_value);
     const enabled = Boolean(setting.enabled);
@@ -978,10 +978,10 @@ async function getForceUpdate(db, version) {
       isLatest: !forceUpdate,
       latestVersion: setting.latestVersion || "",
       minVersion,
-      message: forceUpdate ? (setting.message || "Vui lòng cập nhật ứng dụng để tiếp tục.") : "Bạn đang dùng phiên bản mới nhất.",
+      message: forceUpdate ? (setting.message || "Vui lÃ²ng cáº­p nháº­t á»©ng dá»¥ng Ä‘á»ƒ tiáº¿p tá»¥c.") : "Báº¡n Ä‘ang dÃ¹ng phiÃªn báº£n má»›i nháº¥t.",
     };
   } catch (_error) {
-    return { forceUpdate: false, isLatest: true, message: "Bạn đang dùng phiên bản mới nhất." };
+    return { forceUpdate: false, isLatest: true, message: "Báº¡n Ä‘ang dÃ¹ng phiÃªn báº£n má»›i nháº¥t." };
   }
 }
 
@@ -1007,7 +1007,7 @@ async function getVerifiedAdminUpdate(db, request, forceStatus) {
     downloadSha256: String(release.sha256).toLowerCase(),
     downloadSizeBytes: validReleaseSize(release.size_bytes) ? Number(release.size_bytes) : 0,
     downloadSigner: cleanProgressText(release.signer, 200),
-    message: `Có bản ${releaseVersion}. Hãy tải đúng bản dành cho thiết bị này để cập nhật.`,
+    message: `CÃ³ báº£n ${releaseVersion}. HÃ£y táº£i Ä‘Ãºng báº£n dÃ nh cho thiáº¿t bá»‹ nÃ y Ä‘á»ƒ cáº­p nháº­t.`,
   };
 }
 
@@ -1018,7 +1018,7 @@ export function normalizeAnnouncementSetting(raw, timestamp = Date.now()) {
   }
   if (!value || typeof value !== "object" || !value.enabled) return { active: false };
   const message = String(value.message || "").trim().slice(0, 600);
-  const title = String(value.title || "Thông báo từ Admin").trim().slice(0, 80) || "Thông báo từ Admin";
+  const title = String(value.title || "ThÃ´ng bÃ¡o tá»« Admin").trim().slice(0, 80) || "ThÃ´ng bÃ¡o tá»« Admin";
   const expiresAt = String(value.expiresAt || "");
   if (!message || !Number.isFinite(Date.parse(expiresAt)) || Date.parse(expiresAt) <= timestamp) return { active: false };
   return {
@@ -1042,7 +1042,7 @@ export function normalizeMaintenanceSetting(raw, timestamp = Date.now()) {
     try { value = JSON.parse(value); } catch (_error) { value = null; }
   }
   if (!value || typeof value !== "object" || !value.enabled) return { active: false };
-  const message = String(value.message || "Hệ thống đang được nâng cấp. Vui lòng quay lại sau.")
+  const message = String(value.message || "Há»‡ thá»‘ng Ä‘ang Ä‘Æ°á»£c nÃ¢ng cáº¥p. Vui lÃ²ng quay láº¡i sau.")
     .replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 400);
   const startedAt = String(value.startedAt || "");
   const expiresAt = String(value.expiresAt || "");
@@ -1073,7 +1073,7 @@ async function handleMaintenanceAdmin(request, env) {
   const denied = await requireVerifiedAdmin(request, env);
   if (denied) return denied;
   const body = await parseBody(request);
-  if (typeof body.enabled !== "boolean") return textError("Trạng thái bảo trì không hợp lệ.", 400, "INVALID_MAINTENANCE_STATE");
+  if (typeof body.enabled !== "boolean") return textError("Tráº¡ng thÃ¡i báº£o trÃ¬ khÃ´ng há»£p lá»‡.", 400, "INVALID_MAINTENANCE_STATE");
   const timestamp = now();
   if (!body.enabled) {
     const value = JSON.stringify({ enabled: false, endedAt: timestamp });
@@ -1081,15 +1081,15 @@ async function handleMaintenanceAdmin(request, env) {
       "INSERT INTO app_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?) ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = excluded.updated_at",
     ).bind(MAINTENANCE_SETTING, value, timestamp).run();
     await logEvent(env.DB, "admin_maintenance_disabled", { actorTelegramId: requestTelegram(request) });
-    return json({ success: true, maintenance: { active: false }, message: "Đã mở lại ứng dụng cho người dùng." });
+    return json({ success: true, maintenance: { active: false }, message: "ÄÃ£ má»Ÿ láº¡i á»©ng dá»¥ng cho ngÆ°á»i dÃ¹ng." });
   }
 
-  const message = String(body.message || "Hệ thống đang được nâng cấp. Vui lòng quay lại sau.")
+  const message = String(body.message || "Há»‡ thá»‘ng Ä‘ang Ä‘Æ°á»£c nÃ¢ng cáº¥p. Vui lÃ²ng quay láº¡i sau.")
     .replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 400);
   const durationMinutes = Number.parseInt(String(body.durationMinutes || "0"), 10);
-  if (!message) return textError("Hãy nhập nội dung bảo trì.", 400, "MAINTENANCE_MESSAGE_REQUIRED");
+  if (!message) return textError("HÃ£y nháº­p ná»™i dung báº£o trÃ¬.", 400, "MAINTENANCE_MESSAGE_REQUIRED");
   if (!Number.isInteger(durationMinutes) || durationMinutes < 0 || durationMinutes > MAX_MAINTENANCE_MINUTES) {
-    return textError("Thời gian bảo trì phải từ 0 phút đến 7 ngày; chọn 0 để tự tắt thủ công.", 400, "INVALID_MAINTENANCE_DURATION");
+    return textError("Thá»i gian báº£o trÃ¬ pháº£i tá»« 0 phÃºt Ä‘áº¿n 7 ngÃ y; chá»n 0 Ä‘á»ƒ tá»± táº¯t thá»§ cÃ´ng.", 400, "INVALID_MAINTENANCE_DURATION");
   }
   const expiresAt = durationMinutes ? new Date(Date.now() + durationMinutes * 60 * 1000).toISOString() : "";
   const value = { enabled: true, message, startedAt: timestamp, expiresAt };
@@ -1099,7 +1099,7 @@ async function handleMaintenanceAdmin(request, env) {
   await logEvent(env.DB, "admin_maintenance_enabled", {
     actorTelegramId: requestTelegram(request), detail: JSON.stringify({ durationMinutes, expiresAt }),
   });
-  return json({ success: true, maintenance: normalizeMaintenanceSetting(value), message: "Đã bật chế độ bảo trì." });
+  return json({ success: true, maintenance: normalizeMaintenanceSetting(value), message: "ÄÃ£ báº­t cháº¿ Ä‘á»™ báº£o trÃ¬." });
 }
 
 async function handleAnnouncementAdmin(request, env) {
@@ -1113,15 +1113,15 @@ async function handleAnnouncementAdmin(request, env) {
       "INSERT INTO app_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?) ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = excluded.updated_at",
     ).bind(ANNOUNCEMENT_SETTING, value, timestamp).run();
     await logEvent(env.DB, "admin_announcement_cleared", { actorTelegramId: requestTelegram(request) });
-    return json({ success: true, active: false, message: "Đã gỡ thông báo khỏi ứng dụng." });
+    return json({ success: true, active: false, message: "ÄÃ£ gá»¡ thÃ´ng bÃ¡o khá»i á»©ng dá»¥ng." });
   }
 
-  const title = String(body.title || "Thông báo từ Admin").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 80) || "Thông báo từ Admin";
+  const title = String(body.title || "ThÃ´ng bÃ¡o tá»« Admin").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 80) || "ThÃ´ng bÃ¡o tá»« Admin";
   const message = String(body.message || "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 600);
   const durationMinutes = Number.parseInt(String(body.durationMinutes || ""), 10);
-  if (!message) return textError("Hãy nhập nội dung thông báo.", 400, "ANNOUNCEMENT_MESSAGE_REQUIRED");
+  if (!message) return textError("HÃ£y nháº­p ná»™i dung thÃ´ng bÃ¡o.", 400, "ANNOUNCEMENT_MESSAGE_REQUIRED");
   if (!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > MAX_ANNOUNCEMENT_MINUTES) {
-    return textError("Thời lượng thông báo phải từ 1 phút đến 30 ngày.", 400, "INVALID_ANNOUNCEMENT_DURATION");
+    return textError("Thá»i lÆ°á»£ng thÃ´ng bÃ¡o pháº£i tá»« 1 phÃºt Ä‘áº¿n 30 ngÃ y.", 400, "INVALID_ANNOUNCEMENT_DURATION");
   }
   const expiresAt = new Date(Date.now() + durationMinutes * 60 * 1000).toISOString();
   const announcement = {
@@ -1139,7 +1139,7 @@ async function handleAnnouncementAdmin(request, env) {
     actorTelegramId: requestTelegram(request),
     detail: JSON.stringify({ title, durationMinutes, expiresAt }),
   });
-  return json({ success: true, message: "Đã ghim thông báo cho người dùng.", announcement: normalizeAnnouncementSetting(announcement) });
+  return json({ success: true, message: "ÄÃ£ ghim thÃ´ng bÃ¡o cho ngÆ°á»i dÃ¹ng.", announcement: normalizeAnnouncementSetting(announcement) });
 }
 
 async function freeAccessEnabled(db) {
@@ -1152,7 +1152,7 @@ async function accessPolicy(request, env) {
     const denied = await requireVerifiedAdmin(request, env);
     if (denied) return denied;
     const body = await parseBody(request);
-    if (typeof body.freeAccess !== 'boolean') return textError('Trạng thái không hợp lệ.', 400, 'INVALID_ACCESS_POLICY');
+    if (typeof body.freeAccess !== 'boolean') return textError('Tráº¡ng thÃ¡i khÃ´ng há»£p lá»‡.', 400, 'INVALID_ACCESS_POLICY');
     await env.DB.prepare('INSERT INTO app_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?) ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = excluded.updated_at').bind('free_access', String(body.freeAccess), now()).run();
     await logEvent(env.DB, 'admin_access_policy_updated', {actorTelegramId: requestTelegram(request), detail: `freeAccess=${body.freeAccess}`});
   }
@@ -1160,12 +1160,12 @@ async function accessPolicy(request, env) {
 }
 
 async function activationStatus({ db, key, telegramId, deviceId, request, env, activation }) {
-  if (!deviceId) return textError('Thiếu mã thiết bị.', 400, 'MISSING_LICENSE_DATA');
+  if (!deviceId) return textError('Thiáº¿u mÃ£ thiáº¿t bá»‹.', 400, 'MISSING_LICENSE_DATA');
   if (!key) {
     const maintenance = await getMaintenance(db);
     if (maintenance.active) return maintenanceError(maintenance);
-    if (!await freeAccessEnabled(db)) return textError('Vui lòng nhập key để tiếp tục.', 401, 'KEY_REQUIRED');
-    return json({success: true, active: true, isAdmin: false, freeAccess: true, plan: 'MIỄN KEY', expiresAt: null, ...await getForceUpdate(db, appVersion(request))});
+    if (!await freeAccessEnabled(db)) return textError('Vui lÃ²ng nháº­p key Ä‘á»ƒ tiáº¿p tá»¥c.', 401, 'KEY_REQUIRED');
+    return json({success: true, active: true, isAdmin: false, freeAccess: true, plan: 'MIá»„N KEY', expiresAt: null, ...await getForceUpdate(db, appVersion(request))});
   }
   if (await verifyMasterKey(key, env, db)) {
     if (!await verifyAdminIdentity(key, telegramId, env, db)) {
@@ -1178,16 +1178,16 @@ async function activationStatus({ db, key, telegramId, deviceId, request, env, a
   }
   const maintenance = await getMaintenance(db);
   if (maintenance.active) return maintenanceError(maintenance);
-  if (!validKey(key)) return textError("Định dạng key không hợp lệ.", 400, "INVALID_KEY_FORMAT");
+  if (!validKey(key)) return textError("Äá»‹nh dáº¡ng key khÃ´ng há»£p lá»‡.", 400, "INVALID_KEY_FORMAT");
 
   const record = await queryOne(db, "SELECT * FROM license_keys WHERE license_key = ?", key);
-  if (!record) return textError("Key không tồn tại.", 404, "KEY_NOT_FOUND");
-  if (!record.active) return textError("Key đã bị vô hiệu hóa.", 403, "KEY_DISABLED");
-  if (isExpired(record.expires_at)) return textError("Key đã hết hạn.", 403, "KEY_EXPIRED");
+  if (!record) return textError("Key khÃ´ng tá»“n táº¡i.", 404, "KEY_NOT_FOUND");
+  if (!record.active) return textError("Key Ä‘Ã£ bá»‹ vÃ´ hiá»‡u hÃ³a.", 403, "KEY_DISABLED");
+  if (isExpired(record.expires_at)) return textError("Key Ä‘Ã£ háº¿t háº¡n.", 403, "KEY_EXPIRED");
   const owner = record.activated_telegram_id || record.assigned_telegram_id;
-  if (owner && await queryOne(db, 'SELECT reason FROM bans WHERE telegram_id = ?', owner)) return textError('Tài khoản đã bị khóa.', 403, 'USER_BANNED');
+  if (owner && await queryOne(db, 'SELECT reason FROM bans WHERE telegram_id = ?', owner)) return textError('TÃ i khoáº£n Ä‘Ã£ bá»‹ khÃ³a.', 403, 'USER_BANNED');
   if (record.device_id && record.device_id !== deviceId) {
-    return textError("Key đã được khóa với thiết bị khác. Liên hệ quản trị để reset.", 403, "DEVICE_MISMATCH");
+    return textError("Key Ä‘Ã£ Ä‘Æ°á»£c khÃ³a vá»›i thiáº¿t bá»‹ khÃ¡c. LiÃªn há»‡ quáº£n trá»‹ Ä‘á»ƒ reset.", 403, "DEVICE_MISMATCH");
   }
 
   if (activation && !record.device_id) {
@@ -1198,8 +1198,8 @@ async function activationStatus({ db, key, telegramId, deviceId, request, env, a
   }
 
   const bound = await queryOne(db, 'SELECT * FROM license_keys WHERE license_key = ?', key);
-  if (!bound?.active || isExpired(bound.expires_at)) return textError('Key không còn hiệu lực.', 403, 'KEY_DISABLED');
-  if (bound.device_id !== deviceId) return textError('Key chưa kích hoạt trên máy này hoặc đã gắn máy khác.', 403, 'DEVICE_MISMATCH');
+  if (!bound?.active || isExpired(bound.expires_at)) return textError('Key khÃ´ng cÃ²n hiá»‡u lá»±c.', 403, 'KEY_DISABLED');
+  if (bound.device_id !== deviceId) return textError('Key chÆ°a kÃ­ch hoáº¡t trÃªn mÃ¡y nÃ y hoáº·c Ä‘Ã£ gáº¯n mÃ¡y khÃ¡c.', 403, 'DEVICE_MISMATCH');
 
   const force = await getForceUpdate(db, appVersion(request));
   return json({ success: true, active: true, isAdmin: false, keyOnly: true, plan: bound.plan, expiresAt: bound.expires_at || null, ...force });
@@ -1245,7 +1245,7 @@ async function activateSession(request, env) {
     });
   } catch (error) {
     if (error.message === "DEVICE_KEY_REQUIRED") {
-      return textError("Thiết bị không tạo được khóa xác thực an toàn.", 400, "DEVICE_KEY_REQUIRED");
+      return textError("Thiáº¿t bá»‹ khÃ´ng táº¡o Ä‘Æ°á»£c khÃ³a xÃ¡c thá»±c an toÃ n.", 400, "DEVICE_KEY_REQUIRED");
     }
     throw error;
   }
@@ -1301,7 +1301,7 @@ async function logoutSession(request, env) {
   const authenticated = await authenticateSession(request, env.DB);
   if (authenticated.error) return sessionError(authenticated.error);
   await revokeSession(env.DB, authenticated.session.session_id);
-  return json({ success: true, active: false, message: "Đã đăng xuất và thu hồi phiên trên máy chủ." });
+  return json({ success: true, active: false, message: "ÄÃ£ Ä‘Äƒng xuáº¥t vÃ  thu há»“i phiÃªn trÃªn mÃ¡y chá»§." });
 }
 
 async function ensureDeviceAccessTable(db) {
@@ -1313,8 +1313,8 @@ async function ensureDeviceAccessTable(db) {
 
 function maskedValue(value, visible = 4) {
   const text = String(value || "");
-  if (text.length <= visible * 2) return `${text.slice(0, 2)}••••`;
-  return `${text.slice(0, visible)}••••${text.slice(-visible)}`;
+  if (text.length <= visible * 2) return `${text.slice(0, 2)}â€¢â€¢â€¢â€¢`;
+  return `${text.slice(0, visible)}â€¢â€¢â€¢â€¢${text.slice(-visible)}`;
 }
 
 async function notifyDeviceRequest(env, key, deviceId) {
@@ -1327,7 +1327,7 @@ async function notifyDeviceRequest(env, key, deviceId) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         chat_id: chatId,
-        text: `Phim4K: Có yêu cầu đăng nhập không Telegram.\nKey: ${maskedValue(key)}\nThiết bị: ${maskedValue(deviceId, 6)}\nMở Panel Admin > Yêu cầu thiết bị để duyệt.`,
+        text: `Phim4K: CÃ³ yÃªu cáº§u Ä‘Äƒng nháº­p khÃ´ng Telegram.\nKey: ${maskedValue(key)}\nThiáº¿t bá»‹: ${maskedValue(deviceId, 6)}\nMá»Ÿ Panel Admin > YÃªu cáº§u thiáº¿t bá»‹ Ä‘á»ƒ duyá»‡t.`,
       }),
     });
     return response.ok;
@@ -1340,15 +1340,15 @@ async function requestDeviceAccess(request, env) {
   const body = await parseBody(request);
   const key = normalizeKey(body.key);
   const deviceId = normalizeDeviceId(body.deviceId);
-  if (!validKey(key) || !deviceId) return textError("Nhập key hợp lệ để gửi yêu cầu cho Admin.", 400, "INVALID_DEVICE_REQUEST");
-  if (await verifyMasterKey(key, env, env.DB)) return textError("Key Admin bắt buộc dùng Telegram ID quản trị.", 403, "ADMIN_TELEGRAM_REQUIRED");
+  if (!validKey(key) || !deviceId) return textError("Nháº­p key há»£p lá»‡ Ä‘á»ƒ gá»­i yÃªu cáº§u cho Admin.", 400, "INVALID_DEVICE_REQUEST");
+  if (await verifyMasterKey(key, env, env.DB)) return textError("Key Admin báº¯t buá»™c dÃ¹ng Telegram ID quáº£n trá»‹.", 403, "ADMIN_TELEGRAM_REQUIRED");
   const maintenance = await getMaintenance(env.DB);
   if (maintenance.active) return maintenanceError(maintenance);
 
   const record = await queryOne(env.DB, "SELECT * FROM license_keys WHERE license_key = ?", key);
-  if (!record) return textError("Key không tồn tại.", 404, "KEY_NOT_FOUND");
-  if (!record.active) return textError("Key đã bị vô hiệu hóa.", 403, "KEY_DISABLED");
-  if (isExpired(record.expires_at)) return textError("Key đã hết hạn.", 403, "KEY_EXPIRED");
+  if (!record) return textError("Key khÃ´ng tá»“n táº¡i.", 404, "KEY_NOT_FOUND");
+  if (!record.active) return textError("Key Ä‘Ã£ bá»‹ vÃ´ hiá»‡u hÃ³a.", 403, "KEY_DISABLED");
+  if (isExpired(record.expires_at)) return textError("Key Ä‘Ã£ háº¿t háº¡n.", 403, "KEY_EXPIRED");
 
   await ensureDeviceAccessTable(env.DB);
   await env.DB.prepare(
@@ -1356,11 +1356,11 @@ async function requestDeviceAccess(request, env) {
   ).bind(key, deviceId, now()).run();
   const existing = await queryOne(env.DB, "SELECT status FROM device_access_requests WHERE license_key = ? AND device_id = ?", key, deviceId);
   if (existing?.status === "approved" && record.device_id === deviceId) {
-    return json({ success: true, status: "approved", message: "Thiết bị đã được Admin cấp phép." });
+    return json({ success: true, status: "approved", message: "Thiáº¿t bá»‹ Ä‘Ã£ Ä‘Æ°á»£c Admin cáº¥p phÃ©p." });
   }
   const notified = await notifyDeviceRequest(env, key, deviceId);
   await logEvent(env.DB, "device_access_requested", { targetKey: key, detail: `device=${maskedValue(deviceId, 6)} notified=${notified}` });
-  return json({ success: true, status: "pending", notified, message: notified ? "Đã báo Admin. Ứng dụng sẽ tự kiểm tra trạng thái duyệt." : "Đã gửi yêu cầu vào Panel Admin. Ứng dụng sẽ tự kiểm tra trạng thái duyệt." });
+  return json({ success: true, status: "pending", notified, message: notified ? "ÄÃ£ bÃ¡o Admin. á»¨ng dá»¥ng sáº½ tá»± kiá»ƒm tra tráº¡ng thÃ¡i duyá»‡t." : "ÄÃ£ gá»­i yÃªu cáº§u vÃ o Panel Admin. á»¨ng dá»¥ng sáº½ tá»± kiá»ƒm tra tráº¡ng thÃ¡i duyá»‡t." });
 }
 
 async function deviceAccessStatus(request, env) {
@@ -1368,20 +1368,20 @@ async function deviceAccessStatus(request, env) {
   // retained in browser history, CDN logs and support screenshots.
   const key = requestKey(request);
   const deviceId = normalizeDeviceId(request.headers.get('x-device-id'));
-  if (!validKey(key) || !deviceId) return textError("Thiếu key hoặc mã thiết bị.", 400, "MISSING_DEVICE_LICENSE_DATA");
+  if (!validKey(key) || !deviceId) return textError("Thiáº¿u key hoáº·c mÃ£ thiáº¿t bá»‹.", 400, "MISSING_DEVICE_LICENSE_DATA");
   const maintenance = await getMaintenance(env.DB);
   if (maintenance.active) return maintenanceError(maintenance);
   await ensureDeviceAccessTable(env.DB);
   const approval = await queryOne(env.DB, "SELECT status FROM device_access_requests WHERE license_key = ? AND device_id = ?", key, deviceId);
-  if (!approval) return json({ success: true, active: false, status: "none", message: "Chưa gửi yêu cầu cấp phép." });
+  if (!approval) return json({ success: true, active: false, status: "none", message: "ChÆ°a gá»­i yÃªu cáº§u cáº¥p phÃ©p." });
   if (approval.status !== "approved") {
-    return json({ success: true, active: false, status: approval.status, message: approval.status === "rejected" ? "Admin đã từ chối yêu cầu." : "Đang chờ Admin duyệt." });
+    return json({ success: true, active: false, status: approval.status, message: approval.status === "rejected" ? "Admin Ä‘Ã£ tá»« chá»‘i yÃªu cáº§u." : "Äang chá» Admin duyá»‡t." });
   }
   const record = await queryOne(env.DB, "SELECT * FROM license_keys WHERE license_key = ?", key);
-  if (!record) return textError("Key không tồn tại.", 404, "KEY_NOT_FOUND");
-  if (!record.active) return textError("Key đã bị vô hiệu hóa.", 403, "KEY_DISABLED");
-  if (isExpired(record.expires_at)) return textError("Key đã hết hạn.", 403, "KEY_EXPIRED");
-  if (record.device_id !== deviceId) return textError("Quyền thiết bị đã thay đổi. Hãy gửi yêu cầu mới.", 403, "DEVICE_MISMATCH");
+  if (!record) return textError("Key khÃ´ng tá»“n táº¡i.", 404, "KEY_NOT_FOUND");
+  if (!record.active) return textError("Key Ä‘Ã£ bá»‹ vÃ´ hiá»‡u hÃ³a.", 403, "KEY_DISABLED");
+  if (isExpired(record.expires_at)) return textError("Key Ä‘Ã£ háº¿t háº¡n.", 403, "KEY_EXPIRED");
+  if (record.device_id !== deviceId) return textError("Quyá»n thiáº¿t bá»‹ Ä‘Ã£ thay Ä‘á»•i. HÃ£y gá»­i yÃªu cáº§u má»›i.", 403, "DEVICE_MISMATCH");
   const force = await getForceUpdate(env.DB, appVersion(request));
   return json({
     success: true,
@@ -1413,14 +1413,14 @@ async function decideDeviceAccess(request, env) {
   const key = normalizeKey(body.key);
   const deviceId = normalizeDeviceId(body.deviceId);
   const decision = body.decision === "approve" ? "approved" : body.decision === "reject" ? "rejected" : "";
-  if (!validKey(key) || !deviceId || !decision) return textError("Yêu cầu duyệt không hợp lệ.", 400, "INVALID_DECISION");
+  if (!validKey(key) || !deviceId || !decision) return textError("YÃªu cáº§u duyá»‡t khÃ´ng há»£p lá»‡.", 400, "INVALID_DECISION");
   await ensureDeviceAccessTable(env.DB);
   const pending = await queryOne(env.DB, "SELECT status FROM device_access_requests WHERE license_key = ? AND device_id = ?", key, deviceId);
-  if (!pending) return textError("Không tìm thấy yêu cầu thiết bị.", 404, "REQUEST_NOT_FOUND");
+  if (!pending) return textError("KhÃ´ng tÃ¬m tháº¥y yÃªu cáº§u thiáº¿t bá»‹.", 404, "REQUEST_NOT_FOUND");
   const timestamp = now();
   if (decision === "approved") {
     const record = await queryOne(env.DB, "SELECT active, expires_at FROM license_keys WHERE license_key = ?", key);
-    if (!record || !record.active || isExpired(record.expires_at)) return textError("Key không còn hoạt động.", 403, "KEY_INACTIVE");
+    if (!record || !record.active || isExpired(record.expires_at)) return textError("Key khÃ´ng cÃ²n hoáº¡t Ä‘á»™ng.", 403, "KEY_INACTIVE");
     await env.DB.prepare("UPDATE license_keys SET device_id = ?, updated_at = ? WHERE license_key = ?").bind(deviceId, timestamp, key).run();
   }
   await env.DB.prepare("UPDATE device_access_requests SET status = ?, decided_at = ?, decided_by = ? WHERE license_key = ? AND device_id = ?").bind(decision, timestamp, requestTelegram(request), key, deviceId).run();
@@ -1458,8 +1458,8 @@ async function createKey(request, env) {
   const key = normalizeKey(body.key);
   const durationDays = numericDays(body.durationDays);
   const assignedTelegramId = normalizeId(body.assignedTelegramId);
-  if (!validKey(key)) return textError("Key phải gồm chữ in hoa, số hoặc dấu gạch ngang.", 400, "INVALID_KEY_FORMAT");
-  if (!durationDays) return textError("Thời hạn key phải từ 1 đến 3650 ngày.", 400, "INVALID_DURATION");
+  if (!validKey(key)) return textError("Key pháº£i gá»“m chá»¯ in hoa, sá»‘ hoáº·c dáº¥u gáº¡ch ngang.", 400, "INVALID_KEY_FORMAT");
+  if (!durationDays) return textError("Thá»i háº¡n key pháº£i tá»« 1 Ä‘áº¿n 3650 ngÃ y.", 400, "INVALID_DURATION");
   if (assignedTelegramId && !validTelegramId(assignedTelegramId)) return textError("Telegram ID is invalid.", 400, "INVALID_TELEGRAM_ID");
   const createdAt = now();
   try {
@@ -1467,10 +1467,10 @@ async function createKey(request, env) {
       "INSERT INTO license_keys (license_key, plan, expires_at, active, assigned_telegram_id, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?, ?)",
     ).bind(key, String(body.plan || "STANDARD").trim().slice(0, 64) || "STANDARD", plusDays(null, durationDays), assignedTelegramId, createdAt, createdAt).run();
   } catch (_error) {
-    return textError("Key đã tồn tại.", 409, "KEY_ALREADY_EXISTS");
+    return textError("Key Ä‘Ã£ tá»“n táº¡i.", 409, "KEY_ALREADY_EXISTS");
   }
   await logEvent(env.DB, "key_created", { actorTelegramId: requestTelegram(request), targetKey: key, detail: `days=${durationDays}` });
-  return json({ success: true, message: "Đã tạo key mới.", key }, 201);
+  return json({ success: true, message: "ÄÃ£ táº¡o key má»›i.", key }, 201);
 }
 
 async function updateKey(request, env, operation) {
@@ -1480,48 +1480,48 @@ async function updateKey(request, env, operation) {
   if (missing) return missing;
   const body = await parseBody(request);
   const key = normalizeKey(body.key);
-  if (!validKey(key)) return textError("Key không hợp lệ.", 400, "INVALID_KEY_FORMAT");
+  if (!validKey(key)) return textError("Key khÃ´ng há»£p lá»‡.", 400, "INVALID_KEY_FORMAT");
   const row = await queryOne(env.DB, "SELECT * FROM license_keys WHERE license_key = ?", key);
-  if (!row) return textError("Không tìm thấy key.", 404, "KEY_NOT_FOUND");
+  if (!row) return textError("KhÃ´ng tÃ¬m tháº¥y key.", 404, "KEY_NOT_FOUND");
   const timestamp = now();
   let message;
   if (operation === "renew") {
     const days = numericDays(body.addDays);
-    if (!days) return textError("Số ngày gia hạn không hợp lệ.", 400, "INVALID_DURATION");
+    if (!days) return textError("Sá»‘ ngÃ y gia háº¡n khÃ´ng há»£p lá»‡.", 400, "INVALID_DURATION");
     await env.DB.prepare("UPDATE license_keys SET expires_at = ?, updated_at = ? WHERE license_key = ?").bind(plusDays(row.expires_at, days), timestamp, key).run();
-    message = "Đã gia hạn key.";
+    message = "ÄÃ£ gia háº¡n key.";
   } else if (operation === "expiry") {
     let expiresAt = null;
     if (body.isLifetime) expiresAt = null;
     else if (body.addDays !== undefined) {
       const days = numericDays(body.addDays);
-      if (!days) return textError("Số ngày gia hạn không hợp lệ.", 400, "INVALID_DURATION");
+      if (!days) return textError("Sá»‘ ngÃ y gia háº¡n khÃ´ng há»£p lá»‡.", 400, "INVALID_DURATION");
       expiresAt = plusDays(row.expires_at, days);
     } else {
       const parsed = Date.parse(String(body.expiresAt || ""));
-      if (Number.isNaN(parsed) || parsed <= Date.now()) return textError("Ngày hết hạn không hợp lệ.", 400, "INVALID_EXPIRY");
+      if (Number.isNaN(parsed) || parsed <= Date.now()) return textError("NgÃ y háº¿t háº¡n khÃ´ng há»£p lá»‡.", 400, "INVALID_EXPIRY");
       expiresAt = new Date(parsed).toISOString();
     }
     await env.DB.prepare("UPDATE license_keys SET expires_at = ?, updated_at = ? WHERE license_key = ?").bind(expiresAt, timestamp, key).run();
-    message = "Đã cập nhật hạn key.";
+    message = "ÄÃ£ cáº­p nháº­t háº¡n key.";
   } else if (operation === "toggle") {
     await env.DB.prepare("UPDATE license_keys SET active = ?, updated_at = ? WHERE license_key = ?").bind(row.active ? 0 : 1, timestamp, key).run();
-    message = "Đã đổi trạng thái key.";
+    message = "ÄÃ£ Ä‘á»•i tráº¡ng thÃ¡i key.";
   } else if (operation === "reset-device") {
     await env.DB.prepare("UPDATE license_keys SET device_id = NULL, updated_at = ? WHERE license_key = ?").bind(timestamp, key).run();
     await env.DB.prepare("UPDATE auth_sessions SET revoked_at = ?, updated_at = ? WHERE license_key = ? AND revoked_at IS NULL").bind(timestamp, timestamp, key).run();
-    message = "Đã reset thiết bị.";
+    message = "ÄÃ£ reset thiáº¿t bá»‹.";
   } else if (operation === "reset-telegram") {
     const newTelegramId = normalizeId(body.newTelegramId);
     if (newTelegramId && !validTelegramId(newTelegramId)) return textError("Telegram ID is invalid.", 400, "INVALID_TELEGRAM_ID");
     await env.DB.prepare("UPDATE license_keys SET assigned_telegram_id = ?, activated_telegram_id = NULL, updated_at = ? WHERE license_key = ?").bind(newTelegramId, timestamp, key).run();
-    message = "Đã cập nhật Telegram cho key.";
+    message = "ÄÃ£ cáº­p nháº­t Telegram cho key.";
   } else if (operation === "delete") {
     await env.DB.prepare("UPDATE auth_sessions SET revoked_at = ?, updated_at = ? WHERE license_key = ? AND revoked_at IS NULL").bind(timestamp, timestamp, key).run();
     await env.DB.prepare("DELETE FROM license_keys WHERE license_key = ?").bind(key).run();
-    message = "Đã xóa key.";
+    message = "ÄÃ£ xÃ³a key.";
   } else {
-    return textError("Thao tác key không được hỗ trợ.", 404, "UNKNOWN_KEY_OPERATION");
+    return textError("Thao tÃ¡c key khÃ´ng Ä‘Æ°á»£c há»— trá»£.", 404, "UNKNOWN_KEY_OPERATION");
   }
   if (operation === "toggle") {
     await env.DB.prepare("UPDATE auth_sessions SET revoked_at = ?, updated_at = ? WHERE license_key = ? AND revoked_at IS NULL")
@@ -1546,7 +1546,7 @@ async function listUsers(request, env) {
     isBanned: !Boolean(record.active) || Boolean(record.banned_telegram_id),
     banReason: record.ban_reason || "",
     active: Boolean(record.active) && !isExpired(record.expires_at),
-    status: !record.active ? "Đã bị ban" : (isExpired(record.expires_at) ? "Hết hạn" : "Bình thường"),
+    status: !record.active ? "ÄÃ£ bá»‹ ban" : (isExpired(record.expires_at) ? "Háº¿t háº¡n" : "BÃ¬nh thÆ°á»ng"),
     expiresAt: record.expires_at || null,
     boundDeviceId: record.device_id || "",
   })) });
@@ -1564,7 +1564,7 @@ async function setBan(request, env, banned) {
 
   let license = null;
   if (key) {
-    if (!validKey(key)) return textError("Mã key không hợp lệ.", 400, "INVALID_KEY_FORMAT");
+    if (!validKey(key)) return textError("MÃ£ key khÃ´ng há»£p lá»‡.", 400, "INVALID_KEY_FORMAT");
     license = await queryOne(env.DB, "SELECT * FROM license_keys WHERE license_key = ?", key);
   } else if (deviceId) {
     license = await queryOne(env.DB, "SELECT * FROM license_keys WHERE device_id = ?", deviceId);
@@ -1587,11 +1587,11 @@ async function setBan(request, env, banned) {
       targetKey: license.license_key,
       detail: `${banned ? "ban" : "unban"} device=${maskedValue(license.device_id || "unbound")} ${String(body.reason || "").slice(0, 300)}`.trim(),
     });
-    return json({ success: true, message: banned ? "Đã khóa user theo key và thiết bị." : "Đã mở khóa user theo key." });
+    return json({ success: true, message: banned ? "ÄÃ£ khÃ³a user theo key vÃ  thiáº¿t bá»‹." : "ÄÃ£ má»Ÿ khÃ³a user theo key." });
   }
 
-  if (key || deviceId) return textError("Không tìm thấy user gắn với key hoặc thiết bị này.", 404, "USER_NOT_FOUND");
-  if (!telegramId) return textError("Thiếu key hoặc mã thiết bị của user.", 400, "MISSING_USER_TARGET");
+  if (key || deviceId) return textError("KhÃ´ng tÃ¬m tháº¥y user gáº¯n vá»›i key hoáº·c thiáº¿t bá»‹ nÃ y.", 404, "USER_NOT_FOUND");
+  if (!telegramId) return textError("Thiáº¿u key hoáº·c mÃ£ thiáº¿t bá»‹ cá»§a user.", 400, "MISSING_USER_TARGET");
   if (!validTelegramId(telegramId)) return textError("Telegram ID is invalid.", 400, "INVALID_TELEGRAM_ID");
   if (banned) {
     const timestamp = now();
@@ -1600,11 +1600,11 @@ async function setBan(request, env, banned) {
       "INSERT INTO bans (telegram_id, scopes_json, reason, created_at, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(telegram_id) DO UPDATE SET scopes_json = excluded.scopes_json, reason = excluded.reason, updated_at = excluded.updated_at",
     ).bind(telegramId, JSON.stringify(scopes), String(body.reason || "").slice(0, 300), timestamp, timestamp).run();
     await logEvent(env.DB, "user_banned", { actorTelegramId: requestTelegram(request), targetTelegramId: telegramId, detail: String(body.reason || "") });
-    return json({ success: true, message: "Đã khóa người dùng." });
+    return json({ success: true, message: "ÄÃ£ khÃ³a ngÆ°á»i dÃ¹ng." });
   }
   await env.DB.prepare("DELETE FROM bans WHERE telegram_id = ?").bind(telegramId).run();
   await logEvent(env.DB, "user_unbanned", { actorTelegramId: requestTelegram(request), targetTelegramId: telegramId });
-  return json({ success: true, message: "Đã bỏ khóa người dùng." });
+  return json({ success: true, message: "ÄÃ£ bá» khÃ³a ngÆ°á»i dÃ¹ng." });
 }
 
 async function handleLogs(request, env) {
@@ -1614,7 +1614,7 @@ async function handleLogs(request, env) {
   if (missing) return missing;
   if (request.method === "DELETE") {
     await env.DB.prepare("DELETE FROM audit_logs").run();
-    return json({ success: true, message: "Đã xóa nhật ký." });
+    return json({ success: true, message: "ÄÃ£ xÃ³a nháº­t kÃ½." });
   }
   const url = new URL(request.url);
   const limit = Math.min(Math.max(Number.parseInt(url.searchParams.get("limit") || "100", 10) || 100, 1), 200);
@@ -1690,9 +1690,9 @@ async function probeJellyfin(env) {
   if (!origin) {
     return {
       id: "jellyfin",
-      label: "Jellyfin tự host",
+      label: "Jellyfin tá»± host",
       status: "NEEDS_CONFIGURATION",
-      purpose: "Kho phim Full HD/4K do bạn sở hữu hoặc được cấp quyền",
+      purpose: "Kho phim Full HD/4K do báº¡n sá»Ÿ há»¯u hoáº·c Ä‘Æ°á»£c cáº¥p quyá»n",
     };
   }
   try {
@@ -1706,18 +1706,18 @@ async function probeJellyfin(env) {
     const info = await response.json();
     return {
       id: "jellyfin",
-      label: "Jellyfin tự host",
+      label: "Jellyfin tá»± host",
       status: "READY",
       serverName: cleanTelemetryValue(info.ServerName, 80) || "Jellyfin",
       version: cleanTelemetryValue(info.Version, 32) || "unknown",
-      purpose: "Kho phim Full HD/4K do bạn sở hữu hoặc được cấp quyền",
+      purpose: "Kho phim Full HD/4K do báº¡n sá»Ÿ há»¯u hoáº·c Ä‘Æ°á»£c cáº¥p quyá»n",
     };
   } catch (_error) {
     return {
       id: "jellyfin",
-      label: "Jellyfin tự host",
+      label: "Jellyfin tá»± host",
       status: "UNREACHABLE",
-      purpose: "Kho phim Full HD/4K do bạn sở hữu hoặc được cấp quyền",
+      purpose: "Kho phim Full HD/4K do báº¡n sá»Ÿ há»¯u hoáº·c Ä‘Æ°á»£c cáº¥p quyá»n",
     };
   }
 }
@@ -1744,7 +1744,7 @@ async function handleContentStatus(request, env) {
     cacheActive: true,
     cacheTtlSeconds: 30,
     providers: [
-      { id: "catalog", label: "Kho phim được bảo vệ", status: catalogStatus, purpose: "Danh mục, mô tả và poster qua Cloudflare" },
+      { id: "catalog", label: "Kho phim Ä‘Æ°á»£c báº£o vá»‡", status: catalogStatus, purpose: "Danh má»¥c, mÃ´ táº£ vÃ  poster qua Cloudflare" },
       jellyfin,
     ],
     ads: { sdkEmbedded: false, mode: "NO_AD_SDK" },
@@ -1760,12 +1760,12 @@ async function handleMovieRefresh(request, env) {
   const results = await Promise.allSettled(paths.map((path) => fetchProtectedCatalogJson(path, env, { force: true, ttl: 30 })));
   const uniqueItems = new Set(results.flatMap((result) => result.status === "fulfilled" ? catalogItems(result.value).map((item) => item?.slug).filter(Boolean) : []));
   const itemCount = uniqueItems.size;
-  if (!itemCount) return textError("Nguồn danh mục tạm thời không khả dụng.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
+  if (!itemCount) return textError("Nguá»“n danh má»¥c táº¡m thá»i khÃ´ng kháº£ dá»¥ng.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
   await logEvent(env.DB, "admin_catalog_refreshed", {
     actorTelegramId: requestTelegram(request),
     detail: JSON.stringify({ itemCount }),
   });
-  return json({ success: true, message: `Đã kiểm tra và làm mới ${itemCount} mục phim.`, itemCount, refreshedAt: now() });
+  return json({ success: true, message: `ÄÃ£ kiá»ƒm tra vÃ  lÃ m má»›i ${itemCount} má»¥c phim.`, itemCount, refreshedAt: now() });
 }
 
 async function rotateMasterKey(request, env) {
@@ -1804,7 +1804,7 @@ async function handleForceUpdate(request, env) {
   await env.DB.prepare(
     "INSERT INTO app_settings (setting_key, setting_value, updated_at) VALUES ('force_update', ?, ?) ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = excluded.updated_at",
   ).bind(value, now()).run();
-  return json({ success: true, message: "Đã cập nhật chính sách phiên bản." });
+  return json({ success: true, message: "ÄÃ£ cáº­p nháº­t chÃ­nh sÃ¡ch phiÃªn báº£n." });
 }
 
 async function handleDownloads(request, env) {
@@ -1843,14 +1843,14 @@ async function handleDownloads(request, env) {
   const statements = [];
   for (const [platform, url, version, sha256, sizeBytes, signer] of entries) {
     const safeUrl = String(url || "").trim();
-    if (safeUrl && !validDownloadUrl(safeUrl)) return textError("Link tải phải dùng HTTPS, không chứa tài khoản/mật khẩu.", 400, "INVALID_DOWNLOAD_URL");
+    if (safeUrl && !validDownloadUrl(safeUrl)) return textError("Link táº£i pháº£i dÃ¹ng HTTPS, khÃ´ng chá»©a tÃ i khoáº£n/máº­t kháº©u.", 400, "INVALID_DOWNLOAD_URL");
     const safeSha256 = String(sha256 || "").trim().toLowerCase();
     const safeSize = Number(sizeBytes || 0);
     if (safeUrl && env.ALLOW_LEGACY_TEST_AUTH !== "1" && !validReleaseSha256(safeSha256)) {
-      return textError("Bản phát hành phải có SHA-256 hợp lệ.", 400, "RELEASE_SHA256_REQUIRED");
+      return textError("Báº£n phÃ¡t hÃ nh pháº£i cÃ³ SHA-256 há»£p lá»‡.", 400, "RELEASE_SHA256_REQUIRED");
     }
     if (safeUrl && safeSize && !validReleaseSize(safeSize)) {
-      return textError("Kích thước bản phát hành không hợp lệ.", 400, "INVALID_RELEASE_SIZE");
+      return textError("KÃ­ch thÆ°á»›c báº£n phÃ¡t hÃ nh khÃ´ng há»£p lá»‡.", 400, "INVALID_RELEASE_SIZE");
     }
     statements.push(env.DB.prepare(
       "INSERT INTO downloads (platform, url, version, sha256, size_bytes, signer, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(platform) DO UPDATE SET url = excluded.url, version = excluded.version, sha256 = excluded.sha256, size_bytes = excluded.size_bytes, signer = excluded.signer, updated_at = excluded.updated_at",
@@ -1858,7 +1858,7 @@ async function handleDownloads(request, env) {
   }
   await env.DB.batch(statements);
   await logEvent(env.DB, 'admin_downloads_updated', { actorTelegramId: requestTelegram(request), detail: 'release-links-updated' });
-  return json({ success: true, message: "Đã cập nhật link tải." });
+  return json({ success: true, message: "ÄÃ£ cáº­p nháº­t link táº£i." });
 }
 
 export function validDownloadUrl(value) {
@@ -1952,11 +1952,11 @@ async function handleProtectedMovieImage(request, env, executionContext) {
     ticket = await openMediaTicket(new URL(request.url).searchParams.get("t"), env, "image");
   } catch (error) {
     const expired = error.message === "EXPIRED_MEDIA_TICKET";
-    return textError(expired ? "Vé ảnh đã hết hạn." : "Vé ảnh không hợp lệ.", expired ? 410 : 400, expired ? "IMAGE_TICKET_EXPIRED" : "INVALID_IMAGE_TICKET");
+    return textError(expired ? "VÃ© áº£nh Ä‘Ã£ háº¿t háº¡n." : "VÃ© áº£nh khÃ´ng há»£p lá»‡.", expired ? 410 : 400, expired ? "IMAGE_TICKET_EXPIRED" : "INVALID_IMAGE_TICKET");
   }
   const target = safePublicHttpsUrl(ticket.url);
   const hosts = configuredImageHosts(env);
-  if (!target || !hosts.has(target.hostname.toLowerCase())) return textError("Nguồn ảnh không được phép.", 400, "IMAGE_HOST_NOT_ALLOWED");
+  if (!target || !hosts.has(target.hostname.toLowerCase())) return textError("Nguá»“n áº£nh khÃ´ng Ä‘Æ°á»£c phÃ©p.", 400, "IMAGE_HOST_NOT_ALLOWED");
   const cache = typeof caches !== "undefined" ? caches.default : null;
   const cacheKey = cache ? await protectedImageCacheKey(request, target) : null;
   if (cache && cacheKey) {
@@ -1971,17 +1971,17 @@ async function handleProtectedMovieImage(request, env, executionContext) {
   try {
     ({ response: upstream, target: finalTarget } = await fetchProtectedUpstream(target.href, request, env, "media", 4, false));
   } catch (_error) {
-    return textError("Không tải được ảnh phim.", 502, "IMAGE_UPSTREAM_ERROR");
+    return textError("KhÃ´ng táº£i Ä‘Æ°á»£c áº£nh phim.", 502, "IMAGE_UPSTREAM_ERROR");
   }
   if (!finalTarget || !hosts.has(finalTarget.hostname.toLowerCase())) {
     try { await upstream.body?.cancel(); } catch (_error) {}
-    return textError("Nguồn ảnh chuyển hướng không được phép.", 502, "IMAGE_REDIRECT_NOT_ALLOWED");
+    return textError("Nguá»“n áº£nh chuyá»ƒn hÆ°á»›ng khÃ´ng Ä‘Æ°á»£c phÃ©p.", 502, "IMAGE_REDIRECT_NOT_ALLOWED");
   }
-  if (!upstream.ok) return textError("Không tải được ảnh phim.", 502, "IMAGE_UPSTREAM_ERROR");
+  if (!upstream.ok) return textError("KhÃ´ng táº£i Ä‘Æ°á»£c áº£nh phim.", 502, "IMAGE_UPSTREAM_ERROR");
   const contentType = String(upstream.headers.get("content-type") || "").toLowerCase();
-  if (!contentType.startsWith("image/")) return textError("Nguồn trả về không phải ảnh.", 502, "INVALID_IMAGE_RESPONSE");
+  if (!contentType.startsWith("image/")) return textError("Nguá»“n tráº£ vá» khÃ´ng pháº£i áº£nh.", 502, "INVALID_IMAGE_RESPONSE");
   const contentLength = Number.parseInt(upstream.headers.get("content-length") || "0", 10) || 0;
-  if (contentLength > 6 * 1024 * 1024) return textError("Ảnh vượt quá giới hạn kích thước.", 413, "IMAGE_TOO_LARGE");
+  if (contentLength > 6 * 1024 * 1024) return textError("áº¢nh vÆ°á»£t quÃ¡ giá»›i háº¡n kÃ­ch thÆ°á»›c.", 413, "IMAGE_TOO_LARGE");
   const headers = new Headers(CORS_HEADERS);
   headers.set("content-type", contentType);
   headers.set("cache-control", "public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800");
@@ -2063,7 +2063,7 @@ async function protectMovieDetail(data, request, env, slug) {
   output.episodes = servers.map((server, serverIndex) => ({
     server_name: cleanProgressText(server?.server_name, 100) || `Server ${serverIndex + 1}`,
     server_data: (Array.isArray(server?.server_data) ? server.server_data : []).map((episode, episodeIndex) => ({
-      name: cleanProgressText(episode?.name, 120) || `Tập ${episodeIndex + 1}`,
+      name: cleanProgressText(episode?.name, 120) || `Táº­p ${episodeIndex + 1}`,
       slug: cleanProgressText(episode?.slug, 160),
       filename: cleanProgressText(episode?.filename, 160),
       stream_ref: { movie: slug, server: serverIndex, episode: episodeIndex },
@@ -2082,7 +2082,7 @@ async function handleProtectedMovieCatalog(request, env) {
     const paths = homeCatalogPaths(new Date().getUTCFullYear());
     const results = await Promise.allSettled(paths.map((path, index) => fetchProtectedCatalogJson(path, env, { ttl: index ? 300 : 30 })));
     const items = results.flatMap((result) => result.status === "fulfilled" ? normalizedCatalogItems(result.value, env) : []);
-    if (!items.length) return textError("Nguồn danh mục tạm thời không khả dụng.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
+    if (!items.length) return textError("Nguá»“n danh má»¥c táº¡m thá»i khÃ´ng kháº£ dá»¥ng.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
     return json(await protectCatalogImages(HomeCuration.build(items), request, env));
   }
 
@@ -2095,7 +2095,7 @@ async function handleProtectedMovieCatalog(request, env) {
       totalItems: catalogItems(data).length,
     };
     return json({
-      title: "Toàn bộ kho phim",
+      title: "ToÃ n bá»™ kho phim",
       items: await protectCatalogImages(normalizedCatalogItems(data, env), request, env),
       pagination,
     });
@@ -2104,9 +2104,9 @@ async function handleProtectedMovieCatalog(request, env) {
   if (pathname === "/api/movies/filter") {
     const genre = String(url.searchParams.get("genre") || "").trim().toLowerCase();
     const country = String(url.searchParams.get("country") || "").trim().toLowerCase();
-    if (!genre && !country) return textError("Thiếu bộ lọc phim.", 400, "MISSING_MOVIE_FILTER");
-    if (genre && !MOVIE_FILTER_GENRES.has(genre)) return textError("Thể loại không hợp lệ.", 400, "INVALID_GENRE_FILTER");
-    if (country && !MOVIE_FILTER_COUNTRIES.has(country)) return textError("Quốc gia không hợp lệ.", 400, "INVALID_COUNTRY_FILTER");
+    if (!genre && !country) return textError("Thiáº¿u bá»™ lá»c phim.", 400, "MISSING_MOVIE_FILTER");
+    if (genre && !MOVIE_FILTER_GENRES.has(genre)) return textError("Thá»ƒ loáº¡i khÃ´ng há»£p lá»‡.", 400, "INVALID_GENRE_FILTER");
+    if (country && !MOVIE_FILTER_COUNTRIES.has(country)) return textError("Quá»‘c gia khÃ´ng há»£p lá»‡.", 400, "INVALID_COUNTRY_FILTER");
     const page = catalogPage(url.searchParams.get("page"));
     let target = genre === "hoat-hinh"
       ? `/v1/api/danh-sach/hoat-hinh?page=${page}&limit=48`
@@ -2119,7 +2119,7 @@ async function handleProtectedMovieCatalog(request, env) {
   const categoryMatch = pathname.match(/^\/api\/movies\/category\/([a-z0-9-]+)$/);
   if (categoryMatch) {
     const category = categoryMatch[1];
-    if (!MOVIE_CATALOG_CATEGORIES.has(category)) return textError("Danh mục phim không hợp lệ.", 400, "INVALID_CATEGORY");
+    if (!MOVIE_CATALOG_CATEGORIES.has(category)) return textError("Danh má»¥c phim khÃ´ng há»£p lá»‡.", 400, "INVALID_CATEGORY");
     const page = catalogPage(url.searchParams.get("page"));
     const target = `/v1/api/danh-sach/${category}?page=${page}&limit=48&sort_field=modified.time&sort_type=desc`;
     const data = await fetchProtectedCatalogJson(target, env);
@@ -2128,7 +2128,7 @@ async function handleProtectedMovieCatalog(request, env) {
 
   if (pathname === "/api/movies/search") {
     const query = String(url.searchParams.get("q") || "").trim().slice(0, 100);
-    if (!query) return textError("Thiếu từ khóa tìm kiếm.", 400, "MISSING_QUERY");
+    if (!query) return textError("Thiáº¿u tá»« khÃ³a tÃ¬m kiáº¿m.", 400, "MISSING_QUERY");
     const page = catalogPage(url.searchParams.get("page"));
     const data = await fetchProtectedCatalogJson(`/v1/api/tim-kiem?keyword=${encodeURIComponent(query)}&page=${page}&limit=48`, env);
     return json({ query, items: await protectCatalogImages(normalizedCatalogItems(data, env), request, env), pagination: data.data?.params?.pagination || { currentPage: page, totalPages: 1 } });
@@ -2137,11 +2137,11 @@ async function handleProtectedMovieCatalog(request, env) {
   const detailMatch = pathname.match(/^\/api\/movies\/detail\/([^/]+)$/);
   if (detailMatch) {
     const slug = catalogSlug(detailMatch[1]);
-    if (!slug) return textError("Mã phim không hợp lệ.", 400, "INVALID_MOVIE_SLUG");
+    if (!slug) return textError("MÃ£ phim khÃ´ng há»£p lá»‡.", 400, "INVALID_MOVIE_SLUG");
     const data = await fetchProtectedCatalogJson(`/phim/${slug}`, env, { ttl: 120 });
     return json(await protectMovieDetail(data, request, env, slug));
   }
-  return textError("Không tìm thấy dữ liệu phim.", 404, "MOVIE_NOT_FOUND");
+  return textError("KhÃ´ng tÃ¬m tháº¥y dá»¯ liá»‡u phim.", 404, "MOVIE_NOT_FOUND");
 }
 
 async function handleMoviePlayback(request, env) {
@@ -2152,7 +2152,7 @@ async function handleMoviePlayback(request, env) {
   const serverIndex = Number(body?.server);
   const episodeIndex = Number(body?.episode);
   if (!slug || !Number.isInteger(serverIndex) || serverIndex < 0 || serverIndex > 50 || !Number.isInteger(episodeIndex) || episodeIndex < 0 || episodeIndex > 5000) {
-    return textError("Tham chiếu tập phim không hợp lệ.", 400, "INVALID_STREAM_REFERENCE");
+    return textError("Tham chiáº¿u táº­p phim khÃ´ng há»£p lá»‡.", 400, "INVALID_STREAM_REFERENCE");
   }
   const data = await fetchProtectedCatalogJson(`/phim/${slug}`, env, { ttl: 120 });
   const episode = data?.episodes?.[serverIndex]?.server_data?.[episodeIndex];
@@ -2160,8 +2160,9 @@ async function handleMoviePlayback(request, env) {
   const embedded = safePublicHttpsUrl(episode?.link_embed);
   const directEmbed = embedded && /\.(?:m3u8|mp4|m4v|mov)(?:$|[?#])/i.test(embedded.href) ? embedded : null;
   const target = hls || directEmbed;
-  if (!target) return textError("Server này không có luồng phát trực tiếp tương thích.", 404, "STREAM_NOT_AVAILABLE");
+  if (!target) return textError("Server nÃ y khÃ´ng cÃ³ luá»“ng phÃ¡t trá»±c tiáº¿p tÆ°Æ¡ng thÃ­ch.", 404, "STREAM_NOT_AVAILABLE");
   const isHls = Boolean(hls) || /\.m3u8(?:$|[?#])/i.test(target.href);
+  let clientDirectFallback = false;
   // Catalog entries can outlive their provider files. Verify the selected
   // stream before issuing a ticket so the client can immediately try another
   // server instead of remaining at 00:00 with a native-player error.
@@ -2170,31 +2171,38 @@ async function handleMoviePlayback(request, env) {
     const { response: probe } = await fetchProtectedUpstream(target.href, probeRequest, env, isHls ? "hls" : "media");
     if (!probe.ok && probe.status !== 206) {
       probe.body?.cancel?.().catch?.(() => {});
-      return textError("Nguồn phim này đã bị gỡ hoặc tạm thời không phản hồi.", 404, "STREAM_SOURCE_OFFLINE");
+      // Some providers deliberately return 404 to datacenter IPs while the
+      // same CORS-enabled HLS source remains available to viewer devices. In
+      // that specific relay-blocked case, issue a short-lived ticket which
+      // redirects only after the normal session check. Other upstream errors
+      // still fail closed or let the entrypoint retry without the relay.
+      if (probe.status === 404 && configuredRelayOrigin(env)) clientDirectFallback = true;
+      else return textError("Nguá»“n phim nÃ y Ä‘Ã£ bá»‹ gá»¡ hoáº·c táº¡m thá»i khÃ´ng pháº£n há»“i.", 404, "STREAM_SOURCE_OFFLINE");
     }
-    if (isHls) {
+    if (!clientDirectFallback && isHls) {
       const declaredLength = Number.parseInt(probe.headers.get("content-length") || "0", 10) || 0;
-      if (declaredLength > MAX_HLS_MANIFEST_BYTES) return textError("Nguồn phim trả về dữ liệu không hợp lệ.", 502, "INVALID_STREAM_SOURCE");
+      if (declaredLength > MAX_HLS_MANIFEST_BYTES) return textError("Nguá»“n phim tráº£ vá» dá»¯ liá»‡u khÃ´ng há»£p lá»‡.", 502, "INVALID_STREAM_SOURCE");
       const bytes = new Uint8Array(await probe.arrayBuffer());
       if (bytes.byteLength > MAX_HLS_MANIFEST_BYTES || !new TextDecoder().decode(bytes).trimStart().startsWith("#EXTM3U")) {
-        return textError("Nguồn phim trả về dữ liệu không hợp lệ.", 502, "INVALID_STREAM_SOURCE");
+        return textError("Nguá»“n phim tráº£ vá» dá»¯ liá»‡u khÃ´ng há»£p lá»‡.", 502, "INVALID_STREAM_SOURCE");
       }
-    } else {
+    } else if (!clientDirectFallback) {
       const contentType = String(probe.headers.get("content-type") || "").toLowerCase();
       probe.body?.cancel?.().catch?.(() => {});
       if (!/^(?:video\/|audio\/|application\/(?:octet-stream|mp2t))/.test(contentType)) {
-        return textError("Nguồn phim trả về dữ liệu không hợp lệ.", 502, "INVALID_STREAM_SOURCE");
+        return textError("Nguá»“n phim tráº£ vá» dá»¯ liá»‡u khÃ´ng há»£p lá»‡.", 502, "INVALID_STREAM_SOURCE");
       }
     }
   } catch (_error) {
-    return textError("Không kết nối được nguồn phim. Đang thử server khác.", 503, "STREAM_SOURCE_UNREACHABLE");
+    return textError("KhÃ´ng káº¿t ná»‘i Ä‘Æ°á»£c nguá»“n phim. Äang thá»­ server khÃ¡c.", 503, "STREAM_SOURCE_UNREACHABLE");
   }
-  const expiresAt = Math.floor(Date.now() / 1000) + (env.MEDIA_RELAY_FALLBACK === "redirect" ? 15 * 60 : STREAM_TICKET_TTL_SECONDS);
+  const expiresAt = Math.floor(Date.now() / 1000) + ((env.MEDIA_RELAY_FALLBACK === "redirect" || clientDirectFallback) ? 15 * 60 : STREAM_TICKET_TTL_SECONDS);
   return json({
     success: true,
     streamUrl: await protectedMediaUrl(request, env, target.href, "stream", expiresAt, {
       format: isHls ? "hls" : "media",
       sid: identity.sessionId || "",
+      clientDirectFallback,
     }),
     isHls,
     expiresAt: new Date(expiresAt * 1000).toISOString(),
@@ -2309,7 +2317,7 @@ async function handleMovieStream(request, env) {
     ticket = await openMediaTicket(new URL(request.url).searchParams.get("t"), env, "stream");
   } catch (error) {
     const expired = error.message === "EXPIRED_MEDIA_TICKET";
-    return textError(expired ? "Vé phát đã hết hạn." : "Vé phát không hợp lệ.", expired ? 410 : 400, expired ? "STREAM_TICKET_EXPIRED" : "INVALID_STREAM_TICKET");
+    return textError(expired ? "VÃ© phÃ¡t Ä‘Ã£ háº¿t háº¡n." : "VÃ© phÃ¡t khÃ´ng há»£p lá»‡.", expired ? 410 : 400, expired ? "STREAM_TICKET_EXPIRED" : "INVALID_STREAM_TICKET");
   }
   if (!(env.ALLOW_LEGACY_TEST_AUTH === "1" && !ticket.sid)) {
     const session = await mediaSession(env.DB, ticket.sid);
@@ -2320,7 +2328,7 @@ async function handleMovieStream(request, env) {
   // Compatibility mode is retained only for emergency rollback. Production
   // uses the authenticated VPS relay, so the provider URL never reaches the
   // client or appears in a browser-visible redirect.
-  if (env.MEDIA_RELAY_FALLBACK === "redirect") {
+  if (env.MEDIA_RELAY_FALLBACK === "redirect" || ticket.clientDirectFallback === true) {
     return new Response(null, {
       status: 307,
       headers: { ...CORS_HEADERS, location: ticket.url, "cache-control": "private, no-store", "referrer-policy": "no-referrer" },
@@ -2331,26 +2339,26 @@ async function handleMovieStream(request, env) {
   try {
     ({ response: upstream, target } = await fetchProtectedUpstream(ticket.url, request, env, ticket.format));
   } catch (_error) {
-    return textError("Không kết nối được luồng phim.", 502, "STREAM_UPSTREAM_ERROR");
+    return textError("KhÃ´ng káº¿t ná»‘i Ä‘Æ°á»£c luá»“ng phim.", 502, "STREAM_UPSTREAM_ERROR");
   }
-  if (!upstream.ok && upstream.status !== 206) return textError("Luồng phim tạm thời không phản hồi.", 502, `STREAM_UPSTREAM_HTTP_${upstream.status}`);
+  if (!upstream.ok && upstream.status !== 206) return textError("Luá»“ng phim táº¡m thá»i khÃ´ng pháº£n há»“i.", 502, `STREAM_UPSTREAM_HTTP_${upstream.status}`);
   const contentType = String(upstream.headers.get("content-type") || "").toLowerCase();
   const isHls = ticket.format === "hls" || /(?:mpegurl|x-mpegurl)/.test(contentType) || /\.m3u8(?:$|[?#])/i.test(target.href);
   if (isHls) {
     const declaredLength = Number.parseInt(upstream.headers.get("content-length") || "0", 10) || 0;
-    if (declaredLength > MAX_HLS_MANIFEST_BYTES) return textError("Danh sách phát vượt giới hạn.", 413, "HLS_MANIFEST_TOO_LARGE");
+    if (declaredLength > MAX_HLS_MANIFEST_BYTES) return textError("Danh sÃ¡ch phÃ¡t vÆ°á»£t giá»›i háº¡n.", 413, "HLS_MANIFEST_TOO_LARGE");
     const bytes = new Uint8Array(await upstream.arrayBuffer());
-    if (bytes.byteLength > MAX_HLS_MANIFEST_BYTES) return textError("Danh sách phát vượt giới hạn.", 413, "HLS_MANIFEST_TOO_LARGE");
+    if (bytes.byteLength > MAX_HLS_MANIFEST_BYTES) return textError("Danh sÃ¡ch phÃ¡t vÆ°á»£t giá»›i háº¡n.", 413, "HLS_MANIFEST_TOO_LARGE");
     const manifest = new TextDecoder().decode(bytes);
-    if (!manifest.trimStart().startsWith("#EXTM3U")) return textError("Danh sách phát không hợp lệ.", 502, "INVALID_HLS_MANIFEST");
+    if (!manifest.trimStart().startsWith("#EXTM3U")) return textError("Danh sÃ¡ch phÃ¡t khÃ´ng há»£p lá»‡.", 502, "INVALID_HLS_MANIFEST");
     try {
       const lines = await Promise.all(manifest.split(/\r?\n/).map((line) => rewriteHlsLine(line, target.href, request, env, ticket.exp, ticket.sid)));
       return new Response(lines.join("\n"), { status: 200, headers: { ...CORS_HEADERS, "content-type": "application/vnd.apple.mpegurl; charset=utf-8", "cache-control": "private, no-store", "x-content-type-options": "nosniff" } });
     } catch (_error) {
-      return textError("Danh sách phát chứa liên kết không an toàn.", 502, "UNSAFE_HLS_MANIFEST");
+      return textError("Danh sÃ¡ch phÃ¡t chá»©a liÃªn káº¿t khÃ´ng an toÃ n.", 502, "UNSAFE_HLS_MANIFEST");
     }
   }
-  if (!/^(?:video\/|audio\/|application\/(?:octet-stream|mp2t))/.test(contentType)) return textError("Nguồn phát trả về nội dung không hợp lệ.", 502, "INVALID_STREAM_RESPONSE");
+  if (!/^(?:video\/|audio\/|application\/(?:octet-stream|mp2t))/.test(contentType)) return textError("Nguá»“n phÃ¡t tráº£ vá» ná»™i dung khÃ´ng há»£p lá»‡.", 502, "INVALID_STREAM_RESPONSE");
   const headers = new Headers(CORS_HEADERS);
   headers.set("content-type", contentType || "application/octet-stream");
   headers.set("cache-control", "private, no-store");
@@ -2423,10 +2431,10 @@ export default {
             status.downloadSha256 = String(release.sha256).toLowerCase();
             status.downloadSizeBytes = validReleaseSize(release.size_bytes) ? Number(release.size_bytes) : 0;
             status.downloadSigner = cleanProgressText(release.signer, 200);
-            status.message = status.isLatest ? 'Bạn đang dùng phiên bản mới nhất.' : `Có bản ${release.version}. Mở Tải ứng dụng để cập nhật.`;
+            status.message = status.isLatest ? 'Báº¡n Ä‘ang dÃ¹ng phiÃªn báº£n má»›i nháº¥t.' : `CÃ³ báº£n ${release.version}. Má»Ÿ Táº£i á»©ng dá»¥ng Ä‘á»ƒ cáº­p nháº­t.`;
           } else {
             status.isLatest = false;
-            status.message = 'Chưa có bản phát hành phù hợp thiết bị này.';
+            status.message = 'ChÆ°a cÃ³ báº£n phÃ¡t hÃ nh phÃ¹ há»£p thiáº¿t bá»‹ nÃ y.';
           }
         }
         return json(status);
@@ -2455,10 +2463,11 @@ export default {
       if (request.method === "POST" && pathname === "/api/admin/refresh-movies") return await handleMovieRefresh(request, env);
       if (request.method === "POST" && pathname === "/api/admin/announcement") return await handleAnnouncementAdmin(request, env);
       if (request.method === "POST" && pathname === "/api/admin/set-force-update") return await handleForceUpdate(request, env);
-      return textError("Không tìm thấy endpoint.", 404, "NOT_FOUND");
+      return textError("KhÃ´ng tÃ¬m tháº¥y endpoint.", 404, "NOT_FOUND");
     } catch (error) {
       if (error.message === 'REQUEST_TOO_LARGE') return textError('Request body is too large.', 413, 'REQUEST_TOO_LARGE');
-      return textError("Backend gặp lỗi nội bộ.", 500, "INTERNAL_ERROR");
+      return textError("Backend gáº·p lá»—i ná»™i bá»™.", 500, "INTERNAL_ERROR");
     }
   },
 };
+
