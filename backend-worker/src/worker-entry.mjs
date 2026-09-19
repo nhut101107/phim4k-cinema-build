@@ -1,7 +1,7 @@
 import coreWorker from './worker.mjs';
 
 const RELEASE_API = 'https://api.github.com/repos/nhut101107/phim4k-cinema-build/releases/latest';
-const RELEASE_CACHE_KEY = 'https://phim4k-release-metadata.invalid/latest-v1';
+const RELEASE_CACHE_KEY_PREFIX = 'https://phim4k-release-metadata.invalid/latest-v2';
 const RELEASE_CACHE_SECONDS = 300;
 const RELAY_HEALTH_TTL_MS = 30_000;
 const RELAY_HEALTH_TIMEOUT_MS = 2_500;
@@ -103,7 +103,12 @@ function releasePayload(release) {
 
 async function fetchLiveDownloads(executionContext) {
   const cache = typeof caches !== 'undefined' ? caches.default : null;
-  const cacheRequest = new Request(RELEASE_CACHE_KEY, { method: 'GET' });
+  // A time-bucketed key bounds staleness even on runtimes that retain Cache
+  // API entries longer than their response Cache-Control metadata. Replacing a
+  // release asset under the same tag must update the app's hash and size within
+  // one cache window instead of leaving every client pinned to old metadata.
+  const cacheBucket = Math.floor(Date.now() / (RELEASE_CACHE_SECONDS * 1000));
+  const cacheRequest = new Request(`${RELEASE_CACHE_KEY_PREFIX}/${cacheBucket}`, { method: 'GET' });
   if (cache) {
     const cached = await cache.match(cacheRequest);
     if (cached) return cached.json();
