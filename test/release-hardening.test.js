@@ -14,6 +14,7 @@ test('release web code is minified without source maps and desktop ships that ha
   assert.ok(hardened.length < source.length * 0.75, 'the production bundle should be substantially minified');
   assert.doesNotMatch(hardened, /sourceMappingURL|\/\*|^\s*\/\//m);
   assert.ok(productionFiles.some((entry) => entry.from === 'dist-ios' && entry.to === 'public'));
+  assert.ok(productionFiles.some((entry) => entry.from === 'public/media' && entry.filter.includes('qa-seek.mp4')));
   assert.equal(desktop.asar, true);
   assert.equal(desktop.electronFuses.enableEmbeddedAsarIntegrityValidation, true);
   assert.equal(desktop.electronFuses.onlyLoadAppFromAsar, true);

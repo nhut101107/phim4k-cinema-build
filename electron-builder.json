@@ -7,6 +7,7 @@
   "files": [
     "desktop/**",
     { "from": "dist-ios", "to": "public", "filter": ["**/*"] },
+    { "from": "public/media", "to": "public/media", "filter": ["qa-seek.mp4"] },
     "package.json"
   ],
   "asar": true,
