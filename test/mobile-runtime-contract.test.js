@@ -22,12 +22,12 @@ test('activation gate does not prefill a cached Telegram identity', () => {
   const index = read('../public/index.html');
   assert.match(auth, /if \(teleInput\) teleInput\.value = '';/);
   assert.doesNotMatch(auth, /teleInput\.value = savedTeleId;\s*\/\/ Pre-fill/);
-  assert.match(auth, /key người xem không cần Telegram ID/i);
+  assert.match(auth, /key ngÆ°á»i xem khÃ´ng cáº§n Telegram ID/i);
   assert.match(auth, /activationFailureMessage\(res/);
   assert.match(auth, /SessionVault\.clear\(\)/);
   assert.match(auth, /localStorage\.removeItem\('phim4k_key'\)/);
-  assert.match(index, /Key người xem không cần Telegram ID/);
-  assert.doesNotMatch(api, /Không thể xác thực key hoặc Telegram ID/);
+  assert.match(index, /Key ngÆ°á»i xem khÃ´ng cáº§n Telegram ID/);
+  assert.doesNotMatch(api, /KhÃ´ng thá»ƒ xÃ¡c thá»±c key hoáº·c Telegram ID/);
   assert.match(index, /media\/phim4k-avatar\.png/);
   assert.match(index, /class="account-avatar"[^>]*phim4k-avatar\.png/);
   assert.match(index, /class="account-default-name">4K Cinema</);
@@ -42,8 +42,8 @@ test('legacy credentials are migrated once, erased and users can refresh app sta
   assert.match(auth, /await API\.activate\(savedKey, savedTeleId, deviceId\)/);
   assert.match(auth, /window\.refreshAppFromServer = refreshAppFromServer/);
   assert.match(auth, /window\.location\.reload\(\)/);
-  assert.match(index, /onclick="refreshAppFromServer\(this\)"[^>]*>🔄 Làm mới ứng dụng/);
-  assert.match(index, /onclick="refreshAppFromServer\(this\)"[^>]*>[\s\S]*?🔄 Làm Mới App/);
+  assert.match(index, /onclick="refreshAppFromServer\(this\)"[^>]*>ðŸ”„ LÃ m má»›i á»©ng dá»¥ng/);
+  assert.match(index, /onclick="refreshAppFromServer\(this\)"[^>]*>[\s\S]*?ðŸ”„ LÃ m Má»›i App/);
   assert.match(index, /id="adminFreeAccess"[^>]*onchange="Admin\.saveAccessPolicy\(\)"/);
   assert.match(admin, /result\.freeAccess !== requestedFreeAccess/);
 });
@@ -106,6 +106,10 @@ test('web, iOS and Windows release versions stay aligned', () => {
   assert.equal(JSON.parse(read('../capacitor.config.json')).appName, '4K Cinema');
   assert.equal(desktop.productName, '4K Cinema');
   assert.equal(desktop.win.artifactName, '4K-Cinema-Windows-3.50-x64.exe');
+  assert.equal(desktop.win.target[0].target, 'nsis');
+  assert.equal(desktop.nsis.createDesktopShortcut, true);
+  assert.equal(desktop.nsis.createStartMenuShortcut, true);
+  assert.equal(desktop.nsis.deleteAppDataOnUninstall, false);
   assert.match(read('../desktop/main.cjs'), /setPath\('userData',[\s\S]*?'Phim4K Cinema'/);
   assert.match(read('../ios/App/App/Info.plist'), /<key>CFBundleDisplayName<\/key>\s*<string>4K Cinema<\/string>/);
   assert.match(read('../android/app/src/main/res/values/strings.xml'), /<string name="app_name">4K Cinema<\/string>/);
@@ -173,7 +177,7 @@ test('iOS entry point cache-busts every bundled script and stylesheet', () => {
   const localAssets = [...html.matchAll(/(?:src|href)="\/(?:js|css|vendor)\/[^"?]+(?:\?[^" ]+)?"/g)].map(match => match[0]);
   assert.ok(localAssets.length >= 20);
   assert.ok(localAssets.every(asset => asset.includes('?v=3.50')), localAssets.join('\n'));
-  assert.match(html, /4K Cinema 3\.50[^<]*BẢN ĐỒNG BỘ ĐA THIẾT BỊ/);
+  assert.match(html, /4K Cinema 3\.50[^<]*Báº¢N Äá»’NG Bá»˜ ÄA THIáº¾T Bá»Š/);
 });
 
 test('movie modal is scrollable and sized for a phone viewport', () => {
@@ -234,9 +238,9 @@ test('home catalog has working genre and country filters with grouped rows', () 
   vm.runInContext(`${appSource}\nglobalThis.__app = App;`, sandbox);
   const app = sandbox.__app;
   app.homeCatalog = sandbox.window.PHIM4K_CATALOG_FALLBACK;
-  assert.ok(app.filterMoviesByTag('category', 'Hành Động').length > 0);
-  assert.ok(app.filterMoviesByTag('country', 'Trung Quốc').length > 0);
-  app.activeHomeFilters = { genre: 'Hoạt Hình', country: 'Nhật Bản' };
+  assert.ok(app.filterMoviesByTag('category', 'HÃ nh Äá»™ng').length > 0);
+  assert.ok(app.filterMoviesByTag('country', 'Trung Quá»‘c').length > 0);
+  app.activeHomeFilters = { genre: 'Hoáº¡t HÃ¬nh', country: 'Nháº­t Báº£n' };
   assert.ok(app.moviesMatching().length > 0);
   assert.ok(app.buildHomeSections([]).some((section) => section.id === 'country-china'));
 });
@@ -264,7 +268,7 @@ test('home filters query the full server catalogue with pagination and a mobile 
   assert.match(api, /\/api\/movies\/filter/);
   assert.match(app, /loadHomeFilterResults/);
   assert.match(app, /catalogLoadMoreBtn/);
-  assert.match(app, /Tải thêm 24 phim/);
+  assert.match(app, /Táº£i thÃªm 24 phim/);
   assert.match(app, /layout: 'grid'/);
   assert.match(worker, /pathname === "\/api\/movies\/filter"/);
   assert.match(worker, /MOVIE_FILTER_GENRES/);
@@ -295,8 +299,8 @@ test('current coverflow layout cannot crash home loading through retired hero ID
 test('mobile detail and admin overlays expose reliable close controls', () => {
   const index = read('../public/index.html');
   const styles = read('../public/css/modal.css');
-  assert.match(index, /aria-label="Đóng thông tin phim"/);
-  assert.match(index, /aria-label="Đóng bảng quản trị"/);
+  assert.match(index, /aria-label="ÄÃ³ng thÃ´ng tin phim"/);
+  assert.match(index, /aria-label="ÄÃ³ng báº£ng quáº£n trá»‹"/);
   assert.match(index, /class="admin-close-action"/);
   assert.match(styles, /\.modal-close-btn[\s\S]*min-width: 44px/);
   assert.match(styles, /position: fixed;[\s\S]*env\(safe-area-inset-top\)/);
@@ -425,3 +429,4 @@ test('home refreshes near real time without rebuilding unchanged cards and suppo
   assert.match(worker, /global_announcement_v1/);
   assert.match(worker, /MAX_ANNOUNCEMENT_MINUTES/);
 });
+

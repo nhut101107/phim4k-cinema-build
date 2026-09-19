@@ -13,5 +13,15 @@
     "enableEmbeddedAsarIntegrityValidation": true,
     "onlyLoadAppFromAsar": true
   },
-  "win": { "icon": "desktop/icon.ico", "target": [{ "target": "portable", "arch": ["x64"] }], "artifactName": "4K-Cinema-Windows-3.50-x64.exe" }
+  "win": { "icon": "desktop/icon.ico", "target": [{ "target": "nsis", "arch": ["x64"] }], "artifactName": "4K-Cinema-Windows-3.50-x64.exe" },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "4K Cinema",
+    "deleteAppDataOnUninstall": false
+  }
 }
+
