@@ -1,2 +1,1 @@
-2026-09-20 rebuild 3.50 Windows installer after replacing the slow portable package
-
+2026-09-20 rebuild 3.50 no-VPS Windows NSIS installer with UTF-8-safe tests

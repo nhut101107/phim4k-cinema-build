@@ -18,7 +18,7 @@ const env = {
 
 const detailPayload = {
   movie: {
-    name: 'Phim kiá»ƒm thá»­',
+    name: 'Phim kiểm thử',
     slug: 'phim-kiem-thu',
     poster_url: 'https://images.example/uploads/poster.webp',
     thumb_url: 'https://images.example/uploads/thumb.webp',
@@ -26,7 +26,7 @@ const detailPayload = {
   episodes: [{
     server_name: 'Server A',
     server_data: [{
-      name: 'Táº­p 1',
+      name: 'Tập 1',
       slug: 'tap-1',
       filename: 'tap-1',
       link_m3u8: 'https://video.example/path/master.m3u8',
@@ -155,7 +155,7 @@ test('streaming through the VPS relay uses a signed server-to-server request and
   }
 });
 
-test('relay-blocked HLS falls back to a short-lived authenticated client redirect', async () => {
+test('relay and Cloudflare blocked HLS falls back to a short-lived authenticated client redirect', async () => {
   const relayEnv = {
     ...env,
     VPS_RELAY_ORIGIN: 'https://blocked-relay.example',
@@ -164,8 +164,10 @@ test('relay-blocked HLS falls back to a short-lived authenticated client redirec
   };
   const originalFetch = globalThis.fetch;
   let relayCalls = 0;
+  let directCalls = 0;
   globalThis.fetch = async (input) => {
     const target = String(input);
+    if (target === 'https://blocked-relay.example/healthz') return new Response('ok');
     if (target.startsWith('https://catalog.example/')) {
       return new Response(JSON.stringify(detailPayload), { headers: { 'content-type': 'application/json' } });
     }
@@ -173,10 +175,14 @@ test('relay-blocked HLS falls back to a short-lived authenticated client redirec
       relayCalls += 1;
       return new Response('not found', { status: 404 });
     }
+    if (target === 'https://video.example/path/master.m3u8') {
+      directCalls += 1;
+      return new Response('blocked', { status: 404 });
+    }
     throw new Error(`unexpected upstream: ${target}`);
   };
   try {
-    const playback = await worker.fetch(viewerRequest('/api/movies/play', {
+    const playback = await entryWorker.fetch(viewerRequest('/api/movies/play', {
       method: 'POST',
       body: JSON.stringify({ movie: 'phim-kiem-thu', server: 0, episode: 0 }),
     }), relayEnv);
@@ -189,13 +195,14 @@ test('relay-blocked HLS falls back to a short-lived authenticated client redirec
     const stream = await worker.fetch(new Request(playbackJson.streamUrl), relayEnv);
     assert.equal(stream.status, 307);
     assert.equal(stream.headers.get('location'), 'https://video.example/path/master.m3u8');
-    assert.equal(relayCalls, 1, 'the authenticated redirect must not retry the blocked relay');
+    assert.equal(relayCalls, 1);
+    assert.equal(directCalls, 1, 'Cloudflare must be tried once before the viewer-device fallback');
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test('playback rejects a stale catalog stream before issuing a ticket', async () => {
+test('Cloudflare-blocked or stale streams fall back to the authenticated viewer device', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const target = String(input);
@@ -210,8 +217,13 @@ test('playback rejects a stale catalog stream before issuing a ticket', async ()
       method: 'POST',
       body: JSON.stringify({ movie: 'phim-kiem-thu', server: 0, episode: 0 }),
     }), env);
-    assert.equal(playback.status, 404);
-    assert.equal((await playback.json()).code, 'STREAM_SOURCE_OFFLINE');
+    assert.equal(playback.status, 200);
+    const playbackJson = await playback.json();
+    const ticket = await openMediaTicket(new URL(playbackJson.streamUrl).searchParams.get('t'), env, 'stream');
+    assert.equal(ticket.clientDirectFallback, true);
+    const stream = await worker.fetch(new Request(playbackJson.streamUrl), env);
+    assert.equal(stream.status, 307);
+    assert.equal(stream.headers.get('location'), 'https://video.example/path/master.m3u8');
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -282,4 +294,3 @@ test('entrypoint replays playback POST directly when a healthy relay rejects med
     globalThis.fetch = originalFetch;
   }
 });
-
