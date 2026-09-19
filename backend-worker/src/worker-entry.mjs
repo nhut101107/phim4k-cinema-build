@@ -5,10 +5,14 @@ const RELEASE_CACHE_KEY = 'https://phim4k-release-metadata.invalid/latest-v1';
 const RELEASE_CACHE_SECONDS = 300;
 const RELAY_HEALTH_TTL_MS = 30_000;
 const RELAY_HEALTH_TIMEOUT_MS = 2_500;
-const MEDIA_PATHS = new Set(['/api/media/image', '/api/media/stream', '/api/movies/play']);
+// Artwork is fetched directly by the Worker and never uses the VPS relay. Do
+// not make every poster wait for a relay health check, especially while the
+// relay is degraded and many cards are loading concurrently.
+const RELAY_MEDIA_PATHS = new Set(['/api/media/stream', '/api/movies/play']);
 const RETRYABLE_RELAY_STATUSES = new Set([502, 503, 504]);
 
 let relayHealth = { origin: '', checkedAt: 0, healthy: true };
+let relayHealthCheck = null;
 
 const RELEASE_MATCHERS = Object.freeze({
   android_tv: (name) => /^4K-Cinema-Android-TV-[0-9.]+\.apk$/i.test(name),
@@ -156,22 +160,32 @@ async function isRelayHealthy(env) {
     return relayHealth.healthy;
   }
 
-  let healthy = false;
-  try {
-    const response = await fetch(`${origin}/healthz`, {
-      method: 'GET',
-      redirect: 'manual',
-      signal: AbortSignal.timeout(RELAY_HEALTH_TIMEOUT_MS),
-      headers: { accept: 'text/plain' },
-    });
-    healthy = response.ok;
-    try { await response.body?.cancel(); } catch (_error) {}
-  } catch (_error) {
-    healthy = false;
-  }
+  if (relayHealthCheck?.origin === origin) return relayHealthCheck.promise;
 
-  relayHealth = { origin, checkedAt: timestamp, healthy };
-  return healthy;
+  const promise = (async () => {
+    let healthy = false;
+    try {
+      const response = await fetch(`${origin}/healthz`, {
+        method: 'GET',
+        redirect: 'manual',
+        signal: AbortSignal.timeout(RELAY_HEALTH_TIMEOUT_MS),
+        headers: { accept: 'text/plain' },
+      });
+      healthy = response.ok;
+      try { await response.body?.cancel(); } catch (_error) {}
+    } catch (_error) {
+      healthy = false;
+    }
+
+    relayHealth = { origin, checkedAt: Date.now(), healthy };
+    return healthy;
+  })();
+  relayHealthCheck = { origin, promise };
+  try {
+    return await promise;
+  } finally {
+    if (relayHealthCheck?.promise === promise) relayHealthCheck = null;
+  }
 }
 
 function markRelayUnhealthy(env) {
@@ -183,7 +197,7 @@ function markRelayUnhealthy(env) {
 async function resilientCoreFetch(request, env, executionContext) {
   const pathname = new URL(request.url).pathname;
   const origin = configuredRelayOrigin(env);
-  if (!origin || !MEDIA_PATHS.has(pathname)) {
+  if (!origin || !RELAY_MEDIA_PATHS.has(pathname)) {
     return coreWorker.fetch(request, env, executionContext);
   }
 
@@ -192,9 +206,15 @@ async function resilientCoreFetch(request, env, executionContext) {
     return coreWorker.fetch(request, directEnv, executionContext);
   }
 
-  const retryRequest = request.method === 'GET' || request.method === 'HEAD' ? request.clone() : null;
+  // Clone before coreWorker consumes a POST body. Playback ticket requests are
+  // small, bounded JSON bodies and are safe to replay once through the direct
+  // Worker path when the relay accepts health checks but rejects media.
+  let retryRequest = null;
+  try { retryRequest = request.clone(); } catch (_error) {}
   const response = await coreWorker.fetch(request, env, executionContext);
-  if (!RETRYABLE_RELAY_STATUSES.has(response.status)) return response;
+  const retryable = RETRYABLE_RELAY_STATUSES.has(response.status)
+    || (pathname === '/api/movies/play' && response.status === 404);
+  if (!retryable) return response;
 
   markRelayUnhealthy(env);
   if (!retryRequest) return response;

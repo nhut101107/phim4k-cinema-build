@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import worker, { openMediaTicket } from '../src/worker.mjs';
+import worker, { openMediaTicket, sealMediaTicket } from '../src/worker.mjs';
+import entryWorker from '../src/worker-entry.mjs';
 
 const env = {
   ALLOW_LEGACY_TEST_AUTH: '1',
@@ -171,6 +172,72 @@ test('playback rejects a stale catalog stream before issuing a ticket', async ()
     }), env);
     assert.equal(playback.status, 404);
     assert.equal((await playback.json()).code, 'STREAM_SOURCE_OFFLINE');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('entrypoint bypasses relay health checks for protected artwork', async () => {
+  const relayEnv = {
+    ...env,
+    VPS_RELAY_ORIGIN: 'https://unused-relay.example',
+    VPS_RELAY_SECRET: 'fixture-vps-relay-secret-at-least-32-characters',
+  };
+  const source = 'https://images.example/uploads/poster.webp';
+  const token = await sealMediaTicket({ kind: 'image', url: source, exp: Math.floor(Date.now() / 1000) + 300 }, relayEnv);
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (input) => {
+    calls.push(String(input));
+    assert.equal(String(input), source);
+    return new Response(new Uint8Array([0x52, 0x49, 0x46, 0x46]), {
+      status: 200,
+      headers: { 'content-type': 'image/webp' },
+    });
+  };
+  try {
+    const response = await entryWorker.fetch(new Request(`https://example.workers.dev/api/media/image?t=${token}`), relayEnv);
+    assert.equal(response.status, 200);
+    assert.deepEqual(calls, [source]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('entrypoint replays playback POST directly when a healthy relay rejects media', async () => {
+  const relayEnv = {
+    ...env,
+    VPS_RELAY_ORIGIN: 'https://misconfigured-relay.example',
+    VPS_RELAY_SECRET: 'fixture-vps-relay-secret-at-least-32-characters',
+  };
+  const originalFetch = globalThis.fetch;
+  let relayCalls = 0;
+  let directCalls = 0;
+  globalThis.fetch = async (input) => {
+    const target = String(input);
+    if (target === 'https://misconfigured-relay.example/healthz') return new Response('ok');
+    if (target.startsWith('https://catalog.example/')) {
+      return new Response(JSON.stringify(detailPayload), { headers: { 'content-type': 'application/json' } });
+    }
+    if (target === 'https://misconfigured-relay.example/v1/media') {
+      relayCalls += 1;
+      return new Response('bad signature', { status: 401 });
+    }
+    if (target === 'https://video.example/path/master.m3u8') {
+      directCalls += 1;
+      return new Response('#EXTM3U\n#EXT-X-ENDLIST', { headers: { 'content-type': 'application/vnd.apple.mpegurl' } });
+    }
+    throw new Error(`unexpected upstream: ${target}`);
+  };
+  try {
+    const playback = await entryWorker.fetch(viewerRequest('/api/movies/play', {
+      method: 'POST',
+      body: JSON.stringify({ movie: 'phim-kiem-thu', server: 0, episode: 0 }),
+    }), relayEnv);
+    assert.equal(playback.status, 200);
+    assert.match((await playback.json()).streamUrl, /^https:\/\/example\.workers\.dev\/api\/media\/stream\?t=/);
+    assert.equal(relayCalls, 1);
+    assert.equal(directCalls, 1);
   } finally {
     globalThis.fetch = originalFetch;
   }
