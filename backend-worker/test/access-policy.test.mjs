@@ -119,6 +119,9 @@ test('admin lists, bans and unbans a key-only user without Telegram ID',async()=
     const afterBan=await (await f.request('/api/admin/users',undefined,f.admin)).json();
     assert.equal(afterBan.users[0].isBanned,true);
 
+    const accountLogs=await (await f.request('/api/admin/logs?identity=viewer-device-a',undefined,f.admin)).json();
+    assert.ok(accountLogs.logs.some((entry)=>entry.action==='user_banned'));
+
     const unban=await f.request('/api/admin/unban-user',{key:'P4K-KEY-ONLY-USER',deviceId:'viewer-device-a'},f.admin);
     assert.equal(unban.status,200);
     assert.equal((await f.request('/api/auth/status',undefined,{'x-license-key':'P4K-KEY-ONLY-USER','x-device-id':'viewer-device-a'})).status,200);

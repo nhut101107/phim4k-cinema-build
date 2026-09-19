@@ -331,7 +331,7 @@ const API = {
   // Movies: server-protected catalog with metadata-only bundled fallback.
   async getHomeFeed() {
     try {
-      return await this.cachedMovieRequest('/api/movies/home', 25000);
+      return await this.cachedMovieRequest('/api/movies/home', 12000);
     } catch (_error) { return this.getBundledHomeFeed(); }
   },
 

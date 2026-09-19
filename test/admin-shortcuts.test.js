@@ -34,4 +34,13 @@ test('admin bans current key-only users by key and device instead of requiring T
   assert.doesNotMatch(admin,/promptBanUser|Ban TG|TG \+ máy/);
   assert.match(worker,/MISSING_USER_TARGET/);
   assert.match(worker,/UPDATE license_keys SET active = \?, updated_at = \? WHERE license_key = \?/);
+  assert.match(admin,/API\.request\('\/api\/admin\/ban-user'/);
+  assert.match(admin,/API\.request\('\/api\/admin\/unban-user'/);
+  assert.match(admin,/API\.request\(`\/api\/admin\/logs\?/);
+});
+
+test('admin panel exposes one icon-only close control',()=>{
+  const html=read('public/index.html');
+  assert.match(html,/aria-label="Đóng bảng quản trị"[^>]*>✕<\/button>/);
+  assert.doesNotMatch(html,/class="admin-close-action"/);
 });

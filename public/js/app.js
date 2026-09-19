@@ -630,7 +630,10 @@ const App = {
       if (!document.hidden && !playerOpen && this.currentCategory === 'home') {
         this.loadHomeFeed({ silent: true });
       }
-    }, isTv ? 180000 : 30000);
+    // The Worker reads the public catalogue directly, so frequent metadata
+    // refreshes need no VPS or always-on PC. Pause while hidden or playing to
+    // avoid wasting bandwidth and disrupting playback.
+    }, isTv ? 60000 : 20000);
   },
 
   startAnnouncementRefresh() {

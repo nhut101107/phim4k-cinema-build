@@ -1563,10 +1563,13 @@ async function setBan(request, env, banned) {
   const telegramId = normalizeId(body.telegramId);
 
   let license = null;
-  if (key) {
-    if (!validKey(key)) return textError("Mã key không hợp lệ.", 400, "INVALID_KEY_FORMAT");
+  if (key && validKey(key)) {
     license = await queryOne(env.DB, "SELECT * FROM license_keys WHERE license_key = ?", key);
-  } else if (deviceId) {
+  }
+  // The account table submits both fields. Prefer the bound device when an
+  // older imported key does not match today's key format instead of rejecting
+  // a real user before the device lookup can run.
+  if (!license && deviceId) {
     license = await queryOne(env.DB, "SELECT * FROM license_keys WHERE device_id = ?", deviceId);
   }
 
@@ -1627,8 +1630,27 @@ async function handleLogs(request, env) {
   const clauses = [];
   const values = [];
   if (identity) {
-    clauses.push("(actor_telegram_id = ? OR target_telegram_id = ? OR detail LIKE ?)");
-    values.push(identity, identity, `%${identity.replace(/[\\%_]/g, "")}%`);
+    const deviceIdentity = normalizeDeviceId(identity);
+    const keyIdentity = normalizeKey(identity);
+    const linkedLicense = deviceIdentity
+      ? await queryOne(env.DB, "SELECT license_key, device_id, activated_telegram_id, assigned_telegram_id FROM license_keys WHERE device_id = ?", deviceIdentity)
+      : validKey(keyIdentity)
+        ? await queryOne(env.DB, "SELECT license_key, device_id, activated_telegram_id, assigned_telegram_id FROM license_keys WHERE license_key = ?", keyIdentity)
+        : null;
+    if (linkedLicense) {
+      const owner = linkedLicense.activated_telegram_id || linkedLicense.assigned_telegram_id || "";
+      const deviceMask = maskedValue(linkedLicense.device_id || "");
+      const linkedClauses = ["actor_telegram_id = ?", "target_telegram_id = ?", "target_key = ?", "detail LIKE ?"];
+      values.push(owner, owner, linkedLicense.license_key, `%${linkedLicense.license_key}%`);
+      if (deviceMask) {
+        linkedClauses.push("detail LIKE ?");
+        values.push(`%${deviceMask}%`);
+      }
+      clauses.push(`(${linkedClauses.join(" OR ")})`);
+    } else {
+      clauses.push("(actor_telegram_id = ? OR target_telegram_id = ? OR detail LIKE ?)");
+      values.push(identity, identity, `%${identity.replace(/[\\%_]/g, "")}%`);
+    }
   }
   if (cursor) {
     clauses.push("id < ?");
@@ -1742,7 +1764,7 @@ async function handleContentStatus(request, env) {
     checkedAt: now(),
     lastSuccessfulRefreshAt: catalogStatus === "READY" ? now() : null,
     cacheActive: true,
-    cacheTtlSeconds: 30,
+    cacheTtlSeconds: 15,
     providers: [
       { id: "catalog", label: "Kho phim được bảo vệ", status: catalogStatus, purpose: "Danh mục, mô tả và poster qua Cloudflare" },
       jellyfin,
@@ -1757,7 +1779,7 @@ async function handleMovieRefresh(request, env) {
   const paths = homeCatalogPaths(new Date().getUTCFullYear());
   const cache = typeof caches !== "undefined" ? caches.default : null;
   if (cache) await Promise.all(paths.map((path) => cache.delete(catalogCacheKey(path))));
-  const results = await Promise.allSettled(paths.map((path) => fetchProtectedCatalogJson(path, env, { force: true, ttl: 30 })));
+  const results = await Promise.allSettled(paths.map((path) => fetchProtectedCatalogJson(path, env, { force: true, ttl: 15 })));
   const uniqueItems = new Set(results.flatMap((result) => result.status === "fulfilled" ? catalogItems(result.value).map((item) => item?.slug).filter(Boolean) : []));
   const itemCount = uniqueItems.size;
   if (!itemCount) return textError("Nguồn danh mục tạm thời không khả dụng.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
@@ -1995,7 +2017,7 @@ async function handleProtectedMovieImage(request, env, executionContext) {
   return response;
 }
 
-async function fetchProtectedCatalogJson(path, env, { force = false, ttl = 30 } = {}) {
+async function fetchProtectedCatalogJson(path, env, { force = false, ttl = 15 } = {}) {
   const origin = configuredCatalogOrigin(env);
   if (!origin || !path.startsWith("/") || path.startsWith("//") || path.includes("\\") || path.includes("#")) {
     throw new Error("CATALOG_NOT_CONFIGURED");
@@ -2080,7 +2102,7 @@ async function handleProtectedMovieCatalog(request, env) {
 
   if (pathname === "/api/movies/home") {
     const paths = homeCatalogPaths(new Date().getUTCFullYear());
-    const results = await Promise.allSettled(paths.map((path, index) => fetchProtectedCatalogJson(path, env, { ttl: index ? 300 : 30 })));
+    const results = await Promise.allSettled(paths.map((path, index) => fetchProtectedCatalogJson(path, env, { ttl: index ? 60 : 15 })));
     const items = results.flatMap((result) => result.status === "fulfilled" ? normalizedCatalogItems(result.value, env) : []);
     if (!items.length) return textError("Nguồn danh mục tạm thời không khả dụng.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
     return json(await protectCatalogImages(HomeCuration.build(items), request, env));
@@ -2088,7 +2110,7 @@ async function handleProtectedMovieCatalog(request, env) {
 
   if (pathname === "/api/movies/catalog") {
     const page = catalogPage(url.searchParams.get("page"));
-    const data = await fetchProtectedCatalogJson(`/v1/api/danh-sach/phim-moi-cap-nhat?page=${page}&limit=48&sort_field=modified.time&sort_type=desc`, env, { ttl: page === 1 ? 30 : 180 });
+    const data = await fetchProtectedCatalogJson(`/v1/api/danh-sach/phim-moi-cap-nhat?page=${page}&limit=48&sort_field=modified.time&sort_type=desc`, env, { ttl: page === 1 ? 15 : 120 });
     const pagination = data.pagination || data.data?.params?.pagination || {
       currentPage: page,
       totalPages: 1,

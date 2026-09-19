@@ -301,7 +301,7 @@ test('mobile detail and admin overlays expose reliable close controls', () => {
   const styles = read('../public/css/modal.css');
   assert.match(index, /aria-label="Đóng thông tin phim"/);
   assert.match(index, /aria-label="Đóng bảng quản trị"/);
-  assert.match(index, /class="admin-close-action"/);
+  assert.doesNotMatch(index, /class="admin-close-action"/);
   assert.match(styles, /\.modal-close-btn[\s\S]*min-width: 44px/);
   assert.match(styles, /position: fixed;[\s\S]*env\(safe-area-inset-top\)/);
 });
@@ -417,7 +417,7 @@ test('home refreshes near real time without rebuilding unchanged cards and suppo
   const admin = read('../public/js/admin.js');
   const index = read('../public/index.html');
   const worker = read('../backend-worker/src/worker.mjs');
-  assert.match(api, /cachedMovieRequest\('\/api\/movies\/home', 25000\)/);
+  assert.match(api, /cachedMovieRequest\('\/api\/movies\/home', 12000\)/);
   assert.match(app, /\}, 30000\);/);
   assert.match(app, /catalogSignature/);
   assert.match(app, /signature !== this\.homeFeedSignature/);

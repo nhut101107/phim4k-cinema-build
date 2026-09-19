@@ -553,13 +553,7 @@ const Admin = {
     tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px;">Đang tải danh sách người dùng...</td></tr>';
 
     try {
-      const res = await fetch('/api/admin/users', {
-        headers: this.getAdminHeaders()
-      });
-
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-      const data = await res.json();
+      const data = await API.request('/api/admin/users', { cache: 'no-store' });
       this.renderUsersTable(data.users || []);
     } catch (err) {
       tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #f87171; padding: 20px;">Lỗi tải danh sách người dùng!</td></tr>';
@@ -636,13 +630,10 @@ const Admin = {
     if (reason === null) return;
     if (!confirm(`Xác nhận ban user này? Key sẽ bị khóa ngay trên thiết bị đang dùng.`)) return;
     try {
-      const res = await fetch('/api/admin/ban-user', {
+      const data = await API.request('/api/admin/ban-user', {
         method: 'POST',
-        headers: this.getAdminHeaders(),
         body: JSON.stringify({ key, deviceId, reason: reason.trim() })
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Không thể cấm tài khoản');
       alert(`✔ ${data.message}`);
       await Promise.all([this.loadUsers(), this.loadKeys()]);
     } catch (error) {
@@ -653,13 +644,10 @@ const Admin = {
   async unbanUser(key, deviceId = '') {
     if (!confirm(`Mở ban cho user dùng key [${key}]?`)) return;
     try {
-      const res = await fetch('/api/admin/unban-user', {
+      const data = await API.request('/api/admin/unban-user', {
         method: 'POST',
-        headers: this.getAdminHeaders(),
         body: JSON.stringify({ key, deviceId })
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Không thể gỡ lệnh cấm');
       alert(`✔ ${data.message}`);
       await Promise.all([this.loadUsers(), this.loadKeys()]);
     } catch (error) {
@@ -723,13 +711,7 @@ const Admin = {
     if (liveState) liveState.textContent = '● ĐANG ĐỒNG BỘ';
 
     try {
-      const res = await fetch(`/api/admin/logs?${query.toString()}`, {
-        headers: this.getAdminHeaders()
-      });
-
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-      const data = await res.json();
+      const data = await API.request(`/api/admin/logs?${query.toString()}`, { cache: 'no-store' });
       const incoming = data.logs || [];
       this.loadedLogs = append ? [...this.loadedLogs, ...incoming] : incoming;
       this.logCursor = data.nextCursor || null;
@@ -1019,12 +1001,9 @@ const Admin = {
     if (!confirm('Bạn có chắc chắn muốn xóa sạch toàn bộ nhật ký hệ thống không?')) return;
 
     try {
-      const res = await fetch('/api/admin/logs', {
+      const data = await API.request('/api/admin/logs', {
         method: 'DELETE',
-        headers: this.getAdminHeaders()
       });
-
-      const data = await res.json();
       alert(`✔ ${data.message}`);
       this.loadLogs();
     } catch (err) {
