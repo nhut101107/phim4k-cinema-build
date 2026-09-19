@@ -2168,7 +2168,9 @@ async function handleMoviePlayback(request, env) {
   // server instead of remaining at 00:00 with a native-player error.
   try {
     const probeRequest = new Request(request.url, { method: "GET", headers: request.headers });
-    const { response: probe } = await fetchProtectedUpstream(target.href, probeRequest, env, isHls ? "hls" : "media");
+    // This is only an availability probe. Keep movie startup responsive; the
+    // actual stream request still gets the normal, longer media timeout.
+    const { response: probe } = await fetchProtectedUpstream(target.href, probeRequest, env, isHls ? "hls" : "media", 4, true, 2500);
     if (!probe.ok && probe.status !== 206) {
       probe.body?.cancel?.().catch?.(() => {});
       // Let the entrypoint retry a failed VPS response through Cloudflare
@@ -2184,13 +2186,17 @@ async function handleMoviePlayback(request, env) {
       if (declaredLength > MAX_HLS_MANIFEST_BYTES) return textError("Nguồn phim trả về dữ liệu không hợp lệ.", 502, "INVALID_STREAM_SOURCE");
       const bytes = new Uint8Array(await probe.arrayBuffer());
       if (bytes.byteLength > MAX_HLS_MANIFEST_BYTES || !new TextDecoder().decode(bytes).trimStart().startsWith("#EXTM3U")) {
-        return textError("Nguồn phim trả về dữ liệu không hợp lệ.", 502, "INVALID_STREAM_SOURCE");
+        // Some providers serve an anti-bot HTML page to Cloudflare but serve
+        // the exact same URL normally to the viewer's device.
+        if (!configuredRelayOrigin(env)) clientDirectFallback = true;
+        else return textError("Nguồn phim trả về dữ liệu không hợp lệ.", 502, "INVALID_STREAM_SOURCE");
       }
     } else if (!clientDirectFallback) {
       const contentType = String(probe.headers.get("content-type") || "").toLowerCase();
       probe.body?.cancel?.().catch?.(() => {});
       if (!/^(?:video\/|audio\/|application\/(?:octet-stream|mp2t))/.test(contentType)) {
-        return textError("Nguồn phim trả về dữ liệu không hợp lệ.", 502, "INVALID_STREAM_SOURCE");
+        if (!configuredRelayOrigin(env)) clientDirectFallback = true;
+        else return textError("Nguồn phim trả về dữ liệu không hợp lệ.", 502, "INVALID_STREAM_SOURCE");
       }
     }
   } catch (_error) {
@@ -2254,7 +2260,7 @@ async function fetchVpsRelay(initialUrl, request, env, mediaFormat = "media") {
   return { response, target: finalTarget };
 }
 
-async function fetchProtectedUpstream(initialUrl, request, env, mediaFormat = "media", maxRedirects = 4, allowRelay = true) {
+async function fetchProtectedUpstream(initialUrl, request, env, mediaFormat = "media", maxRedirects = 4, allowRelay = true, timeoutMs = 0) {
   const format = mediaFormat === "hls" ? "hls" : "media";
   if (allowRelay && configuredRelayOrigin(env)) return fetchVpsRelay(initialUrl, request, env, format);
   let target = safePublicHttpsUrl(initialUrl);
@@ -2272,7 +2278,7 @@ async function fetchProtectedUpstream(initialUrl, request, env, mediaFormat = "m
     const response = await fetch(target.href, {
       headers,
       redirect: "manual",
-      signal: AbortSignal.timeout(format === "hls" ? 15000 : 30000),
+      signal: AbortSignal.timeout(timeoutMs > 0 ? timeoutMs : (format === "hls" ? 15000 : 30000)),
     });
     if (![301, 302, 303, 307, 308].includes(response.status)) return { response, target };
     if (attempt === maxRedirects) throw new Error("MEDIA_REDIRECT_LIMIT");
@@ -2329,20 +2335,27 @@ async function handleMovieStream(request, env) {
   // Compatibility mode is retained only for emergency rollback. Production
   // uses the authenticated VPS relay, so the provider URL never reaches the
   // client or appears in a browser-visible redirect.
-  if (env.MEDIA_RELAY_FALLBACK === "redirect" || ticket.clientDirectFallback === true) {
-    return new Response(null, {
-      status: 307,
-      headers: { ...CORS_HEADERS, location: ticket.url, "cache-control": "private, no-store", "referrer-policy": "no-referrer" },
-    });
-  }
+  const clientMediaRedirect = () => new Response(null, {
+    status: 307,
+    headers: { ...CORS_HEADERS, location: ticket.url, "cache-control": "private, no-store", "referrer-policy": "no-referrer" },
+  });
+  if (env.MEDIA_RELAY_FALLBACK === "redirect" || ticket.clientDirectFallback === true) return clientMediaRedirect();
   let upstream;
   let target;
   try {
     ({ response: upstream, target } = await fetchProtectedUpstream(ticket.url, request, env, ticket.format));
   } catch (_error) {
+    // A master playlist may pass its probe while a variant, key, or segment
+    // is later blocked at a Cloudflare edge. The session has already been
+    // validated, so let the viewer request that exact resource directly.
+    if (!configuredRelayOrigin(env)) return clientMediaRedirect();
     return textError("Không kết nối được luồng phim.", 502, "STREAM_UPSTREAM_ERROR");
   }
-  if (!upstream.ok && upstream.status !== 206) return textError("Luồng phim tạm thời không phản hồi.", 502, `STREAM_UPSTREAM_HTTP_${upstream.status}`);
+  if (!upstream.ok && upstream.status !== 206) {
+    upstream.body?.cancel?.().catch?.(() => {});
+    if (!configuredRelayOrigin(env)) return clientMediaRedirect();
+    return textError("Luồng phim tạm thời không phản hồi.", 502, `STREAM_UPSTREAM_HTTP_${upstream.status}`);
+  }
   const contentType = String(upstream.headers.get("content-type") || "").toLowerCase();
   const isHls = ticket.format === "hls" || /(?:mpegurl|x-mpegurl)/.test(contentType) || /\.m3u8(?:$|[?#])/i.test(target.href);
   if (isHls) {

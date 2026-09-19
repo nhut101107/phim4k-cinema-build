@@ -229,6 +229,58 @@ test('Cloudflare-blocked or stale streams fall back to the authenticated viewer 
   }
 });
 
+test('Cloudflare anti-bot HTML during preflight falls back for every catalog movie', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const target = String(input);
+    if (target.startsWith('https://catalog.example/')) {
+      return new Response(JSON.stringify(detailPayload), { headers: { 'content-type': 'application/json' } });
+    }
+    if (target === 'https://video.example/path/master.m3u8') {
+      return new Response('<html>provider challenge</html>', { headers: { 'content-type': 'text/html' } });
+    }
+    throw new Error(`unexpected upstream: ${target}`);
+  };
+  try {
+    const playback = await worker.fetch(viewerRequest('/api/movies/play', {
+      method: 'POST',
+      body: JSON.stringify({ movie: 'phim-kiem-thu', server: 0, episode: 0 }),
+    }), env);
+    assert.equal(playback.status, 200);
+    const playbackJson = await playback.json();
+    const ticket = await openMediaTicket(new URL(playbackJson.streamUrl).searchParams.get('t'), env, 'stream');
+    assert.equal(ticket.clientDirectFallback, true);
+    const stream = await worker.fetch(new Request(playbackJson.streamUrl), env);
+    assert.equal(stream.status, 307);
+    assert.equal(stream.headers.get('location'), 'https://video.example/path/master.m3u8');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('a variant or segment blocked after a successful master probe redirects to the viewer', async () => {
+  const source = 'https://video.example/path/segment-001.ts';
+  const token = await sealMediaTicket({
+    kind: 'stream',
+    url: source,
+    format: 'media',
+    sid: '',
+    exp: Math.floor(Date.now() / 1000) + 300,
+  }, env);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    assert.equal(String(input), source);
+    return new Response('edge blocked', { status: 403 });
+  };
+  try {
+    const stream = await worker.fetch(new Request(`https://example.workers.dev/api/media/stream?t=${token}`), env);
+    assert.equal(stream.status, 307);
+    assert.equal(stream.headers.get('location'), source);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('entrypoint bypasses relay health checks for protected artwork', async () => {
   const relayEnv = {
     ...env,
