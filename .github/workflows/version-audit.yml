@@ -1,0 +1,20 @@
+name: Audit version references
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/version-audit.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: List current release version references
+        shell: bash
+        run: |
+          echo '== Version references =='
+          git grep -n -I -E '3[.]50|versionCode 50|CURRENT_PROJECT_VERSION = 50' | head -n 230 || true
+          echo '== Tracked generated assets =='
+          git ls-files 'dist-ios/*' 'ios/App/App/public/*' 'android/app/src/main/assets/*' | head -n 30
