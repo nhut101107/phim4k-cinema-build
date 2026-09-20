@@ -1,0 +1,46 @@
+name: Check live playback backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/check-live-playback-backend.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Confirm configured iOS backend answers and D1 is ready
+        shell: bash
+        run: |
+          set -euo pipefail
+          health='https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/api/health'
+          response="$(curl --fail --silent --show-error --retry 2 --retry-delay 2 --max-time 15 "$health")"
+          printf '%s' "$response" | node -e '
+            let input = "";
+            process.stdin.on("data", chunk => input += chunk);
+            process.stdin.on("end", () => {
+              const status = JSON.parse(input);
+              console.log(`service=${status.service} ready=${status.ready}`);
+              if (status.service !== "phim4k-license-api" || status.ready !== true) process.exitCode = 1;
+            });
+          '
+
+      - name: Check playback endpoint rejects anonymous requests normally
+        shell: bash
+        run: |
+          set -euo pipefail
+          endpoint='https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/api/movies/play'
+          body="$(mktemp)"
+          status="$(curl --silent --show-error --max-time 15 --output "$body" --write-out '%{http_code}' -X POST -H 'content-type: application/json' --data '{}' "$endpoint")"
+          echo "anonymous playback HTTP=$status"
+          if [ "$status" != '401' ] && [ "$status" != '403' ]; then
+            echo '::error::Playback backend is unreachable or not serving the expected authenticated route.'
+            cat "$body"
+            exit 1
+          fi
