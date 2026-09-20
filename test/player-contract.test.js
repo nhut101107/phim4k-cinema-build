@@ -113,9 +113,12 @@ test('all platforms auto-skip embedded ad windows once and keep a user toggle', 
   assert.match(player, /phim4k-auto-skip-ads-v2/);
 });
 
-test('every movie displays the requested handwritten copyright watermark', () => {
-  assert.match(index, /class="movie-copyright-watermark"[^>]*>mnhut đã đóng dấu bản quyền<\/div>/);
+test('every movie displays the requested small faint handwritten mnhut watermark', () => {
+  assert.match(index, /class="movie-copyright-watermark"[^>]*>mnhut<\/div>/);
+  assert.doesNotMatch(index, /đã đóng dấu bản quyền/);
   assert.match(css, /\.movie-copyright-watermark\s*\{[\s\S]*?position:\s*absolute/);
   assert.match(css, /font-family:[^;]*(?:Chalkboard SE|Segoe Print)[^;]*cursive/);
+  assert.match(css, /font-size:\s*clamp\(9px, 1\.05vw, 14px\)/);
+  assert.match(css, /opacity:\s*\.66/);
   assert.match(css, /pointer-events:\s*none/);
 });

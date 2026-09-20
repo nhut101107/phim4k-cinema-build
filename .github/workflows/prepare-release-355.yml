@@ -1,0 +1,40 @@
+name: Prepare 4K Cinema 3.55 release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/rebuild-release.flag
+      - .github/workflows/prepare-release-355.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prepare-phim4k-355-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Create the draft before platform builders upload files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view ios-v3.55 --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo 'Draft release already exists.'
+          else
+            gh release create ios-v3.55 \
+              --repo "${GITHUB_REPOSITORY}" \
+              --draft \
+              --target "${GITHUB_SHA}" \
+              --title '4K Cinema 3.55 - iOS, Android, Android TV, Windows' \
+              --notes 'Sửa lỗi tất cả server không phản hồi bằng timeout thực tế, chạy nguồn chính và dự phòng song song, cache/deduplicate playlist ký để giảm tải và tăng tốc. Watermark chỉ còn “mnhut”, nhỏ và mờ đúng mẫu. Đồng bộ mọi nền tảng; iOS IPA chưa ký.'
+          fi
+          gh release view ios-v3.55 --repo "${GITHUB_REPOSITORY}" --json isDraft,tagName \
+            --jq '{tag: .tagName, draft: .isDraft}'

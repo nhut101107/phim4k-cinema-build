@@ -172,6 +172,12 @@ test('a StreamC backup is resolved server-side and disguised segments are relaye
   let embedWarmups = 0;
   let deadPrimaryProbes = 0;
   let playlistFetches = 0;
+  const timeoutValues = [];
+  const originalTimeout = AbortSignal.timeout;
+  AbortSignal.timeout = (milliseconds) => {
+    timeoutValues.push(milliseconds);
+    return originalTimeout.call(AbortSignal, milliseconds);
+  };
   let segmentReferer = '';
   globalThis.fetch = async (input, init = {}) => {
     const url = new URL(input);
@@ -184,7 +190,8 @@ test('a StreamC backup is resolved server-side and disguised segments are relaye
     if (url.href === embed && init.method === 'POST') {
       bootstrapPosts += 1;
       assert.equal(new Headers(init.headers).get('origin'), 'https://embed.streamc.xyz');
-      return new Response(JSON.stringify({ preissued: { playlist, playlistFormat: 'hls', issuedAt: 1000, expiresAt: 2000 } }), { headers: { 'content-type': 'application/json' } });
+      const issuedAt = Math.floor(Date.now() / 1000);
+      return new Response(JSON.stringify({ preissued: { playlist, playlistFormat: 'hls', issuedAt, expiresAt: issuedAt + 14400 } }), { headers: { 'content-type': 'application/json' } });
     }
     if (url.href === embed) {
       embedWarmups += 1;
@@ -201,17 +208,21 @@ test('a StreamC backup is resolved server-side and disguised segments are relaye
     throw new Error(`unexpected upstream: ${url.href}`);
   };
   try {
-    const playback = await worker.fetch(viewerRequest('/api/movies/play', {
+    const playbackRequest = () => worker.fetch(viewerRequest('/api/movies/play', {
       method: 'POST',
       body: JSON.stringify({ movie: 'streamc-movie', server: 0, episode: 0 }),
     }), f.env);
+    const [playback, simultaneousPlayback] = await Promise.all([playbackRequest(), playbackRequest()]);
     assert.equal(playback.status, 200);
+    assert.equal(simultaneousPlayback.status, 200);
     const playbackJson = await playback.json();
     assert.equal(playbackJson.selectedServer, 1);
     assert.equal(bootstrapPosts, 1);
     assert.equal(embedWarmups, 0);
-    assert.equal(deadPrimaryProbes, 0);
+    assert.equal(deadPrimaryProbes, 2);
     assert.equal(playlistFetches, 0);
+    assert.ok(timeoutValues.includes(12000), `missing backup-detail timeout: ${timeoutValues.join(',')}`);
+    assert.ok(timeoutValues.includes(18000), `missing StreamC bootstrap timeout: ${timeoutValues.join(',')}`);
 
     const manifestResponse = await worker.fetch(new Request(playbackJson.streamUrl), f.env);
     assert.equal(manifestResponse.status, 200);
@@ -224,6 +235,7 @@ test('a StreamC backup is resolved server-side and disguised segments are relaye
     assert.equal(segmentReferer, 'https://embed.streamc.xyz/');
     assert.deepEqual([...new Uint8Array(await segmentResponse.arrayBuffer())], [0x47, 0x40, 0x11, 0x10]);
   } finally {
+    AbortSignal.timeout = originalTimeout;
     globalThis.fetch = originalFetch;
     f.sqlite.close();
   }

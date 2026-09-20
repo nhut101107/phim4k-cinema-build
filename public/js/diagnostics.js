@@ -21,7 +21,7 @@
   window.addEventListener('unhandledrejection', () => report('unhandled_promise'));
 })();
 
-// 3.54 fast-start hotfix shared by iOS, Android, Android TV and Windows.
+// 3.55 resilient source/cache hotfix shared by iOS, Android, Android TV and Windows.
 (() => {
   if (typeof App !== 'undefined') {
     App.resolveDirectImageUrl = function resolveDirectImageUrl(path) {

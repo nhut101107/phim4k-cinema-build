@@ -56,23 +56,23 @@ const RATE_LIMITS = Object.freeze({
 
 const INSTALLER_RELEASES = Object.freeze({
   "/download/android": {
-    filename: "4K-Cinema-Android-3.54.apk",
+    filename: "4K-Cinema-Android-3.55.apk",
     contentType: "application/vnd.android.package-archive",
   },
   "/download/android-tv": {
-    filename: "4K-Cinema-Android-TV-3.54.apk",
+    filename: "4K-Cinema-Android-TV-3.55.apk",
     contentType: "application/vnd.android.package-archive",
   },
   "/download/ios": {
-    filename: "4K-Cinema-iOS-3.54-unsigned.ipa",
+    filename: "4K-Cinema-iOS-3.55-unsigned.ipa",
     contentType: "application/octet-stream",
   },
   "/download/windows": {
-    filename: "4K-Cinema-Windows-3.54-x64.exe",
+    filename: "4K-Cinema-Windows-3.55-x64.exe",
     contentType: "application/vnd.microsoft.portable-executable",
   },
 });
-const INSTALLER_RELEASE_ORIGIN = "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.54";
+const INSTALLER_RELEASE_ORIGIN = "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.55";
 
 // Provider configuration belongs in encrypted Worker Secrets. The client only
 // receives this Worker's origin plus short-lived, opaque AES-GCM capabilities.
@@ -84,6 +84,7 @@ const MAX_HLS_MANIFEST_BYTES = 2 * 1024 * 1024;
 const MOVIE_AVAILABILITY_AUDIT_LIMIT = 12;
 const MOVIE_AVAILABILITY_RECHECK_MINUTES = 30;
 const movieAvailabilitySchemaPromises = new WeakMap();
+const streamCResolutionPromises = new Map();
 const MOVIE_CATALOG_CATEGORIES = new Set([
   "phim-moi-cap-nhat", "phim-le", "phim-bo", "hoat-hinh", "tv-shows",
 ]);
@@ -291,7 +292,7 @@ async function handleInstallerDownload(request, pathname) {
   if (!release || !["GET", "HEAD"].includes(request.method)) {
     return textError("Không tìm thấy bản cài đặt.", 404, "INSTALLER_NOT_FOUND");
   }
-  const upstreamHeaders = new Headers({ "user-agent": "4K-Cinema-Release/3.54" });
+  const upstreamHeaders = new Headers({ "user-agent": "4K-Cinema-Release/3.55" });
   const range = request.headers.get("range");
   if (range && /^bytes=\d*-\d*$/.test(range)) upstreamHeaders.set("range", range);
   const upstream = await fetch(`${INSTALLER_RELEASE_ORIGIN}/${release.filename}`, {
@@ -2074,9 +2075,19 @@ function equivalentStreamTargets(data, episode, episodeIndex) {
   return [...output.values()].slice(0, 8);
 }
 
-async function resolveStreamCPlaylist(embed, slug) {
+async function resolveStreamCPlaylistUncached(embed, slug) {
   const target = streamCEmbedTarget(embed?.href || embed);
   if (!target) return null;
+  const cache = globalThis.caches?.default;
+  const cacheKey = new Request(`https://streamc-cache.phim4k.invalid/${target.hostname}/${target.searchParams.get("hash")}`);
+  if (cache) try {
+    const cached = await cache.match(cacheKey);
+    const payload = cached ? await cached.json() : null;
+    const playlist = safePublicHttpsUrl(payload?.playlist);
+    if (playlist && playlist.origin === target.origin && Number(payload?.expiresAt) > Math.floor(Date.now() / 1000) + 60) {
+      return { target: playlist, isHls: true, referer: `${target.origin}/`, streamC: true };
+    }
+  } catch (_error) {}
   const moviePage = `https://phim.nguonc.com/phim/${encodeURIComponent(slug)}`;
   const browserHeaders = {
     accept: "application/json, text/plain, */*",
@@ -2098,7 +2109,9 @@ async function resolveStreamCPlaylist(embed, slug) {
         bootstrap_format: "json",
       }),
       redirect: "manual",
-      signal: AbortSignal.timeout(6500),
+      // StreamC commonly needs 8-12 seconds to issue a signed playlist. The
+      // previous 6.5 second cutoff rejected healthy Rick & Morty episodes.
+      signal: AbortSignal.timeout(18000),
     });
     if (!response.ok || !String(response.headers.get("content-type") || "").includes("application/json")) return null;
     const payload = await response.json();
@@ -2107,10 +2120,28 @@ async function resolveStreamCPlaylist(embed, slug) {
     const expiresAt = Number(payload?.preissued?.expiresAt);
     if (!playlist || playlist.origin !== target.origin || payload?.preissued?.playlistFormat !== "hls") return null;
     if (!Number.isInteger(issuedAt) || !Number.isInteger(expiresAt) || expiresAt <= issuedAt || expiresAt - issuedAt > 86400) return null;
+    const epochSeconds = Math.floor(Date.now() / 1000);
+    if (expiresAt <= epochSeconds + 60 || issuedAt > epochSeconds + 60) return null;
+    if (cache) try {
+      const ttl = Math.max(60, Math.min(3 * 60 * 60, expiresAt - epochSeconds - 60));
+      await cache.put(cacheKey, new Response(JSON.stringify({ playlist: playlist.href, expiresAt }), {
+        headers: { "content-type": "application/json", "cache-control": `public, max-age=${ttl}` },
+      }));
+    } catch (_error) {}
     return { target: playlist, isHls: true, referer: `${target.origin}/`, streamC: true };
   } catch (_error) {
     return null;
   }
+}
+
+async function resolveStreamCPlaylist(embed, slug) {
+  const target = streamCEmbedTarget(embed?.href || embed);
+  if (!target) return null;
+  const key = target.href;
+  if (streamCResolutionPromises.has(key)) return streamCResolutionPromises.get(key);
+  const pending = resolveStreamCPlaylistUncached(target, slug).finally(() => streamCResolutionPromises.delete(key));
+  streamCResolutionPromises.set(key, pending);
+  return pending;
 }
 
 async function probeAvailabilitySource(source, request, env) {
@@ -2321,7 +2352,7 @@ async function fetchBackupMovieDetail(slug, env) {
   try {
     const response = await fetch(`${origin.href.replace(/\/$/, "")}/api/film/${encodeURIComponent(slug)}`, {
       headers: { accept: "application/json" },
-      signal: AbortSignal.timeout(4500),
+      signal: AbortSignal.timeout(12000),
       redirect: "manual",
       cf: { cacheEverything: true, cacheTtl: 60 },
     });
@@ -2493,27 +2524,24 @@ async function handleMoviePlayback(request, env) {
     await recordMovieAvailability(env, slug, "offline", "NO_DIRECT_STREAM");
     return textError("Server này không có luồng phát trực tiếp tương thích.", 404, "STREAM_NOT_AVAILABLE");
   }
-  // A successful StreamC bootstrap already returns a short-lived, signed HLS
-  // playlist. Prefer it over stale catalogue URLs so playback does not wait
-  // for a known-dead primary server to time out first.
-  candidates.sort((a, b) =>
-    Number(Boolean(b.embed)) - Number(Boolean(a.embed))
-    || Number(b.target?.href === selected?.target?.href) - Number(a.target?.href === selected?.target?.href));
+  // Start every StreamC bootstrap immediately while direct sources are
+  // probed. This keeps healthy direct streams fast, but a slow (8-12 second)
+  // signed backup is already in flight when a stale primary returns 404.
+  const streamChoicePromise = Promise.any(candidates.filter((source) => source.embed).map(async (source) => {
+    const resolvedSource = await resolveStreamCPlaylist(source.embed, slug);
+    if (!resolvedSource) throw new Error("STREAMC_UNAVAILABLE");
+    return { ...source, ...resolvedSource, clientDirectFallback: false };
+  })).catch(() => null);
+  const directCandidates = candidates.filter((source) => !source.embed);
+  directCandidates.sort((a, b) =>
+    Number(b.target?.href === selected?.target?.href) - Number(a.target?.href === selected?.target?.href));
   let chosen = null;
   // Catalog entries can outlive their provider files. Verify the selected
   // stream before issuing a ticket so the client can immediately try another
   // server instead of remaining at 00:00 with a native-player error.
-  for (const source of candidates) try {
-    const resolvedSource = source.embed ? await resolveStreamCPlaylist(source.embed, slug) : source;
-    if (!resolvedSource) continue;
+  for (const source of directCandidates) try {
+    const resolvedSource = source;
     const { target, isHls, referer = "", streamC = false } = resolvedSource;
-    // The bootstrap response is itself the provider's availability proof. A
-    // second manifest probe delayed every start and downloaded the same HLS
-    // document that the player requests immediately afterwards.
-    if (streamC) {
-      chosen = { ...source, ...resolvedSource, streamC, referer, clientDirectFallback: false };
-      break;
-    }
     let clientDirectFallback = false;
     const probeRequest = new Request(request.url, { method: "GET", headers: request.headers });
     // This is only an availability probe. Keep movie startup responsive; the
@@ -2566,6 +2594,7 @@ async function handleMoviePlayback(request, env) {
       break;
     }
   }
+  if (!chosen) chosen = await streamChoicePromise;
   if (!chosen) {
     await recordMovieAvailability(env, slug, "offline", "ALL_SOURCES_GONE");
     return textError("Các server của phim đang tạm thời không phản hồi; phim vẫn được giữ trong kho.", 404, "STREAM_SOURCE_OFFLINE");
