@@ -40,7 +40,7 @@ function viewerRequest(path, init = {}) {
   });
 }
 
-test('a movie is hidden everywhere after all equivalent sources are definitively gone', async () => {
+test('a movie stays visible even when all equivalent sources are definitively gone', async () => {
   const f = fixture();
   const originalFetch = globalThis.fetch;
   const deadMovie = {
@@ -70,18 +70,18 @@ test('a movie is hidden everywhere after all equivalent sources are definitively
 
     const catalog = await worker.fetch(viewerRequest('/api/movies/catalog?page=1'), f.env);
     assert.equal(catalog.status, 200);
-    assert.deepEqual((await catalog.json()).items.map((movie) => movie.slug), ['live-movie']);
+    assert.deepEqual((await catalog.json()).items.map((movie) => movie.slug), ['dead-movie', 'live-movie']);
 
     const detail = await worker.fetch(viewerRequest('/api/movies/detail/dead-movie'), f.env);
-    assert.equal(detail.status, 404);
-    assert.equal((await detail.json()).code, 'MOVIE_SOURCES_OFFLINE');
+    assert.equal(detail.status, 200);
+    assert.equal((await detail.json()).movie.slug, 'dead-movie');
   } finally {
     globalThis.fetch = originalFetch;
     f.sqlite.close();
   }
 });
 
-test('one surviving equivalent server prevents the movie from being hidden', async () => {
+test('playback automatically selects a surviving equivalent server', async () => {
   const f = fixture();
   const originalFetch = globalThis.fetch;
   const payload = {
@@ -103,8 +103,52 @@ test('one surviving equivalent server prevents the movie from being hidden', asy
       method: 'POST',
       body: JSON.stringify({ movie: 'fallback-movie', server: 0, episode: 0 }),
     }), f.env);
-    assert.equal(playback.status, 404);
+    assert.equal(playback.status, 200);
+    assert.equal((await playback.json()).selectedServer, 1);
     assert.equal(f.sqlite.prepare("SELECT COUNT(*) AS count FROM movie_availability WHERE movie_slug = 'fallback-movie'").get().count, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    f.sqlite.close();
+  }
+});
+
+test('a direct HLS backup provider is merged without exposing an ad embed page', async () => {
+  const f = fixture();
+  const originalFetch = globalThis.fetch;
+  const primary = {
+    movie: { slug: 'backup-movie', name: 'Backup movie' },
+    episodes: [{ server_name: 'Primary', server_data: [{ name: 'Full', slug: 'full', link_m3u8: 'https://video.example/dead.m3u8' }] }],
+  };
+  const backup = {
+    movie: {
+      slug: 'backup-movie',
+      episodes: [{ server_name: 'Backup', items: [
+        { name: 'Full', slug: 'full', m3u8: 'https://backup-video.example/live.m3u8' },
+        { name: 'Ads', slug: 'ads', embed: 'https://ads.example/embed.php?id=1' },
+      ] }],
+    },
+  };
+  globalThis.fetch = async (input) => {
+    const url = new URL(input);
+    if (url.origin === 'https://catalog.example') return new Response(JSON.stringify(primary), { headers: { 'content-type': 'application/json' } });
+    if (url.origin === 'https://phim.nguonc.com') return new Response(JSON.stringify(backup), { headers: { 'content-type': 'application/json' } });
+    if (url.href === 'https://video.example/dead.m3u8') return new Response('gone', { status: 410 });
+    if (url.href === 'https://backup-video.example/live.m3u8') return new Response('#EXTM3U\n#EXT-X-ENDLIST', { headers: { 'content-type': 'application/vnd.apple.mpegurl' } });
+    throw new Error(`unexpected upstream: ${url.href}`);
+  };
+  try {
+    const detail = await worker.fetch(viewerRequest('/api/movies/detail/backup-movie'), f.env);
+    assert.equal(detail.status, 200);
+    const detailJson = await detail.json();
+    assert.equal(detailJson.episodes.length, 2);
+    assert.equal(detailJson.episodes[1].server_data.length, 1);
+
+    const playback = await worker.fetch(viewerRequest('/api/movies/play', {
+      method: 'POST',
+      body: JSON.stringify({ movie: 'backup-movie', server: 0, episode: 0 }),
+    }), f.env);
+    assert.equal(playback.status, 200);
+    assert.equal((await playback.json()).selectedServer, 1);
   } finally {
     globalThis.fetch = originalFetch;
     f.sqlite.close();

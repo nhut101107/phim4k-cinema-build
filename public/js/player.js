@@ -508,7 +508,7 @@ const Player = {
 
   loadAutoSkipPreference() {
     try {
-      this.autoSkipAdsEnabled = localStorage.getItem('phim4k-ios-auto-skip-ads-v1') !== 'off';
+      this.autoSkipAdsEnabled = localStorage.getItem('phim4k-auto-skip-ads-v2') !== 'off';
     } catch (_) {
       this.autoSkipAdsEnabled = true;
     }
@@ -518,7 +518,7 @@ const Player = {
   toggleAutoSkipAds() {
     this.autoSkipAdsEnabled = !this.autoSkipAdsEnabled;
     try {
-      localStorage.setItem('phim4k-ios-auto-skip-ads-v1', this.autoSkipAdsEnabled ? 'on' : 'off');
+      localStorage.setItem('phim4k-auto-skip-ads-v2', this.autoSkipAdsEnabled ? 'on' : 'off');
     } catch (_) {}
     this.updateAutoSkipButton();
     this.showAlert(this.autoSkipAdsEnabled ? 'Đã bật tự bỏ quảng cáo' : 'Đã tắt tự bỏ quảng cáo');
@@ -534,7 +534,7 @@ const Player = {
   },
 
   maybeAutoSkipAd() {
-    if (!this.autoSkipAdsEnabled || this.nativePlatform() !== 'ios') return false;
+    if (!this.autoSkipAdsEnabled) return false;
     const result = PlayerCore.autoAdSkipTarget(
       this.video?.currentTime,
       this.video?.duration,

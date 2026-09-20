@@ -64,10 +64,10 @@ function loadDownloadsConfig() {
     return JSON.parse(raw);
   } catch (err) {
     return {
-      android: { name: 'Phim 4K Cinema Android (ADR / APK)', url: 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android', version: '3.52', note: 'Điện thoại Android' },
-      android_tv: { name: 'Phim 4K Cinema Android TV (APK)', url: 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android-tv', version: '3.52', note: 'Android TV & TV Box' },
-      ios: { name: 'Phim 4K Cinema iOS (IPA)', url: 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/ios', version: '3.52', note: 'iPhone & iPad' },
-      windows: { name: 'Phim 4K Cinema Windows (EXE)', url: 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/windows', version: '3.52', note: 'Máy tính Windows' }
+      android: { name: 'Phim 4K Cinema Android (ADR / APK)', url: 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android', version: '3.53', note: 'Điện thoại Android' },
+      android_tv: { name: 'Phim 4K Cinema Android TV (APK)', url: 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android-tv', version: '3.53', note: 'Android TV & TV Box' },
+      ios: { name: 'Phim 4K Cinema iOS (IPA)', url: 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/ios', version: '3.53', note: 'iPhone & iPad' },
+      windows: { name: 'Phim 4K Cinema Windows (EXE)', url: 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/windows', version: '3.53', note: 'Máy tính Windows' }
     };
   }
 }
@@ -1433,9 +1433,9 @@ app.get('/download/apk', (req, res) => {
     return res.redirect(url);
   }
 
-  const apkPath = path.join(__dirname, 'release-3.52', '4K-Cinema-Android-3.52.apk');
+  const apkPath = path.join(__dirname, 'release-3.53', '4K-Cinema-Android-3.53.apk');
   if (fs.existsSync(apkPath)) {
-    res.download(apkPath, '4K-Cinema-Android-3.52.apk');
+    res.download(apkPath, '4K-Cinema-Android-3.53.apk');
   } else {
     res.status(404).send('Bản cài đặt Android (APK) chưa sẵn sàng.');
   }
@@ -1448,9 +1448,9 @@ app.get('/download/ipa', (req, res) => {
     return res.redirect(url);
   }
 
-  const ipaPath = path.join(__dirname, 'release-3.52', '4K-Cinema-iOS-3.52-unsigned.ipa');
+  const ipaPath = path.join(__dirname, 'release-3.53', '4K-Cinema-iOS-3.53-unsigned.ipa');
   if (fs.existsSync(ipaPath)) {
-    res.download(ipaPath, '4K-Cinema-iOS-3.52-unsigned.ipa');
+    res.download(ipaPath, '4K-Cinema-iOS-3.53-unsigned.ipa');
   } else {
     res.status(404).send('Bản cài đặt iOS (IPA) chưa sẵn sàng.');
   }
@@ -1460,8 +1460,8 @@ app.get('/download/tv', (req, res) => {
   const cfg = loadDownloadsConfig();
   const url = cfg.android_tv?.url || '/download/tv';
   if (url.startsWith('http://') || url.startsWith('https://')) return res.redirect(url);
-  const apkPath = path.join(__dirname, 'release-3.52', '4K-Cinema-Android-TV-3.52.apk');
-  if (fs.existsSync(apkPath)) return res.download(apkPath, '4K-Cinema-Android-TV-3.52.apk');
+  const apkPath = path.join(__dirname, 'release-3.53', '4K-Cinema-Android-TV-3.53.apk');
+  if (fs.existsSync(apkPath)) return res.download(apkPath, '4K-Cinema-Android-TV-3.53.apk');
   return res.status(404).send('Bản cài đặt Android TV (APK) chưa sẵn sàng.');
 });
 
@@ -1472,9 +1472,9 @@ app.get('/download/exe', (req, res) => {
     return res.redirect(url);
   }
 
-  const exePath = path.join(__dirname, 'release-3.52', '4K-Cinema-Windows-3.52-x64.exe');
+  const exePath = path.join(__dirname, 'release-3.53', '4K-Cinema-Windows-3.53-x64.exe');
   if (fs.existsSync(exePath)) {
-    res.download(exePath, '4K-Cinema-Windows-3.52-x64.exe');
+    res.download(exePath, '4K-Cinema-Windows-3.53-x64.exe');
   } else {
     res.status(404).send('Bản cài đặt Windows (EXE) chưa sẵn sàng.');
   }

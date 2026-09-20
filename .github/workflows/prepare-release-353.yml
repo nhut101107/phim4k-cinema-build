@@ -1,0 +1,40 @@
+name: Prepare 4K Cinema 3.53 release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/rebuild-release.flag
+      - .github/workflows/prepare-release-353.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prepare-phim4k-353-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Create the draft before platform builders upload files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view ios-v3.53 --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo 'Draft release already exists.'
+          else
+            gh release create ios-v3.53 \
+              --repo "${GITHUB_REPOSITORY}" \
+              --draft \
+              --target "${GITHUB_SHA}" \
+              --title '4K Cinema 3.53 - iOS, Android, Android TV, Windows' \
+              --notes 'Giữ đầy đủ phim trong kho, tự chuyển qua tối đa 8 nguồn phát tương đương khi server chết, thêm nguồn dự phòng chỉ nhận HLS/MP4 trực tiếp và bật bỏ quảng cáo trên mọi nền tảng. iOS IPA chưa ký và cần chứng chỉ của người dùng.'
+          fi
+          gh release view ios-v3.53 --repo "${GITHUB_REPOSITORY}" --json isDraft,tagName \
+            --jq '{tag: .tagName, draft: .isDraft}'

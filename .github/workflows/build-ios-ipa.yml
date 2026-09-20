@@ -80,24 +80,24 @@ jobs:
           test -d "$app_path"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Info.plist")" = "com.phim4k.cinema"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$app_path/Info.plist")" = "4K Cinema"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_path/Info.plist")" = "3.52"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app_path/Info.plist")" = "52"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_path/Info.plist")" = "3.53"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app_path/Info.plist")" = "53"
           package_dir="$RUNNER_TEMP/phim4k-ipa"
           mkdir -p "$package_dir/Payload"
           cp -R "$app_path" "$package_dir/Payload/App.app"
-          (cd "$package_dir" && /usr/bin/zip -qry "$GITHUB_WORKSPACE/4K-Cinema-iOS-3.52-unsigned.ipa" Payload)
-          /usr/bin/unzip -t "$GITHUB_WORKSPACE/4K-Cinema-iOS-3.52-unsigned.ipa"
-          python3 scripts/package_ios_web_update.py --audit-only "$GITHUB_WORKSPACE/4K-Cinema-iOS-3.52-unsigned.ipa"
+          (cd "$package_dir" && /usr/bin/zip -qry "$GITHUB_WORKSPACE/4K-Cinema-iOS-3.53-unsigned.ipa" Payload)
+          /usr/bin/unzip -t "$GITHUB_WORKSPACE/4K-Cinema-iOS-3.53-unsigned.ipa"
+          python3 scripts/package_ios_web_update.py --audit-only "$GITHUB_WORKSPACE/4K-Cinema-iOS-3.53-unsigned.ipa"
 
       - name: Upload unsigned IPA for ESign
         uses: actions/upload-artifact@v4
         with:
-          name: 4K-Cinema-iOS-3.52-unsigned
-          path: 4K-Cinema-iOS-3.52-unsigned.ipa
+          name: 4K-Cinema-iOS-3.53-unsigned
+          path: 4K-Cinema-iOS-3.53-unsigned.ipa
           if-no-files-found: error
           retention-days: 7
 
       - name: Refresh public iOS release asset
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload ios-v3.52 4K-Cinema-iOS-3.52-unsigned.ipa --clobber
+        run: gh release upload ios-v3.53 4K-Cinema-iOS-3.53-unsigned.ipa --clobber

@@ -21,7 +21,7 @@
   window.addEventListener('unhandledrejection', () => report('unhandled_promise'));
 })();
 
-// 3.52 reliability hotfix shared by iOS, Android, Android TV and Windows.
+// 3.53 reliability hotfix shared by iOS, Android, Android TV and Windows.
 (() => {
   if (typeof App !== 'undefined') {
     App.resolveDirectImageUrl = function resolveDirectImageUrl(path) {

@@ -28,12 +28,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tag='ios-v3.52'
+          tag='ios-v3.53'
           expected=(
-            '4K-Cinema-Android-3.52.apk'
-            '4K-Cinema-Android-TV-3.52.apk'
-            '4K-Cinema-iOS-3.52-unsigned.ipa'
-            '4K-Cinema-Windows-3.52-x64.exe'
+            '4K-Cinema-Android-3.53.apk'
+            '4K-Cinema-Android-TV-3.53.apk'
+            '4K-Cinema-iOS-3.53-unsigned.ipa'
+            '4K-Cinema-Windows-3.53-x64.exe'
           )
 
           if ! gh release view "$tag" --repo "$REPOSITORY" >/dev/null 2>&1; then

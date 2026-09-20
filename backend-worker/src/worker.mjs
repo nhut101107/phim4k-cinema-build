@@ -56,23 +56,23 @@ const RATE_LIMITS = Object.freeze({
 
 const INSTALLER_RELEASES = Object.freeze({
   "/download/android": {
-    filename: "4K-Cinema-Android-3.52.apk",
+    filename: "4K-Cinema-Android-3.53.apk",
     contentType: "application/vnd.android.package-archive",
   },
   "/download/android-tv": {
-    filename: "4K-Cinema-Android-TV-3.52.apk",
+    filename: "4K-Cinema-Android-TV-3.53.apk",
     contentType: "application/vnd.android.package-archive",
   },
   "/download/ios": {
-    filename: "4K-Cinema-iOS-3.52-unsigned.ipa",
+    filename: "4K-Cinema-iOS-3.53-unsigned.ipa",
     contentType: "application/octet-stream",
   },
   "/download/windows": {
-    filename: "4K-Cinema-Windows-3.52-x64.exe",
+    filename: "4K-Cinema-Windows-3.53-x64.exe",
     contentType: "application/vnd.microsoft.portable-executable",
   },
 });
-const INSTALLER_RELEASE_ORIGIN = "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.52";
+const INSTALLER_RELEASE_ORIGIN = "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.53";
 
 // Provider configuration belongs in encrypted Worker Secrets. The client only
 // receives this Worker's origin plus short-lived, opaque AES-GCM capabilities.
@@ -115,6 +115,18 @@ function configuredCatalogOrigin(env) {
     // OPhim retired ophim1.com; transparently migrate a stale Worker secret
     // so production does not keep serving cached titles with broken artwork.
     if (url.hostname.toLowerCase() === "ophim1.com") url.hostname = "phimapi.com";
+    url.pathname = url.pathname === "/" ? "" : url.pathname.replace(/\/+$/, "");
+    return url;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function configuredBackupCatalogOrigin(env) {
+  const raw = String(env?.MOVIE_BACKUP_CATALOG_ORIGIN || "https://phim.nguonc.com").trim();
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:" || url.username || url.password || url.port || url.search || url.hash) return null;
     url.pathname = url.pathname === "/" ? "" : url.pathname.replace(/\/+$/, "");
     return url;
   } catch (_error) {
@@ -276,7 +288,7 @@ async function handleInstallerDownload(request, pathname) {
   if (!release || !["GET", "HEAD"].includes(request.method)) {
     return textError("Không tìm thấy bản cài đặt.", 404, "INSTALLER_NOT_FOUND");
   }
-  const upstreamHeaders = new Headers({ "user-agent": "4K-Cinema-Release/3.52" });
+  const upstreamHeaders = new Headers({ "user-agent": "4K-Cinema-Release/3.53" });
   const range = request.headers.get("range");
   if (range && /^bytes=\d*-\d*$/.test(range)) upstreamHeaders.set("range", range);
   const upstream = await fetch(`${INSTALLER_RELEASE_ORIGIN}/${release.filename}`, {
@@ -2034,15 +2046,20 @@ function equivalentStreamTargets(data, episode, episodeIndex) {
     .map((value) => String(value || "").trim().toLocaleLowerCase())
     .filter(Boolean);
   const output = new Map();
-  for (const server of Array.isArray(data?.episodes) ? data.episodes : []) {
+  for (const [serverIndex, server] of (Array.isArray(data?.episodes) ? data.episodes : []).entries()) {
     const serverEpisodes = Array.isArray(server?.server_data) ? server.server_data : [];
     let candidate = serverEpisodes.find((item) => identity.some((value) =>
       [item?.slug, item?.name, item?.filename].some((field) => String(field || "").trim().toLocaleLowerCase() === value)));
     if (!candidate) candidate = serverEpisodes[episodeIndex];
     const resolved = directStreamTarget(candidate);
-    if (resolved) output.set(resolved.target.href, resolved);
+    if (resolved) output.set(resolved.target.href, {
+      ...resolved,
+      serverIndex,
+      episodeIndex: Math.max(0, serverEpisodes.indexOf(candidate)),
+      serverName: cleanProgressText(server?.server_name, 100) || `Server ${serverIndex + 1}`,
+    });
   }
-  return [...output.values()].slice(0, 3);
+  return [...output.values()].slice(0, 8);
 }
 
 async function probeAvailabilitySource(source, request, env) {
@@ -2224,6 +2241,61 @@ async function fetchProtectedCatalogJson(path, env, { force = false, ttl = 15 } 
   return payload;
 }
 
+function normalizeBackupMovieDetail(payload) {
+  const movie = payload?.movie && typeof payload.movie === "object" ? payload.movie : null;
+  if (!movie) return null;
+  const episodes = (Array.isArray(movie.episodes) ? movie.episodes : []).map((server, serverIndex) => ({
+    server_name: cleanProgressText(server?.server_name, 100) || `Nguồn phụ ${serverIndex + 1}`,
+    server_data: (Array.isArray(server?.items) ? server.items : []).flatMap((item, episodeIndex) => {
+      const target = safePublicHttpsUrl(item?.link_m3u8 || item?.m3u8 || item?.link || item?.embed);
+      if (!target || !/\.(?:m3u8|mp4|m4v|mov)(?:$|[?#])/i.test(target.href)) return [];
+      const isHls = /\.m3u8(?:$|[?#])/i.test(target.href);
+      return [{
+        name: item?.name || `Tập ${episodeIndex + 1}`,
+        slug: item?.slug || `tap-${episodeIndex + 1}`,
+        filename: item?.filename || item?.name || "",
+        link_m3u8: isHls ? target.href : "",
+        link_embed: isHls ? "" : target.href,
+      }];
+    }),
+  })).filter((server) => server.server_data.length);
+  const { episodes: _ignored, ...movieMetadata } = movie;
+  return { movie: movieMetadata, episodes };
+}
+
+async function fetchBackupMovieDetail(slug, env) {
+  const origin = configuredBackupCatalogOrigin(env);
+  if (!origin || !slug) return null;
+  try {
+    const response = await fetch(`${origin.href.replace(/\/$/, "")}/api/film/${encodeURIComponent(slug)}`, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(4500),
+      redirect: "manual",
+      cf: { cacheEverything: true, cacheTtl: 60 },
+    });
+    if (!response.ok || !String(response.headers.get("content-type") || "").includes("application/json")) return null;
+    return normalizeBackupMovieDetail(await response.json());
+  } catch (_error) {
+    return null;
+  }
+}
+
+function mergeMovieSources(primary, backup) {
+  if (!primary && !backup) return null;
+  if (!primary) return backup;
+  if (!backup?.episodes?.length) return primary;
+  const seen = new Set();
+  const episodes = [];
+  for (const server of [...(primary.episodes || []), ...(backup.episodes || [])]) {
+    const links = (server?.server_data || []).map((episode) => directStreamTarget(episode)?.target?.href).filter(Boolean);
+    const key = links.join("|");
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    episodes.push(server);
+  }
+  return { ...primary, episodes };
+}
+
 async function protectImageValue(value, request, env, expiresAt, extra = {}) {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -2277,10 +2349,7 @@ async function handleProtectedMovieCatalog(request, env) {
   if (pathname === "/api/movies/home") {
     const paths = homeCatalogPaths(new Date().getUTCFullYear());
     const results = await Promise.allSettled(paths.map((path, index) => fetchProtectedCatalogJson(path, env, { ttl: index ? 60 : 15 })));
-    const items = await filterAvailableCatalogItems(
-      results.flatMap((result) => result.status === "fulfilled" ? normalizedCatalogItems(result.value, env) : []),
-      env,
-    );
+    const items = results.flatMap((result) => result.status === "fulfilled" ? normalizedCatalogItems(result.value, env) : []);
     if (!items.length) return textError("Nguồn danh mục tạm thời không khả dụng.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
     return json(await protectCatalogImages(HomeCuration.build(items), request, env));
   }
@@ -2295,7 +2364,7 @@ async function handleProtectedMovieCatalog(request, env) {
     };
     return json({
       title: "Toàn bộ kho phim",
-      items: await protectCatalogImages(await filterAvailableCatalogItems(normalizedCatalogItems(data, env), env), request, env),
+      items: await protectCatalogImages(normalizedCatalogItems(data, env), request, env),
       pagination,
     });
   }
@@ -2312,7 +2381,7 @@ async function handleProtectedMovieCatalog(request, env) {
       : genre ? `/v1/api/the-loai/${genre}?page=${page}&limit=48` : `/v1/api/quoc-gia/${country}?page=${page}&limit=48`;
     if (country && genre) target += `&country=${encodeURIComponent(country)}`;
     const data = await fetchProtectedCatalogJson(target, env);
-    return json({ filters: { genre, country }, items: await protectCatalogImages(await filterAvailableCatalogItems(normalizedCatalogItems(data, env), env), request, env), pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1, totalItems: 0 } });
+    return json({ filters: { genre, country }, items: await protectCatalogImages(normalizedCatalogItems(data, env), request, env), pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1, totalItems: 0 } });
   }
 
   const categoryMatch = pathname.match(/^\/api\/movies\/category\/([a-z0-9-]+)$/);
@@ -2322,7 +2391,7 @@ async function handleProtectedMovieCatalog(request, env) {
     const page = catalogPage(url.searchParams.get("page"));
     const target = `/v1/api/danh-sach/${category}?page=${page}&limit=48&sort_field=modified.time&sort_type=desc`;
     const data = await fetchProtectedCatalogJson(target, env);
-    return json({ title: category, items: await protectCatalogImages(await filterAvailableCatalogItems(normalizedCatalogItems(data, env), env), request, env), pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1 } });
+    return json({ title: category, items: await protectCatalogImages(normalizedCatalogItems(data, env), request, env), pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1 } });
   }
 
   if (pathname === "/api/movies/search") {
@@ -2330,15 +2399,19 @@ async function handleProtectedMovieCatalog(request, env) {
     if (!query) return textError("Thiếu từ khóa tìm kiếm.", 400, "MISSING_QUERY");
     const page = catalogPage(url.searchParams.get("page"));
     const data = await fetchProtectedCatalogJson(`/v1/api/tim-kiem?keyword=${encodeURIComponent(query)}&page=${page}&limit=48`, env);
-    return json({ query, items: await protectCatalogImages(await filterAvailableCatalogItems(normalizedCatalogItems(data, env), env), request, env), pagination: data.data?.params?.pagination || { currentPage: page, totalPages: 1 } });
+    return json({ query, items: await protectCatalogImages(normalizedCatalogItems(data, env), request, env), pagination: data.data?.params?.pagination || { currentPage: page, totalPages: 1 } });
   }
 
   const detailMatch = pathname.match(/^\/api\/movies\/detail\/([^/]+)$/);
   if (detailMatch) {
     const slug = catalogSlug(detailMatch[1]);
     if (!slug) return textError("Mã phim không hợp lệ.", 400, "INVALID_MOVIE_SLUG");
-    if (await movieIsUnavailable(env, slug)) return textError("Phim này đang được ẩn vì toàn bộ nguồn phát đã ngừng hoạt động.", 404, "MOVIE_SOURCES_OFFLINE");
-    const data = await fetchProtectedCatalogJson(`/phim/${slug}`, env, { ttl: 120 });
+    const [primary, backup] = await Promise.all([
+      fetchProtectedCatalogJson(`/phim/${slug}`, env, { ttl: 120 }).catch(() => null),
+      fetchBackupMovieDetail(slug, env),
+    ]);
+    const data = mergeMovieSources(primary, backup);
+    if (!data) return textError("Chưa tải được thông tin phim từ các nguồn.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
     return json(await protectMovieDetail(data, request, env, slug));
   }
   return textError("Không tìm thấy dữ liệu phim.", 404, "MOVIE_NOT_FOUND");
@@ -2354,21 +2427,27 @@ async function handleMoviePlayback(request, env) {
   if (!slug || !Number.isInteger(serverIndex) || serverIndex < 0 || serverIndex > 50 || !Number.isInteger(episodeIndex) || episodeIndex < 0 || episodeIndex > 5000) {
     return textError("Tham chiếu tập phim không hợp lệ.", 400, "INVALID_STREAM_REFERENCE");
   }
-  const data = await fetchProtectedCatalogJson(`/phim/${slug}`, env, { ttl: 120 });
+  const [primary, backup] = await Promise.all([
+    fetchProtectedCatalogJson(`/phim/${slug}`, env, { ttl: 120 }).catch(() => null),
+    fetchBackupMovieDetail(slug, env),
+  ]);
+  const data = mergeMovieSources(primary, backup);
+  if (!data) return textError("Chưa kết nối được các nguồn phim. Vui lòng thử lại.", 503, "MOVIE_UPSTREAM_UNAVAILABLE");
   const episode = data?.episodes?.[serverIndex]?.server_data?.[episodeIndex];
-  const source = directStreamTarget(episode);
-  if (!source) {
-    if (!equivalentStreamTargets(data, episode, episodeIndex).length) {
-      await recordMovieAvailability(env, slug, "offline", "NO_DIRECT_STREAM");
-    }
+  const selected = directStreamTarget(episode);
+  const candidates = equivalentStreamTargets(data, episode, episodeIndex);
+  if (!candidates.length) {
+    await recordMovieAvailability(env, slug, "offline", "NO_DIRECT_STREAM");
     return textError("Server này không có luồng phát trực tiếp tương thích.", 404, "STREAM_NOT_AVAILABLE");
   }
-  const { target, isHls } = source;
-  let clientDirectFallback = false;
+  candidates.sort((a, b) => Number(b.target.href === selected?.target?.href) - Number(a.target.href === selected?.target?.href));
+  let chosen = null;
   // Catalog entries can outlive their provider files. Verify the selected
   // stream before issuing a ticket so the client can immediately try another
   // server instead of remaining at 00:00 with a native-player error.
-  try {
+  for (const source of candidates) try {
+    const { target, isHls } = source;
+    let clientDirectFallback = false;
     const probeRequest = new Request(request.url, { method: "GET", headers: request.headers });
     // This is only an availability probe. Keep movie startup responsive; the
     // actual stream request still gets the normal, longer media timeout.
@@ -2381,10 +2460,7 @@ async function handleMoviePlayback(request, env) {
       // times before moving to another server. Fail this source immediately
       // so the shared player can select another catalogue server.
       if (sourceIsGone) {
-        if (await allEquivalentSourcesOffline(data, episode, episodeIndex, target.href, request, env)) {
-          await recordMovieAvailability(env, slug, "offline", "ALL_SOURCES_GONE");
-        }
-        return textError("Nguồn phim này đã bị gỡ hoặc tạm thời không phản hồi.", 404, "STREAM_SOURCE_OFFLINE");
+        continue;
       }
       // Let the entrypoint retry a failed VPS response through Cloudflare
       // first. When the direct Cloudflare fetch is also blocked (or no VPS is
@@ -2392,30 +2468,39 @@ async function handleMoviePlayback(request, env) {
       // can continue entirely on the viewer device. A dead source will simply
       // fail in the player, which can then try the next catalog server.
       if (!configuredRelayOrigin(env)) clientDirectFallback = true;
-      else return textError("Nguồn phim này đã bị gỡ hoặc tạm thời không phản hồi.", 404, "STREAM_SOURCE_OFFLINE");
+      else continue;
     }
     if (!clientDirectFallback && isHls) {
       const declaredLength = Number.parseInt(probe.headers.get("content-length") || "0", 10) || 0;
-      if (declaredLength > MAX_HLS_MANIFEST_BYTES) return textError("Nguồn phim trả về dữ liệu không hợp lệ.", 502, "INVALID_STREAM_SOURCE");
+      if (declaredLength > MAX_HLS_MANIFEST_BYTES) continue;
       const bytes = new Uint8Array(await probe.arrayBuffer());
       if (bytes.byteLength > MAX_HLS_MANIFEST_BYTES || !new TextDecoder().decode(bytes).trimStart().startsWith("#EXTM3U")) {
         // Some providers serve an anti-bot HTML page to Cloudflare but serve
         // the exact same URL normally to the viewer's device.
         if (!configuredRelayOrigin(env)) clientDirectFallback = true;
-        else return textError("Nguồn phim trả về dữ liệu không hợp lệ.", 502, "INVALID_STREAM_SOURCE");
+        else continue;
       }
     } else if (!clientDirectFallback) {
       const contentType = String(probe.headers.get("content-type") || "").toLowerCase();
       probe.body?.cancel?.().catch?.(() => {});
       if (!/^(?:video\/|audio\/|application\/(?:octet-stream|mp2t))/.test(contentType)) {
         if (!configuredRelayOrigin(env)) clientDirectFallback = true;
-        else return textError("Nguồn phim trả về dữ liệu không hợp lệ.", 502, "INVALID_STREAM_SOURCE");
+        else continue;
       }
     }
+    chosen = { ...source, clientDirectFallback };
+    break;
   } catch (_error) {
-    if (!configuredRelayOrigin(env)) clientDirectFallback = true;
-    else return textError("Không kết nối được nguồn phim. Đang thử server khác.", 503, "STREAM_SOURCE_UNREACHABLE");
+    if (!configuredRelayOrigin(env)) {
+      chosen = { ...source, clientDirectFallback: true };
+      break;
+    }
   }
+  if (!chosen) {
+    await recordMovieAvailability(env, slug, "offline", "ALL_SOURCES_GONE");
+    return textError("Các server của phim đang tạm thời không phản hồi; phim vẫn được giữ trong kho.", 404, "STREAM_SOURCE_OFFLINE");
+  }
+  const { target, isHls, clientDirectFallback } = chosen;
   const expiresAt = Math.floor(Date.now() / 1000) + ((env.MEDIA_RELAY_FALLBACK === "redirect" || clientDirectFallback) ? 15 * 60 : STREAM_TICKET_TTL_SECONDS);
   if (!clientDirectFallback) await recordMovieAvailability(env, slug, "online");
   return json({
@@ -2426,6 +2511,7 @@ async function handleMoviePlayback(request, env) {
       clientDirectFallback,
     }),
     isHls,
+    selectedServer: chosen.serverIndex,
     expiresAt: new Date(expiresAt * 1000).toISOString(),
   });
 }
