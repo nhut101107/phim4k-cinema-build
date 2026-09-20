@@ -292,4 +292,7 @@ export default {
     }
     return resilientCoreFetch(request, env, executionContext);
   },
+  async scheduled(event, env, executionContext) {
+    return coreWorker.scheduled?.(event, directWorkerEnv(env), executionContext);
+  },
 };

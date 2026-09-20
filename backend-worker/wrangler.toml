@@ -2,6 +2,9 @@ name = "phim4k-license-api"
 main = "src/worker-entry.mjs"
 compatibility_date = "2026-09-04"
 
+[triggers]
+crons = ["*/15 * * * *"]
+
 # Create the D1 database after logging in, then replace this placeholder with
 # the ID printed by `wrangler d1 create phim4k-license`.
 [[d1_databases]]

@@ -56,23 +56,23 @@ const RATE_LIMITS = Object.freeze({
 
 const INSTALLER_RELEASES = Object.freeze({
   "/download/android": {
-    filename: "4K-Cinema-Android-3.51.apk",
+    filename: "4K-Cinema-Android-3.52.apk",
     contentType: "application/vnd.android.package-archive",
   },
   "/download/android-tv": {
-    filename: "4K-Cinema-Android-TV-3.51.apk",
+    filename: "4K-Cinema-Android-TV-3.52.apk",
     contentType: "application/vnd.android.package-archive",
   },
   "/download/ios": {
-    filename: "4K-Cinema-iOS-3.51-unsigned.ipa",
+    filename: "4K-Cinema-iOS-3.52-unsigned.ipa",
     contentType: "application/octet-stream",
   },
   "/download/windows": {
-    filename: "4K-Cinema-Windows-3.51-x64.exe",
+    filename: "4K-Cinema-Windows-3.52-x64.exe",
     contentType: "application/vnd.microsoft.portable-executable",
   },
 });
-const INSTALLER_RELEASE_ORIGIN = "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.51";
+const INSTALLER_RELEASE_ORIGIN = "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.52";
 
 // Provider configuration belongs in encrypted Worker Secrets. The client only
 // receives this Worker's origin plus short-lived, opaque AES-GCM capabilities.
@@ -81,6 +81,8 @@ const VPS_RELAY_SIGNATURE_CONTEXT = "phim4k-vps-relay-v1";
 const IMAGE_TICKET_TTL_SECONDS = 90 * 24 * 60 * 60;
 const STREAM_TICKET_TTL_SECONDS = 12 * 60 * 60;
 const MAX_HLS_MANIFEST_BYTES = 2 * 1024 * 1024;
+const MOVIE_AVAILABILITY_AUDIT_LIMIT = 12;
+const MOVIE_AVAILABILITY_RECHECK_MINUTES = 30;
 const MOVIE_CATALOG_CATEGORIES = new Set([
   "phim-moi-cap-nhat", "phim-le", "phim-bo", "hoat-hinh", "tv-shows",
 ]);
@@ -273,7 +275,7 @@ async function handleInstallerDownload(request, pathname) {
   if (!release || !["GET", "HEAD"].includes(request.method)) {
     return textError("Không tìm thấy bản cài đặt.", 404, "INSTALLER_NOT_FOUND");
   }
-  const upstreamHeaders = new Headers({ "user-agent": "4K-Cinema-Release/3.51" });
+  const upstreamHeaders = new Headers({ "user-agent": "4K-Cinema-Release/3.52" });
   const range = request.headers.get("range");
   if (range && /^bytes=\d*-\d*$/.test(range)) upstreamHeaders.set("range", range);
   const upstream = await fetch(`${INSTALLER_RELEASE_ORIGIN}/${release.filename}`, {
@@ -1950,6 +1952,156 @@ function normalizedCatalogItems(data, env) {
   return resolveCatalogImageReferences(catalogItems(data), catalogImageBase(data, env));
 }
 
+async function unavailableMovieSlugs(env, items) {
+  if (!env?.DB || !Array.isArray(items) || !items.length) return new Set();
+  try {
+    const result = await env.DB.prepare(
+      "SELECT movie_slug FROM movie_availability WHERE status = 'offline' LIMIT 5000",
+    ).bind().all();
+    return new Set((result?.results || []).map((row) => catalogSlug(row?.movie_slug)).filter(Boolean));
+  } catch (_error) {
+    return new Set();
+  }
+}
+
+async function filterAvailableCatalogItems(items, env) {
+  const list = Array.isArray(items) ? items : [];
+  const unavailable = await unavailableMovieSlugs(env, list);
+  return unavailable.size ? list.filter((item) => !unavailable.has(catalogSlug(item?.slug))) : list;
+}
+
+async function movieIsUnavailable(env, slug) {
+  if (!env?.DB || !slug) return false;
+  try {
+    const row = await env.DB.prepare(
+      "SELECT status FROM movie_availability WHERE movie_slug = ? LIMIT 1",
+    ).bind(slug).first();
+    return row?.status === "offline";
+  } catch (_error) {
+    return false;
+  }
+}
+
+async function recordMovieAvailability(env, slug, status, reason = "", { insertOnline = false } = {}) {
+  const safeSlug = catalogSlug(slug);
+  if (!env?.DB || !safeSlug || !["online", "offline"].includes(status)) return;
+  const checkedAt = now();
+  const nextCheckAt = new Date(Date.now() + MOVIE_AVAILABILITY_RECHECK_MINUTES * 60 * 1000).toISOString();
+  try {
+    if (status === "online" && !insertOnline) {
+      await env.DB.prepare(
+        "UPDATE movie_availability SET status = 'online', failure_count = 0, reason = '', last_checked_at = ?, next_check_at = ? WHERE movie_slug = ? AND status = 'offline'",
+      ).bind(checkedAt, nextCheckAt, safeSlug).run();
+      return;
+    }
+    await env.DB.prepare(
+      "INSERT INTO movie_availability (movie_slug, status, failure_count, reason, last_checked_at, next_check_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(movie_slug) DO UPDATE SET status = excluded.status, failure_count = CASE WHEN excluded.status = 'offline' THEN movie_availability.failure_count + 1 ELSE 0 END, reason = excluded.reason, last_checked_at = excluded.last_checked_at, next_check_at = excluded.next_check_at",
+    ).bind(safeSlug, status, status === "offline" ? 1 : 0, String(reason || "").slice(0, 120), checkedAt, nextCheckAt).run();
+  } catch (_error) {}
+}
+
+function directStreamTarget(episode) {
+  const hls = safePublicHttpsUrl(episode?.link_m3u8);
+  const embedded = safePublicHttpsUrl(episode?.link_embed);
+  const directEmbed = embedded && /\.(?:m3u8|mp4|m4v|mov)(?:$|[?#])/i.test(embedded.href) ? embedded : null;
+  const target = hls || directEmbed;
+  return target ? { target, isHls: Boolean(hls) || /\.m3u8(?:$|[?#])/i.test(target.href) } : null;
+}
+
+function equivalentStreamTargets(data, episode, episodeIndex) {
+  const identity = [episode?.slug, episode?.name, episode?.filename]
+    .map((value) => String(value || "").trim().toLocaleLowerCase())
+    .filter(Boolean);
+  const output = new Map();
+  for (const server of Array.isArray(data?.episodes) ? data.episodes : []) {
+    const serverEpisodes = Array.isArray(server?.server_data) ? server.server_data : [];
+    let candidate = serverEpisodes.find((item) => identity.some((value) =>
+      [item?.slug, item?.name, item?.filename].some((field) => String(field || "").trim().toLocaleLowerCase() === value)));
+    if (!candidate) candidate = serverEpisodes[episodeIndex];
+    const resolved = directStreamTarget(candidate);
+    if (resolved) output.set(resolved.target.href, resolved);
+  }
+  return [...output.values()].slice(0, 3);
+}
+
+async function probeAvailabilitySource(source, request, env) {
+  try {
+    const probeRequest = new Request(request.url, { method: "GET", headers: request.headers });
+    const { response } = await fetchProtectedUpstream(
+      source.target.href,
+      probeRequest,
+      env,
+      source.isHls ? "hls" : "media",
+      4,
+      true,
+      2500,
+    );
+    const state = response.ok || response.status === 206
+      ? "online"
+      : (response.status === 404 || response.status === 410 ? "offline" : "unknown");
+    try { await response.body?.cancel(); } catch (_error) {}
+    return state;
+  } catch (_error) {
+    return "unknown";
+  }
+}
+
+async function allEquivalentSourcesOffline(data, episode, episodeIndex, selectedUrl, request, env) {
+  const alternatives = equivalentStreamTargets(data, episode, episodeIndex)
+    .filter((source) => source.target.href !== selectedUrl);
+  if (!alternatives.length) return true;
+  const states = await Promise.all(alternatives.map((source) => probeAvailabilitySource(source, request, env)));
+  return states.every((state) => state === "offline");
+}
+
+async function auditMovieAvailability(slug, env) {
+  try {
+    const data = await fetchProtectedCatalogJson(`/phim/${slug}`, env, { force: true, ttl: 15 });
+    const firstServer = Array.isArray(data?.episodes) ? data.episodes.find((server) => server?.server_data?.length) : null;
+    const episodeIndex = Math.max(0, (firstServer?.server_data?.length || 1) - 1);
+    const episode = firstServer?.server_data?.[episodeIndex];
+    const sources = equivalentStreamTargets(data, episode, episodeIndex);
+    if (!sources.length) {
+      await recordMovieAvailability(env, slug, "offline", "NO_DIRECT_STREAM", { insertOnline: true });
+      return "offline";
+    }
+    const request = new Request("https://phim4k-license-api.invalid/availability-audit");
+    const states = await Promise.all(sources.map((source) => probeAvailabilitySource(source, request, env)));
+    if (states.some((state) => state === "online")) {
+      await recordMovieAvailability(env, slug, "online", "", { insertOnline: true });
+      return "online";
+    }
+    if (states.every((state) => state === "offline")) {
+      await recordMovieAvailability(env, slug, "offline", "ALL_SOURCES_GONE", { insertOnline: true });
+      return "offline";
+    }
+    return "unknown";
+  } catch (_error) {
+    return "unknown";
+  }
+}
+
+async function runMovieAvailabilityAudit(env) {
+  if (!env?.DB) return;
+  const due = [];
+  try {
+    const rows = await env.DB.prepare(
+      "SELECT movie_slug FROM movie_availability WHERE status = 'offline' AND next_check_at <= ? ORDER BY next_check_at ASC LIMIT ?",
+    ).bind(now(), MOVIE_AVAILABILITY_AUDIT_LIMIT).all();
+    due.push(...(rows?.results || []).map((row) => catalogSlug(row?.movie_slug)).filter(Boolean));
+  } catch (_error) {}
+  try {
+    const latest = await fetchProtectedCatalogJson(
+      `/v1/api/danh-sach/phim-moi-cap-nhat?page=1&limit=${MOVIE_AVAILABILITY_AUDIT_LIMIT}&sort_field=modified.time&sort_type=desc`,
+      env,
+      { force: true, ttl: 15 },
+    );
+    due.push(...catalogItems(latest).map((item) => catalogSlug(item?.slug)).filter(Boolean));
+  } catch (_error) {}
+  const slugs = [...new Set(due)].slice(0, MOVIE_AVAILABILITY_AUDIT_LIMIT);
+  for (const slug of slugs) await auditMovieAvailability(slug, env);
+}
+
 function homeCatalogPaths(year) {
   return [
     ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((page) => `/v1/api/danh-sach/phim-moi-cap-nhat?page=${page}&limit=64&sort_field=modified.time&sort_type=desc`),
@@ -2103,7 +2255,10 @@ async function handleProtectedMovieCatalog(request, env) {
   if (pathname === "/api/movies/home") {
     const paths = homeCatalogPaths(new Date().getUTCFullYear());
     const results = await Promise.allSettled(paths.map((path, index) => fetchProtectedCatalogJson(path, env, { ttl: index ? 60 : 15 })));
-    const items = results.flatMap((result) => result.status === "fulfilled" ? normalizedCatalogItems(result.value, env) : []);
+    const items = await filterAvailableCatalogItems(
+      results.flatMap((result) => result.status === "fulfilled" ? normalizedCatalogItems(result.value, env) : []),
+      env,
+    );
     if (!items.length) return textError("Nguồn danh mục tạm thời không khả dụng.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
     return json(await protectCatalogImages(HomeCuration.build(items), request, env));
   }
@@ -2118,7 +2273,7 @@ async function handleProtectedMovieCatalog(request, env) {
     };
     return json({
       title: "Toàn bộ kho phim",
-      items: await protectCatalogImages(normalizedCatalogItems(data, env), request, env),
+      items: await protectCatalogImages(await filterAvailableCatalogItems(normalizedCatalogItems(data, env), env), request, env),
       pagination,
     });
   }
@@ -2135,7 +2290,7 @@ async function handleProtectedMovieCatalog(request, env) {
       : genre ? `/v1/api/the-loai/${genre}?page=${page}&limit=48` : `/v1/api/quoc-gia/${country}?page=${page}&limit=48`;
     if (country && genre) target += `&country=${encodeURIComponent(country)}`;
     const data = await fetchProtectedCatalogJson(target, env);
-    return json({ filters: { genre, country }, items: await protectCatalogImages(normalizedCatalogItems(data, env), request, env), pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1, totalItems: 0 } });
+    return json({ filters: { genre, country }, items: await protectCatalogImages(await filterAvailableCatalogItems(normalizedCatalogItems(data, env), env), request, env), pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1, totalItems: 0 } });
   }
 
   const categoryMatch = pathname.match(/^\/api\/movies\/category\/([a-z0-9-]+)$/);
@@ -2145,7 +2300,7 @@ async function handleProtectedMovieCatalog(request, env) {
     const page = catalogPage(url.searchParams.get("page"));
     const target = `/v1/api/danh-sach/${category}?page=${page}&limit=48&sort_field=modified.time&sort_type=desc`;
     const data = await fetchProtectedCatalogJson(target, env);
-    return json({ title: category, items: await protectCatalogImages(normalizedCatalogItems(data, env), request, env), pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1 } });
+    return json({ title: category, items: await protectCatalogImages(await filterAvailableCatalogItems(normalizedCatalogItems(data, env), env), request, env), pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1 } });
   }
 
   if (pathname === "/api/movies/search") {
@@ -2153,13 +2308,14 @@ async function handleProtectedMovieCatalog(request, env) {
     if (!query) return textError("Thiếu từ khóa tìm kiếm.", 400, "MISSING_QUERY");
     const page = catalogPage(url.searchParams.get("page"));
     const data = await fetchProtectedCatalogJson(`/v1/api/tim-kiem?keyword=${encodeURIComponent(query)}&page=${page}&limit=48`, env);
-    return json({ query, items: await protectCatalogImages(normalizedCatalogItems(data, env), request, env), pagination: data.data?.params?.pagination || { currentPage: page, totalPages: 1 } });
+    return json({ query, items: await protectCatalogImages(await filterAvailableCatalogItems(normalizedCatalogItems(data, env), env), request, env), pagination: data.data?.params?.pagination || { currentPage: page, totalPages: 1 } });
   }
 
   const detailMatch = pathname.match(/^\/api\/movies\/detail\/([^/]+)$/);
   if (detailMatch) {
     const slug = catalogSlug(detailMatch[1]);
     if (!slug) return textError("Mã phim không hợp lệ.", 400, "INVALID_MOVIE_SLUG");
+    if (await movieIsUnavailable(env, slug)) return textError("Phim này đang được ẩn vì toàn bộ nguồn phát đã ngừng hoạt động.", 404, "MOVIE_SOURCES_OFFLINE");
     const data = await fetchProtectedCatalogJson(`/phim/${slug}`, env, { ttl: 120 });
     return json(await protectMovieDetail(data, request, env, slug));
   }
@@ -2178,12 +2334,14 @@ async function handleMoviePlayback(request, env) {
   }
   const data = await fetchProtectedCatalogJson(`/phim/${slug}`, env, { ttl: 120 });
   const episode = data?.episodes?.[serverIndex]?.server_data?.[episodeIndex];
-  const hls = safePublicHttpsUrl(episode?.link_m3u8);
-  const embedded = safePublicHttpsUrl(episode?.link_embed);
-  const directEmbed = embedded && /\.(?:m3u8|mp4|m4v|mov)(?:$|[?#])/i.test(embedded.href) ? embedded : null;
-  const target = hls || directEmbed;
-  if (!target) return textError("Server này không có luồng phát trực tiếp tương thích.", 404, "STREAM_NOT_AVAILABLE");
-  const isHls = Boolean(hls) || /\.m3u8(?:$|[?#])/i.test(target.href);
+  const source = directStreamTarget(episode);
+  if (!source) {
+    if (!equivalentStreamTargets(data, episode, episodeIndex).length) {
+      await recordMovieAvailability(env, slug, "offline", "NO_DIRECT_STREAM");
+    }
+    return textError("Server này không có luồng phát trực tiếp tương thích.", 404, "STREAM_NOT_AVAILABLE");
+  }
+  const { target, isHls } = source;
   let clientDirectFallback = false;
   // Catalog entries can outlive their provider files. Verify the selected
   // stream before issuing a ticket so the client can immediately try another
@@ -2201,6 +2359,9 @@ async function handleMoviePlayback(request, env) {
       // times before moving to another server. Fail this source immediately
       // so the shared player can select another catalogue server.
       if (sourceIsGone) {
+        if (await allEquivalentSourcesOffline(data, episode, episodeIndex, target.href, request, env)) {
+          await recordMovieAvailability(env, slug, "offline", "ALL_SOURCES_GONE");
+        }
         return textError("Nguồn phim này đã bị gỡ hoặc tạm thời không phản hồi.", 404, "STREAM_SOURCE_OFFLINE");
       }
       // Let the entrypoint retry a failed VPS response through Cloudflare
@@ -2234,6 +2395,7 @@ async function handleMoviePlayback(request, env) {
     else return textError("Không kết nối được nguồn phim. Đang thử server khác.", 503, "STREAM_SOURCE_UNREACHABLE");
   }
   const expiresAt = Math.floor(Date.now() / 1000) + ((env.MEDIA_RELAY_FALLBACK === "redirect" || clientDirectFallback) ? 15 * 60 : STREAM_TICKET_TTL_SECONDS);
+  if (!clientDirectFallback) await recordMovieAvailability(env, slug, "online");
   return json({
     success: true,
     streamUrl: await protectedMediaUrl(request, env, target.href, "stream", expiresAt, {
@@ -2512,5 +2674,8 @@ export default {
       if (error.message === 'REQUEST_TOO_LARGE') return textError('Request body is too large.', 413, 'REQUEST_TOO_LARGE');
       return textError("Backend gặp lỗi nội bộ.", 500, "INTERNAL_ERROR");
     }
+  },
+  async scheduled(_event, env, executionContext) {
+    executionContext?.waitUntil?.(runMovieAvailabilityAudit(env));
   },
 };
