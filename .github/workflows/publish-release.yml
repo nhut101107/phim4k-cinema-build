@@ -1,0 +1,56 @@
+name: Publish complete 4K Cinema release
+
+on:
+  workflow_run:
+    workflows:
+      - Build Android Phone
+      - Build 4K Cinema unsigned IPA
+      - Build TV and Windows
+    types: [completed]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-phim4k-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Publish only after all four verified assets exist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag='ios-v3.51'
+          expected=(
+            '4K-Cinema-Android-3.51.apk'
+            '4K-Cinema-Android-TV-3.51.apk'
+            '4K-Cinema-iOS-3.51-unsigned.ipa'
+            '4K-Cinema-Windows-3.51-x64.exe'
+          )
+
+          if ! gh release view "$tag" --repo "$REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $tag is not ready yet."
+            exit 0
+          fi
+
+          assets="$(gh release view "$tag" --repo "$REPOSITORY" --json assets --jq '.assets[].name')"
+          missing=0
+          for filename in "${expected[@]}"; do
+            if ! grep -Fqx "$filename" <<<"$assets"; then
+              echo "Waiting for $filename"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then exit 0; fi
+
+          gh release edit "$tag" --repo "$REPOSITORY" --draft=false --latest
+          gh release view "$tag" --repo "$REPOSITORY" --json isDraft,tagName \
+            --jq '{tag: .tagName, draft: .isDraft}'

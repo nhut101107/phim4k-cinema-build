@@ -56,23 +56,23 @@ const RATE_LIMITS = Object.freeze({
 
 const INSTALLER_RELEASES = Object.freeze({
   "/download/android": {
-    filename: "4K-Cinema-Android-3.50.apk",
+    filename: "4K-Cinema-Android-3.51.apk",
     contentType: "application/vnd.android.package-archive",
   },
   "/download/android-tv": {
-    filename: "4K-Cinema-Android-TV-3.50.apk",
+    filename: "4K-Cinema-Android-TV-3.51.apk",
     contentType: "application/vnd.android.package-archive",
   },
   "/download/ios": {
-    filename: "4K-Cinema-iOS-3.50-unsigned.ipa",
+    filename: "4K-Cinema-iOS-3.51-unsigned.ipa",
     contentType: "application/octet-stream",
   },
   "/download/windows": {
-    filename: "4K-Cinema-Windows-3.50-x64.exe",
+    filename: "4K-Cinema-Windows-3.51-x64.exe",
     contentType: "application/vnd.microsoft.portable-executable",
   },
 });
-const INSTALLER_RELEASE_ORIGIN = "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.50";
+const INSTALLER_RELEASE_ORIGIN = "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.51";
 
 // Provider configuration belongs in encrypted Worker Secrets. The client only
 // receives this Worker's origin plus short-lived, opaque AES-GCM capabilities.
@@ -273,7 +273,7 @@ async function handleInstallerDownload(request, pathname) {
   if (!release || !["GET", "HEAD"].includes(request.method)) {
     return textError("Không tìm thấy bản cài đặt.", 404, "INSTALLER_NOT_FOUND");
   }
-  const upstreamHeaders = new Headers({ "user-agent": "4K-Cinema-Release/3.50" });
+  const upstreamHeaders = new Headers({ "user-agent": "4K-Cinema-Release/3.51" });
   const range = request.headers.get("range");
   if (range && /^bytes=\d*-\d*$/.test(range)) upstreamHeaders.set("range", range);
   const upstream = await fetch(`${INSTALLER_RELEASE_ORIGIN}/${release.filename}`, {
@@ -2194,7 +2194,15 @@ async function handleMoviePlayback(request, env) {
     // actual stream request still gets the normal, longer media timeout.
     const { response: probe } = await fetchProtectedUpstream(target.href, probeRequest, env, isHls ? "hls" : "media", 4, true, 2500);
     if (!probe.ok && probe.status !== 206) {
+      const sourceIsGone = probe.status === 404 || probe.status === 410;
       probe.body?.cancel?.().catch?.(() => {});
+      // A definitive 404/410 is not an edge/CORS problem. Redirecting the
+      // viewer to the same dead URL only makes every client retry it several
+      // times before moving to another server. Fail this source immediately
+      // so the shared player can select another catalogue server.
+      if (sourceIsGone) {
+        return textError("Nguồn phim này đã bị gỡ hoặc tạm thời không phản hồi.", 404, "STREAM_SOURCE_OFFLINE");
+      }
       // Let the entrypoint retry a failed VPS response through Cloudflare
       // first. When the direct Cloudflare fetch is also blocked (or no VPS is
       // configured), issue a short-lived authenticated redirect so playback

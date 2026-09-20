@@ -25,6 +25,21 @@ test('download entry exists in phone account and activation view, not just hidde
   assert.match(css,/\.download-dialog\s*\{\s*display: block;\s*overflow-y: auto;/);
 });
 
+test('every normal and forced-update download gets a verified copy-link control', () => {
+  const html = fs.readFileSync('public/index.html', 'utf8');
+  const script = fs.readFileSync('public/js/release-copy.js', 'utf8');
+  const css = fs.readFileSync('public/css/modal.css', 'utf8');
+  assert.match(html, /\/js\/release-copy\.js\?v=3\.51/);
+  for (const suffix of ['Apk', 'Ipa', 'Exe', 'Tv']) {
+    assert.match(script, new RegExp(`btnDownload\\$\\{suffix\\}`));
+    assert.match(script, new RegExp(`forceBtn\\$\\{suffix\\}`));
+  }
+  assert.match(script, /url\.protocol === 'https:' && !url\.username && !url\.password/);
+  assert.match(script, /navigator\.clipboard\?\.writeText/);
+  assert.match(script, /window\.prompt\('Sao chép link tải:'/);
+  assert.match(css, /\.btn-copy-release\s*\{/);
+});
+
 test('press feedback preserves positioned button transforms and stable hit targets',()=>{
   const css=fs.readFileSync('public/css/style.css','utf8');
   const rule=css.match(/\.is-pressing\s*\{([^}]+)\}/)[1];

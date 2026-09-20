@@ -9,18 +9,22 @@ TARGETS = [
     '.github/workflows/build-ios-ipa.yml',
     '.github/workflows/build-tv-windows.yml',
     'android/app/build.gradle',
+    'backend-worker/src/worker.mjs',
+    'backend-worker/test/releases.test.mjs',
     'electron-builder.json',
     'ios/App/App.xcodeproj/project.pbxproj',
     'package.json', 'package-lock.json',
     'public/index.html', 'public/js/api.js', 'public/js/coverflow.js',
     'public/js/diagnostics.js',
-    'scripts/verify-release.cjs', 'server.js',
+    'scripts/rebuild-release.flag', 'scripts/verify-release.cjs', 'server.js',
     'test/mobile-runtime-contract.test.js',
 ]
 
 for relative in TARGETS:
     path = ROOT / relative
     source = path.read_text(encoding='utf-8')
+    if relative in ('backend-worker/test/releases.test.mjs', 'test/mobile-runtime-contract.test.js'):
+        source = source.replace(r'3\.50', r'3\.51')
     if '3.51' in source and '3.50' not in source:
         continue
     if '3.50' not in source:
@@ -35,6 +39,12 @@ for relative in TARGETS:
     elif relative == 'test/mobile-runtime-contract.test.js':
         assert '/versionCode 50/' in updated
         updated = updated.replace('/versionCode 50/', '/versionCode 51/')
+        # JavaScript regular-expression literals escape the version dot, so
+        # the plain-text 3.50 replacement above does not update them. Keep the
+        # release contract tests aligned with the sources produced in this
+        # same workflow instead of failing after a successful version bump.
+        updated = updated.replace(r'3\.50', r'3\.51')
+        updated = updated.replace("['50', '50']", "['51', '51']")
     elif relative in ('.github/workflows/build-android-phone.yml', '.github/workflows/build-tv-windows.yml'):
         updated = updated.replace("versionCode='50'", "versionCode='51'")
     elif relative == '.github/workflows/build-ios-ipa.yml':
@@ -72,4 +82,5 @@ assert 'release-copy.js?v=3.51' in html.read_text(encoding='utf-8')
 assert 'versionCode 51' in (ROOT / 'android/app/build.gradle').read_text(encoding='utf-8')
 assert 'MARKETING_VERSION = 3.51;' in (ROOT / 'ios/App/App.xcodeproj/project.pbxproj').read_text(encoding='utf-8')
 assert '3.51.0' in (ROOT / 'package-lock.json').read_text(encoding='utf-8')
+assert 'ios-v3.51' in (ROOT / 'backend-worker/src/worker.mjs').read_text(encoding='utf-8')
 print('3.51 sources and all eight copy-link buttons ready for validation')

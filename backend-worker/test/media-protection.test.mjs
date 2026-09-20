@@ -177,7 +177,7 @@ test('relay and Cloudflare blocked HLS falls back to a short-lived authenticated
     }
     if (target === 'https://video.example/path/master.m3u8') {
       directCalls += 1;
-      return new Response('blocked', { status: 404 });
+      return new Response('edge denied', { status: 403 });
     }
     throw new Error(`unexpected upstream: ${target}`);
   };
@@ -209,7 +209,7 @@ test('Cloudflare-blocked or stale streams fall back to the authenticated viewer 
     if (target.startsWith('https://catalog.example/')) {
       return new Response(JSON.stringify(detailPayload), { headers: { 'content-type': 'application/json' } });
     }
-    if (target === 'https://video.example/path/master.m3u8') return new Response('removed', { status: 404 });
+    if (target === 'https://video.example/path/master.m3u8') return new Response('edge denied', { status: 403 });
     throw new Error(`unexpected upstream: ${target}`);
   };
   try {
@@ -224,6 +224,33 @@ test('Cloudflare-blocked or stale streams fall back to the authenticated viewer 
     const stream = await worker.fetch(new Request(playbackJson.streamUrl), env);
     assert.equal(stream.status, 307);
     assert.equal(stream.headers.get('location'), 'https://video.example/path/master.m3u8');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('definitively removed streams fail fast instead of redirecting clients to a dead URL', async () => {
+  const originalFetch = globalThis.fetch;
+  let streamCalls = 0;
+  globalThis.fetch = async (input) => {
+    const target = String(input);
+    if (target.startsWith('https://catalog.example/')) {
+      return new Response(JSON.stringify(detailPayload), { headers: { 'content-type': 'application/json' } });
+    }
+    if (target === 'https://video.example/path/master.m3u8') {
+      streamCalls += 1;
+      return new Response('removed', { status: 404 });
+    }
+    throw new Error(`unexpected upstream: ${target}`);
+  };
+  try {
+    const playback = await worker.fetch(viewerRequest('/api/movies/play', {
+      method: 'POST',
+      body: JSON.stringify({ movie: 'phim-kiem-thu', server: 0, episode: 0 }),
+    }), env);
+    assert.equal(playback.status, 404);
+    assert.equal((await playback.json()).code, 'STREAM_SOURCE_OFFLINE');
+    assert.equal(streamCalls, 1);
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -1889,3 +1889,10 @@
     overflow-y: auto;
   }
 }
+
+/* Download and copy actions remain visible in small phone/TV dialogs. */
+.download-action-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: stretch; width: 100%; }
+.download-action-row .btn-download-action { flex: 1 1 150px; min-width: 0; }
+.btn-copy-release { flex: 1 1 140px; min-height: 44px; border: 1px solid rgba(255, 210, 100, .65); border-radius: 10px; background: rgba(255, 210, 100, .13); color: #ffe5a0; font: inherit; font-weight: 700; cursor: pointer; padding: 10px 12px; }
+.btn-copy-release:disabled { opacity: .45; cursor: not-allowed; }
+.btn-copy-release:focus-visible { outline: 3px solid #ffcf59; outline-offset: 2px; }
