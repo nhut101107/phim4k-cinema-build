@@ -56,23 +56,23 @@ const RATE_LIMITS = Object.freeze({
 
 const INSTALLER_RELEASES = Object.freeze({
   "/download/android": {
-    filename: "4K-Cinema-Android-3.53.apk",
+    filename: "4K-Cinema-Android-3.54.apk",
     contentType: "application/vnd.android.package-archive",
   },
   "/download/android-tv": {
-    filename: "4K-Cinema-Android-TV-3.53.apk",
+    filename: "4K-Cinema-Android-TV-3.54.apk",
     contentType: "application/vnd.android.package-archive",
   },
   "/download/ios": {
-    filename: "4K-Cinema-iOS-3.53-unsigned.ipa",
+    filename: "4K-Cinema-iOS-3.54-unsigned.ipa",
     contentType: "application/octet-stream",
   },
   "/download/windows": {
-    filename: "4K-Cinema-Windows-3.53-x64.exe",
+    filename: "4K-Cinema-Windows-3.54-x64.exe",
     contentType: "application/vnd.microsoft.portable-executable",
   },
 });
-const INSTALLER_RELEASE_ORIGIN = "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.53";
+const INSTALLER_RELEASE_ORIGIN = "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.54";
 
 // Provider configuration belongs in encrypted Worker Secrets. The client only
 // receives this Worker's origin plus short-lived, opaque AES-GCM capabilities.
@@ -291,7 +291,7 @@ async function handleInstallerDownload(request, pathname) {
   if (!release || !["GET", "HEAD"].includes(request.method)) {
     return textError("Không tìm thấy bản cài đặt.", 404, "INSTALLER_NOT_FOUND");
   }
-  const upstreamHeaders = new Headers({ "user-agent": "4K-Cinema-Release/3.53" });
+  const upstreamHeaders = new Headers({ "user-agent": "4K-Cinema-Release/3.54" });
   const range = request.headers.get("range");
   if (range && /^bytes=\d*-\d*$/.test(range)) upstreamHeaders.set("range", range);
   const upstream = await fetch(`${INSTALLER_RELEASE_ORIGIN}/${release.filename}`, {
@@ -2046,7 +2046,7 @@ function directStreamTarget(episode) {
 
 function streamCEmbedTarget(value) {
   const target = safePublicHttpsUrl(value);
-  if (!target || !/^embed\d{1,3}\.streamc\.xyz$/i.test(target.hostname) || target.pathname !== "/embed.php") return null;
+  if (!target || !/^embed(?:\d{1,3})?\.streamc\.xyz$/i.test(target.hostname) || target.pathname !== "/embed.php") return null;
   if (!/^[a-f0-9]{32}$/i.test(target.searchParams.get("hash") || "") || [...target.searchParams.keys()].some((key) => key !== "hash")) return null;
   return target;
 }
@@ -2084,13 +2084,6 @@ async function resolveStreamCPlaylist(embed, slug) {
     "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148",
   };
   try {
-    const warmup = await fetch(target.href, {
-      headers: { ...browserHeaders, referer: moviePage },
-      redirect: "manual",
-      signal: AbortSignal.timeout(4500),
-    });
-    try { await warmup.body?.cancel(); } catch (_error) {}
-    if (!warmup.ok) return null;
     const response = await fetch(target.href, {
       method: "POST",
       headers: { ...browserHeaders, "content-type": "application/json", origin: target.origin, referer: target.href },
@@ -2500,7 +2493,12 @@ async function handleMoviePlayback(request, env) {
     await recordMovieAvailability(env, slug, "offline", "NO_DIRECT_STREAM");
     return textError("Server này không có luồng phát trực tiếp tương thích.", 404, "STREAM_NOT_AVAILABLE");
   }
-  candidates.sort((a, b) => Number(b.target?.href === selected?.target?.href) - Number(a.target?.href === selected?.target?.href));
+  // A successful StreamC bootstrap already returns a short-lived, signed HLS
+  // playlist. Prefer it over stale catalogue URLs so playback does not wait
+  // for a known-dead primary server to time out first.
+  candidates.sort((a, b) =>
+    Number(Boolean(b.embed)) - Number(Boolean(a.embed))
+    || Number(b.target?.href === selected?.target?.href) - Number(a.target?.href === selected?.target?.href));
   let chosen = null;
   // Catalog entries can outlive their provider files. Verify the selected
   // stream before issuing a ticket so the client can immediately try another
@@ -2509,6 +2507,13 @@ async function handleMoviePlayback(request, env) {
     const resolvedSource = source.embed ? await resolveStreamCPlaylist(source.embed, slug) : source;
     if (!resolvedSource) continue;
     const { target, isHls, referer = "", streamC = false } = resolvedSource;
+    // The bootstrap response is itself the provider's availability proof. A
+    // second manifest probe delayed every start and downloaded the same HLS
+    // document that the player requests immediately afterwards.
+    if (streamC) {
+      chosen = { ...source, ...resolvedSource, streamC, referer, clientDirectFallback: false };
+      break;
+    }
     let clientDirectFallback = false;
     const probeRequest = new Request(request.url, { method: "GET", headers: request.headers });
     // This is only an availability probe. Keep movie startup responsive; the
@@ -2670,7 +2675,7 @@ async function protectHlsReference(reference, baseUrl, request, env, expiresAt, 
   const target = safePublicHttpsUrl(new URL(value, baseUrl).href);
   if (!target) throw new Error("UNSAFE_HLS_REFERENCE");
   const base = safePublicHttpsUrl(baseUrl);
-  const streamC = Boolean(base && /^embed\d{1,3}\.streamc\.xyz$/i.test(base.hostname));
+  const streamC = Boolean(base && /^embed(?:\d{1,3})?\.streamc\.xyz$/i.test(base.hostname));
   return protectedMediaUrl(request, env, target.href, "stream", expiresAt, {
     format: /\.m3u8(?:$|[?#])/i.test(target.href) ? "hls" : "media",
     sid: sessionId,

@@ -158,8 +158,8 @@ test('a direct HLS backup provider is merged without exposing an ad embed page',
 test('a StreamC backup is resolved server-side and disguised segments are relayed as video', async () => {
   const f = fixture();
   const originalFetch = globalThis.fetch;
-  const embed = 'https://embed11.streamc.xyz/embed.php?hash=5db2c52df547af3cf743de9c119ecd25';
-  const playlist = 'https://embed11.streamc.xyz/signed_playlist_token_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_abcdefghijklmnopqrstuvwxyz';
+  const embed = 'https://embed.streamc.xyz/embed.php?hash=5db2c52df547af3cf743de9c119ecd25';
+  const playlist = 'https://embed.streamc.xyz/signed_playlist_token_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_abcdefghijklmnopqrstuvwxyz';
   const segment = 'https://seouls11.amass11.top/5db2c52df547af3cf743de9c119ecd25/streamaaa0000.png';
   const primary = {
     movie: { slug: 'streamc-movie', name: 'StreamC movie' },
@@ -169,19 +169,31 @@ test('a StreamC backup is resolved server-side and disguised segments are relaye
     { server_name: 'Vietsub #1', items: [{ name: 'Full', slug: 'full', embed }] },
   ] } };
   let bootstrapPosts = 0;
+  let embedWarmups = 0;
+  let deadPrimaryProbes = 0;
+  let playlistFetches = 0;
   let segmentReferer = '';
   globalThis.fetch = async (input, init = {}) => {
     const url = new URL(input);
     if (url.origin === 'https://catalog.example') return new Response(JSON.stringify(primary), { headers: { 'content-type': 'application/json' } });
     if (url.origin === 'https://phim.nguonc.com') return new Response(JSON.stringify(backup), { headers: { 'content-type': 'application/json' } });
-    if (url.href === 'https://video.example/dead.m3u8') return new Response('gone', { status: 404 });
+    if (url.href === 'https://video.example/dead.m3u8') {
+      deadPrimaryProbes += 1;
+      return new Response('gone', { status: 404 });
+    }
     if (url.href === embed && init.method === 'POST') {
       bootstrapPosts += 1;
-      assert.equal(new Headers(init.headers).get('origin'), 'https://embed11.streamc.xyz');
+      assert.equal(new Headers(init.headers).get('origin'), 'https://embed.streamc.xyz');
       return new Response(JSON.stringify({ preissued: { playlist, playlistFormat: 'hls', issuedAt: 1000, expiresAt: 2000 } }), { headers: { 'content-type': 'application/json' } });
     }
-    if (url.href === embed) return new Response('<html>player</html>', { headers: { 'content-type': 'text/html' } });
-    if (url.href === playlist) return new Response(`#EXTM3U\n#EXTINF:10,\n${segment}\n#EXT-X-ENDLIST`, { headers: { 'content-type': 'application/vnd.apple.mpegurl' } });
+    if (url.href === embed) {
+      embedWarmups += 1;
+      return new Response('<html>player</html>', { headers: { 'content-type': 'text/html' } });
+    }
+    if (url.href === playlist) {
+      playlistFetches += 1;
+      return new Response(`#EXTM3U\n#EXTINF:10,\n${segment}\n#EXT-X-ENDLIST`, { headers: { 'content-type': 'application/vnd.apple.mpegurl' } });
+    }
     if (url.href === segment) {
       segmentReferer = new Headers(init.headers).get('referer') || '';
       return new Response(new Uint8Array([0x47, 0x40, 0x11, 0x10]), { headers: { 'content-type': 'image/png' } });
@@ -197,15 +209,19 @@ test('a StreamC backup is resolved server-side and disguised segments are relaye
     const playbackJson = await playback.json();
     assert.equal(playbackJson.selectedServer, 1);
     assert.equal(bootstrapPosts, 1);
+    assert.equal(embedWarmups, 0);
+    assert.equal(deadPrimaryProbes, 0);
+    assert.equal(playlistFetches, 0);
 
     const manifestResponse = await worker.fetch(new Request(playbackJson.streamUrl), f.env);
     assert.equal(manifestResponse.status, 200);
+    assert.equal(playlistFetches, 1);
     const protectedSegment = (await manifestResponse.text()).split('\n').find((line) => line.startsWith('https://example.workers.dev/api/media/stream'));
     assert.ok(protectedSegment);
     const segmentResponse = await worker.fetch(new Request(protectedSegment), f.env);
     assert.equal(segmentResponse.status, 200);
     assert.equal(segmentResponse.headers.get('content-type'), 'video/mp2t');
-    assert.equal(segmentReferer, 'https://embed11.streamc.xyz/');
+    assert.equal(segmentReferer, 'https://embed.streamc.xyz/');
     assert.deepEqual([...new Uint8Array(await segmentResponse.arrayBuffer())], [0x47, 0x40, 0x11, 0x10]);
   } finally {
     globalThis.fetch = originalFetch;

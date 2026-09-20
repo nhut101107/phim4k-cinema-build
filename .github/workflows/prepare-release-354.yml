@@ -1,0 +1,40 @@
+name: Prepare 4K Cinema 3.54 release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/rebuild-release.flag
+      - .github/workflows/prepare-release-354.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prepare-phim4k-354-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Create the draft before platform builders upload files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view ios-v3.54 --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo 'Draft release already exists.'
+          else
+            gh release create ios-v3.54 \
+              --repo "${GITHUB_REPOSITORY}" \
+              --draft \
+              --target "${GITHUB_SHA}" \
+              --title '4K Cinema 3.54 - iOS, Android, Android TV, Windows' \
+              --notes 'Tăng tốc mở phim bằng cách ưu tiên nguồn StreamC đang sống và bỏ hai lượt gọi mạng thừa; thêm watermark “mnhut đã đóng dấu bản quyền” kiểu chữ viết tay trên mọi phim. Tiếp tục tự chuyển nguồn và bỏ quảng cáo trên mọi nền tảng. iOS IPA chưa ký và cần chứng chỉ của người dùng.'
+          fi
+          gh release view ios-v3.54 --repo "${GITHUB_REPOSITORY}" --json isDraft,tagName \
+            --jq '{tag: .tagName, draft: .isDraft}'

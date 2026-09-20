@@ -112,3 +112,10 @@ test('all platforms auto-skip embedded ad windows once and keep a user toggle', 
   assert.match(player, /this\.skippedAdMarkers\.add\(result\.marker\)/);
   assert.match(player, /phim4k-auto-skip-ads-v2/);
 });
+
+test('every movie displays the requested handwritten copyright watermark', () => {
+  assert.match(index, /class="movie-copyright-watermark"[^>]*>mnhut đã đóng dấu bản quyền<\/div>/);
+  assert.match(css, /\.movie-copyright-watermark\s*\{[\s\S]*?position:\s*absolute/);
+  assert.match(css, /font-family:[^;]*(?:Chalkboard SE|Segoe Print)[^;]*cursive/);
+  assert.match(css, /pointer-events:\s*none/);
+});
