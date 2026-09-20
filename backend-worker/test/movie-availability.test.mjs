@@ -155,6 +155,50 @@ test('a direct HLS backup provider is merged without exposing an ad embed page',
   }
 });
 
+test('backup discovery matches renamed provider slugs by title and season', async () => {
+  const f = fixture();
+  const originalFetch = globalThis.fetch;
+  const primary = {
+    movie: {
+      slug: 'phat-sung-cuoi-cung-phan-4',
+      name: 'Phát Súng Cuối Cùng (Phần 4)',
+      origin_name: 'Reacher',
+      tmdb: { season: 4 },
+    },
+    episodes: [{ server_name: 'Vietsub', server_data: [{ name: 'Tập 01', slug: 'tap-01', link_m3u8: 'https://video.example/dead.m3u8' }] }],
+  };
+  const search = { items: [
+    { slug: 'reacher-phat-sung-cuoi-cung-phan-3', name: 'Reacher: Phát Súng Cuối Cùng (Phần 3)', original_name: 'Reacher (Season 3)' },
+    { slug: 'reacher-phat-sung-cuoi-cung-phan-4', name: 'Reacher: Phát Súng Cuối Cùng (Phần 4)', original_name: 'Reacher (Season 4)' },
+  ] };
+  const backup = { movie: { slug: 'reacher-phat-sung-cuoi-cung-phan-4', episodes: [
+    { server_name: 'Vietsub #1', items: [{ name: '1', slug: 'tap-1', embed: 'https://embed12.streamc.xyz/embed.php?hash=d2ba6338e8354a4f95576076958e934d' }] },
+  ] } };
+  const requests = [];
+  globalThis.fetch = async (input) => {
+    const url = new URL(input);
+    requests.push(url.href);
+    if (url.origin === 'https://catalog.example') return new Response(JSON.stringify(primary), { headers: { 'content-type': 'application/json' } });
+    if (url.pathname === '/api/film/phat-sung-cuoi-cung-phan-4') return new Response('missing', { status: 404 });
+    if (url.pathname === '/api/films/search') return new Response(JSON.stringify(search), { headers: { 'content-type': 'application/json' } });
+    if (url.pathname === '/api/film/reacher-phat-sung-cuoi-cung-phan-4') return new Response(JSON.stringify(backup), { headers: { 'content-type': 'application/json' } });
+    throw new Error(`unexpected upstream: ${url.href}`);
+  };
+  try {
+    const detail = await worker.fetch(viewerRequest('/api/movies/detail/phat-sung-cuoi-cung-phan-4'), f.env);
+    assert.equal(detail.status, 200);
+    const payload = await detail.json();
+    assert.equal(payload.episodes.length, 2);
+    assert.equal(payload.episodes[1].server_name, 'Vietsub #1');
+    assert.ok(requests.some((url) => url.includes('/api/films/search?keyword=Reacher')));
+    assert.ok(requests.some((url) => url.includes('/api/film/reacher-phat-sung-cuoi-cung-phan-4')));
+    assert.ok(!requests.some((url) => url.includes('/api/film/reacher-phat-sung-cuoi-cung-phan-3')));
+  } finally {
+    globalThis.fetch = originalFetch;
+    f.sqlite.close();
+  }
+});
+
 test('a StreamC backup is resolved server-side and disguised segments are relayed as video', async () => {
   const f = fixture();
   const originalFetch = globalThis.fetch;

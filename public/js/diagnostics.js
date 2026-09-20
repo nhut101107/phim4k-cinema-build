@@ -86,7 +86,9 @@
       if (session !== this.streamSession || this.modal?.classList.contains('hidden')) return;
       if (this.video?.readyState >= 1) return;
       void this.refreshPlaybackTicketAndResume('load-timeout', Number(this.video?.currentTime) || resumeTime || 0);
-    }, 15000);
+    // Slow backup providers can need one bootstrap plus the first HLS segment.
+    // Do not cancel and remint the ticket while that first load is still valid.
+    }, 40000);
   };
 
   Player.scheduleStallRecovery = function scheduleStallRecovery(reason = 'stall', delayMs = 12000) {

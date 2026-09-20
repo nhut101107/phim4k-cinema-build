@@ -62,7 +62,7 @@ test('account version and a verified session do not fall back to stale WebView s
   const auth = read('../public/js/auth.js');
   assert.match(api, /window\.API = API/);
   assert.match(auth, /window\.Auth = Auth/);
-  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.55'/);
+  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.56'/);
   assert.match(auth, /SessionVault\.hasSession\(\)/);
   assert.match(auth, /await SessionVault\.save\(result\)/);
   assert.doesNotMatch(account, /localStorage\.getItem\('phim4k_key'\)/);
@@ -99,13 +99,13 @@ test('web, iOS and Windows release versions stay aligned', () => {
   const iosProject = read('../ios/App/App.xcodeproj/project.pbxproj');
   const desktop = JSON.parse(read('../electron-builder.json'));
   const webVersion = api.match(/return '(\d+\.\d+(?:\.\d+)?)'/)?.[1];
-  assert.equal(webVersion, '3.55');
+  assert.equal(webVersion, '3.56');
   assert.equal(desktop.extraMetadata.version, `${webVersion}.0`);
   assert.deepEqual([...iosProject.matchAll(/MARKETING_VERSION = ([^;]+);/g)].map((match) => match[1]), [webVersion, webVersion]);
-  assert.deepEqual([...iosProject.matchAll(/CURRENT_PROJECT_VERSION = ([^;]+);/g)].map((match) => match[1]), ['55', '55']);
+  assert.deepEqual([...iosProject.matchAll(/CURRENT_PROJECT_VERSION = ([^;]+);/g)].map((match) => match[1]), ['56', '56']);
   assert.equal(JSON.parse(read('../capacitor.config.json')).appName, '4K Cinema');
   assert.equal(desktop.productName, '4K Cinema');
-  assert.equal(desktop.win.artifactName, '4K-Cinema-Windows-3.55-x64.exe');
+  assert.equal(desktop.win.artifactName, '4K-Cinema-Windows-3.56-x64.exe');
   assert.equal(desktop.win.target[0].target, 'nsis');
   assert.equal(desktop.nsis.createDesktopShortcut, true);
   assert.equal(desktop.nsis.createStartMenuShortcut, true);
@@ -125,8 +125,8 @@ test('Android phone and TV are separate optimized release flavors', () => {
   const styles = read('../public/css/style.css');
   const player = read('../public/js/player.js');
 
-  assert.match(gradle, /versionCode 55/);
-  assert.match(gradle, /versionName "3\.55"/);
+  assert.match(gradle, /versionCode 56/);
+  assert.match(gradle, /versionName "3\.56"/);
   assert.match(gradle, /phone\s*\{[\s\S]*?applicationId "com\.phim4k\.cinema"[\s\S]*?PHIM4K_PLATFORM[^\n]*android/);
   assert.match(gradle, /tv\s*\{[\s\S]*?applicationId "com\.phim4k\.cinema\.tv"[\s\S]*?PHIM4K_PLATFORM[^\n]*android_tv/);
   assert.match(gradle, /debug\.assets\.srcDir\(layout\.buildDirectory\.dir\('generated\/qaAssets'\)\)/);
@@ -160,14 +160,14 @@ test('Android CI builds, signs and device-tests the correct flavor', () => {
   assert.match(phoneWorkflow, /assemblePhoneRelease/);
   assert.match(phoneWorkflow, /connectedPhoneDebugAndroidTest/);
   assert.match(phoneWorkflow, /package: name='com\.phim4k\.cinema'/);
-  assert.match(phoneWorkflow, /4K-Cinema-Android-3\.55\.apk/);
+  assert.match(phoneWorkflow, /4K-Cinema-Android-3\.56\.apk/);
   assert.match(phoneWorkflow, /application-label:'4K Cinema'/);
   assert.match(phoneWorkflow, /apksigner" verify/);
   assert.match(phoneWorkflow, /ABAFDA2EAD9478B2540328C98774B4B0A9432014F7B31CBF40FB3EF1F6FECBC8/);
   assert.match(tvWorkflow, /assembleTvRelease/);
   assert.match(tvWorkflow, /connectedTvDebugAndroidTest/);
   assert.match(tvWorkflow, /package: name='com\.phim4k\.cinema\.tv'/);
-  assert.match(tvWorkflow, /4K-Cinema-Android-TV-3\.55\.apk/);
+  assert.match(tvWorkflow, /4K-Cinema-Android-TV-3\.56\.apk/);
   assert.match(tvWorkflow, /application-label:'4K Cinema'/);
   assert.match(tvWorkflow, /ABAFDA2EAD9478B2540328C98774B4B0A9432014F7B31CBF40FB3EF1F6FECBC8/);
 });
@@ -176,8 +176,8 @@ test('iOS entry point cache-busts every bundled script and stylesheet', () => {
   const html = read('../public/index.html');
   const localAssets = [...html.matchAll(/(?:src|href)="\/(?:js|css|vendor)\/[^"?]+(?:\?[^" ]+)?"/g)].map(match => match[0]);
   assert.ok(localAssets.length >= 20);
-  assert.ok(localAssets.every(asset => asset.includes('?v=3.55')), localAssets.join('\n'));
-  assert.match(html, /4K Cinema 3\.55[^<]*BẢN ĐỒNG BỘ ĐA THIẾT BỊ/);
+  assert.ok(localAssets.every(asset => asset.includes('?v=3.56')), localAssets.join('\n'));
+  assert.match(html, /4K Cinema 3\.56[^<]*BẢN ĐỒNG BỘ ĐA THIẾT BỊ/);
 });
 
 test('movie modal is scrollable and sized for a phone viewport', () => {
@@ -222,7 +222,7 @@ test('native catalog falls back immediately instead of leaving the UI loading', 
   vm.runInContext(read('../public/js/home-curation.js'), sandbox);
   sandbox.Phim4KHome = sandbox.window.Phim4KHome;
   vm.runInContext(`${read('../public/js/api.js')}\nglobalThis.__api = API;`, sandbox);
-  assert.equal(sandbox.window.API.getVersion(), '3.55');
+  assert.equal(sandbox.window.API.getVersion(), '3.56');
   const home = await sandbox.__api.getHomeFeed();
   const detail = await sandbox.__api.getDetail(home.hero[0].slug);
   assert.ok(home.hero.length > 0);
@@ -369,13 +369,20 @@ test('native bundle contains no direct movie provider or raw media fallback', ()
   assert.match(read('../public/js/player.js'), /stream_ref/);
 });
 
+test('slow backup playback is not aborted by the normal API or startup watchdog budget', () => {
+  const api = read('../public/js/api.js');
+  const diagnostics = read('../public/js/diagnostics.js');
+  assert.match(api, /endpoint === '\/api\/movies\/play' \? 45000 : 15000/);
+  assert.match(diagnostics, /startStreamLoadWatchdog[\s\S]*?}, 40000\);/);
+});
+
 test('iOS workflow audits the completed IPA before uploading it', () => {
   const workflow = read('../.github/workflows/build-ios-ipa.yml');
   const audit = workflow.indexOf('package_ios_web_update.py --audit-only');
   const upload = workflow.indexOf('actions/upload-artifact@');
   assert.ok(audit >= 0 && upload > audit);
   assert.match(workflow, /CFBundleDisplayName[^\n]*"4K Cinema"/);
-  assert.match(workflow, /4K-Cinema-iOS-3\.55-unsigned\.ipa/);
+  assert.match(workflow, /4K-Cinema-iOS-3\.56-unsigned\.ipa/);
 });
 
 test('user activity is batched without stream URLs and admin logs support user filters and pagination', () => {

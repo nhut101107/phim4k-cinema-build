@@ -2395,9 +2395,23 @@ function normalizeBackupMovieDetail(payload) {
   return { movie: movieMetadata, episodes };
 }
 
-async function fetchBackupMovieDetail(slug, env) {
-  const origin = configuredBackupCatalogOrigin(env);
-  if (!origin || !slug) return null;
+function normalizedMovieIdentity(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/gi, "d")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function movieSeason(value) {
+  const text = normalizedMovieIdentity(value);
+  const match = text.match(/(?:phan|season)\s*(\d{1,3})/) || text.match(/\bs(\d{1,3})\b/);
+  return match ? Number(match[1]) : 0;
+}
+
+async function fetchBackupMovieBySlug(origin, slug) {
   try {
     const response = await fetch(`${origin.href.replace(/\/$/, "")}/api/film/${encodeURIComponent(slug)}`, {
       headers: { accept: "application/json" },
@@ -2410,6 +2424,61 @@ async function fetchBackupMovieDetail(slug, env) {
   } catch (_error) {
     return null;
   }
+}
+
+async function fetchBackupMovieDetail(slug, env, primaryMovie = null, { skipExact = false } = {}) {
+  const origin = configuredBackupCatalogOrigin(env);
+  if (!origin || !slug) return null;
+  if (!skipExact) {
+    const exact = await fetchBackupMovieBySlug(origin, slug);
+    if (exact) return exact;
+  }
+  if (!primaryMovie) return null;
+  try {
+    const query = String(primaryMovie.origin_name || primaryMovie.name || slug).trim().slice(0, 100);
+    const response = await fetch(`${origin.href.replace(/\/$/, "")}/api/films/search?keyword=${encodeURIComponent(query)}`, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(12000),
+      redirect: "manual",
+      cf: { cacheEverything: true, cacheTtl: 60 },
+    });
+    if (!response.ok || !String(response.headers.get("content-type") || "").includes("application/json")) return null;
+    const payload = await response.json();
+    const items = Array.isArray(payload?.items) ? payload.items : [];
+    const primarySeason = Number(primaryMovie?.tmdb?.season || 0)
+      || movieSeason(primaryMovie?.slug)
+      || movieSeason(primaryMovie?.origin_name)
+      || movieSeason(primaryMovie?.name);
+    const primaryOriginal = normalizedMovieIdentity(primaryMovie?.origin_name);
+    const primaryName = normalizedMovieIdentity(primaryMovie?.name);
+    const ranked = items.map((item) => {
+      const candidateSeason = movieSeason(item?.slug) || movieSeason(item?.original_name) || movieSeason(item?.name);
+      if (primarySeason && candidateSeason && primarySeason !== candidateSeason) return { item, score: -1 };
+      const candidateOriginal = normalizedMovieIdentity(item?.original_name);
+      const candidateName = normalizedMovieIdentity(item?.name);
+      let score = 0;
+      if (primarySeason && candidateSeason === primarySeason) score += 12;
+      if (primaryOriginal && candidateOriginal === primaryOriginal) score += 10;
+      if (primaryName && candidateName === primaryName) score += 8;
+      if (primaryOriginal && candidateOriginal && (primaryOriginal.includes(candidateOriginal) || candidateOriginal.includes(primaryOriginal))) score += 4;
+      if (primaryName && candidateName && (primaryName.includes(candidateName) || candidateName.includes(primaryName))) score += 3;
+      return { item, score };
+    }).filter((candidate) => candidate.score >= 4 && candidate.item?.slug)
+      .sort((left, right) => right.score - left.score);
+    return ranked[0] ? fetchBackupMovieBySlug(origin, ranked[0].item.slug) : null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function prewarmBackupStreams(data, slug, executionContext) {
+  if (!executionContext?.waitUntil) return;
+  const embeds = [...new Set((data?.episodes || []).flatMap((server) =>
+    (server?.server_data || []).map((episode) => streamCEmbedTarget(episode?.link_embed)?.href).filter(Boolean)))].slice(0, 2);
+  if (!embeds.length) return;
+  executionContext.waitUntil((async () => {
+    for (const embed of embeds) await resolveStreamCPlaylist(embed, slug);
+  })().catch(() => {}));
 }
 
 function mergeMovieSources(primary, backup) {
@@ -2473,7 +2542,7 @@ async function protectMovieDetail(data, request, env, slug) {
   return output;
 }
 
-async function handleProtectedMovieCatalog(request, env) {
+async function handleProtectedMovieCatalog(request, env, executionContext) {
   const identity = await verifyTelemetryViewer(request, env);
   if (identity.error) return identity.error;
   const url = new URL(request.url);
@@ -2539,12 +2608,14 @@ async function handleProtectedMovieCatalog(request, env) {
   if (detailMatch) {
     const slug = catalogSlug(detailMatch[1]);
     if (!slug) return textError("Mã phim không hợp lệ.", 400, "INVALID_MOVIE_SLUG");
-    const [primary, backup] = await Promise.all([
+    const [primary, exactBackup] = await Promise.all([
       fetchProtectedCatalogJson(`/phim/${slug}`, env, { ttl: 120 }).catch(() => null),
       fetchBackupMovieDetail(slug, env),
     ]);
+    const backup = exactBackup || await fetchBackupMovieDetail(slug, env, primary?.movie, { skipExact: true });
     const data = mergeMovieSources(primary, backup);
     if (!data) return textError("Chưa tải được thông tin phim từ các nguồn.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
+    prewarmBackupStreams(data, slug, executionContext);
     return json(await protectMovieDetail(data, request, env, slug));
   }
   return textError("Không tìm thấy dữ liệu phim.", 404, "MOVIE_NOT_FOUND");
@@ -2560,10 +2631,11 @@ async function handleMoviePlayback(request, env) {
   if (!slug || !Number.isInteger(serverIndex) || serverIndex < 0 || serverIndex > 50 || !Number.isInteger(episodeIndex) || episodeIndex < 0 || episodeIndex > 5000) {
     return textError("Tham chiếu tập phim không hợp lệ.", 400, "INVALID_STREAM_REFERENCE");
   }
-  const [primary, backup] = await Promise.all([
+  const [primary, exactBackup] = await Promise.all([
     fetchProtectedCatalogJson(`/phim/${slug}`, env, { ttl: 120 }).catch(() => null),
     fetchBackupMovieDetail(slug, env),
   ]);
+  const backup = exactBackup || await fetchBackupMovieDetail(slug, env, primary?.movie, { skipExact: true });
   const data = mergeMovieSources(primary, backup);
   if (!data) return textError("Chưa kết nối được các nguồn phim. Vui lòng thử lại.", 503, "MOVIE_UPSTREAM_UNAVAILABLE");
   const episode = data?.episodes?.[serverIndex]?.server_data?.[episodeIndex];
@@ -2876,7 +2948,7 @@ export default {
       if (request.method === "GET" && pathname === "/api/media/image") return await handleProtectedMovieImage(request, env, executionContext);
       if (request.method === "GET" && pathname === "/api/media/stream") return await handleMovieStream(request, env);
       if (request.method === "POST" && pathname === "/api/movies/play") return await handleMoviePlayback(request, env);
-      if (request.method === "GET" && pathname.startsWith("/api/movies/")) return await handleProtectedMovieCatalog(request, env);
+      if (request.method === "GET" && pathname.startsWith("/api/movies/")) return await handleProtectedMovieCatalog(request, env, executionContext);
       const missing = dbUnavailable(env);
       if (missing) return missing;
 
