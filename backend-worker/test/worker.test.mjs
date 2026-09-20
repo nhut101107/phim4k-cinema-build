@@ -150,6 +150,7 @@ test("maintenance settings support timed and manual windows and expire closed", 
 test("image CDN bypasses the video VPS relay when it is configured", async () => {
   const relayEnv = freeViewerEnv({
     VPS_RELAY_ORIGIN: "https://relay.example",
+    VPS_RELAY_ENABLED: "1",
     VPS_RELAY_SECRET: "fixture-vps-relay-secret-at-least-32-characters",
   });
   const source = "https://images.example/uploads/movies/fixture.webp";

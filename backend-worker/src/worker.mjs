@@ -145,6 +145,9 @@ function configuredImageHosts(env) {
 }
 
 function configuredRelayOrigin(env) {
+  // A stale relay secret must never hold playback hostage. Relay use is
+  // opt-in; installations without a currently managed VPS stay Cloudflare-only.
+  if (String(env?.VPS_RELAY_ENABLED || "") !== "1") return null;
   const raw = String(env?.VPS_RELAY_ORIGIN || "").trim();
   try {
     const url = new URL(raw);
@@ -2041,6 +2044,13 @@ function directStreamTarget(episode) {
   return target ? { target, isHls: Boolean(hls) || /\.m3u8(?:$|[?#])/i.test(target.href) } : null;
 }
 
+function streamCEmbedTarget(value) {
+  const target = safePublicHttpsUrl(value);
+  if (!target || !/^embed\d{1,3}\.streamc\.xyz$/i.test(target.hostname) || target.pathname !== "/embed.php") return null;
+  if (!/^[a-f0-9]{32}$/i.test(target.searchParams.get("hash") || "") || [...target.searchParams.keys()].some((key) => key !== "hash")) return null;
+  return target;
+}
+
 function equivalentStreamTargets(data, episode, episodeIndex) {
   const identity = [episode?.slug, episode?.name, episode?.filename]
     .map((value) => String(value || "").trim().toLocaleLowerCase())
@@ -2052,14 +2062,62 @@ function equivalentStreamTargets(data, episode, episodeIndex) {
       [item?.slug, item?.name, item?.filename].some((field) => String(field || "").trim().toLocaleLowerCase() === value)));
     if (!candidate) candidate = serverEpisodes[episodeIndex];
     const resolved = directStreamTarget(candidate);
-    if (resolved) output.set(resolved.target.href, {
-      ...resolved,
+    const embed = streamCEmbedTarget(candidate?.link_embed);
+    const key = resolved?.target?.href || embed?.href;
+    if (key) output.set(key, {
+      ...(resolved || { embed, isHls: true }),
       serverIndex,
       episodeIndex: Math.max(0, serverEpisodes.indexOf(candidate)),
       serverName: cleanProgressText(server?.server_name, 100) || `Server ${serverIndex + 1}`,
     });
   }
   return [...output.values()].slice(0, 8);
+}
+
+async function resolveStreamCPlaylist(embed, slug) {
+  const target = streamCEmbedTarget(embed?.href || embed);
+  if (!target) return null;
+  const moviePage = `https://phim.nguonc.com/phim/${encodeURIComponent(slug)}`;
+  const browserHeaders = {
+    accept: "application/json, text/plain, */*",
+    "accept-language": "vi,en-US;q=0.8,en;q=0.6",
+    "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148",
+  };
+  try {
+    const warmup = await fetch(target.href, {
+      headers: { ...browserHeaders, referer: moviePage },
+      redirect: "manual",
+      signal: AbortSignal.timeout(4500),
+    });
+    try { await warmup.body?.cancel(); } catch (_error) {}
+    if (!warmup.ok) return null;
+    const response = await fetch(target.href, {
+      method: "POST",
+      headers: { ...browserHeaders, "content-type": "application/json", origin: target.origin, referer: target.href },
+      body: JSON.stringify({
+        action: "bootstrap",
+        referrer: moviePage,
+        frame_origins: ["https://phim.nguonc.com"],
+        request_grant: true,
+        playlist_format: "hls",
+        pretty_url: true,
+        path_chunks: true,
+        bootstrap_format: "json",
+      }),
+      redirect: "manual",
+      signal: AbortSignal.timeout(6500),
+    });
+    if (!response.ok || !String(response.headers.get("content-type") || "").includes("application/json")) return null;
+    const payload = await response.json();
+    const playlist = safePublicHttpsUrl(payload?.preissued?.playlist);
+    const issuedAt = Number(payload?.preissued?.issuedAt);
+    const expiresAt = Number(payload?.preissued?.expiresAt);
+    if (!playlist || playlist.origin !== target.origin || payload?.preissued?.playlistFormat !== "hls") return null;
+    if (!Number.isInteger(issuedAt) || !Number.isInteger(expiresAt) || expiresAt <= issuedAt || expiresAt - issuedAt > 86400) return null;
+    return { target: playlist, isHls: true, referer: `${target.origin}/`, streamC: true };
+  } catch (_error) {
+    return null;
+  }
 }
 
 async function probeAvailabilitySource(source, request, env) {
@@ -2248,14 +2306,15 @@ function normalizeBackupMovieDetail(payload) {
     server_name: cleanProgressText(server?.server_name, 100) || `Nguồn phụ ${serverIndex + 1}`,
     server_data: (Array.isArray(server?.items) ? server.items : []).flatMap((item, episodeIndex) => {
       const target = safePublicHttpsUrl(item?.link_m3u8 || item?.m3u8 || item?.link || item?.embed);
-      if (!target || !/\.(?:m3u8|mp4|m4v|mov)(?:$|[?#])/i.test(target.href)) return [];
+      const embed = streamCEmbedTarget(item?.embed);
+      if (!target || (!/\.(?:m3u8|mp4|m4v|mov)(?:$|[?#])/i.test(target.href) && !embed)) return [];
       const isHls = /\.m3u8(?:$|[?#])/i.test(target.href);
       return [{
         name: item?.name || `Tập ${episodeIndex + 1}`,
         slug: item?.slug || `tap-${episodeIndex + 1}`,
         filename: item?.filename || item?.name || "",
         link_m3u8: isHls ? target.href : "",
-        link_embed: isHls ? "" : target.href,
+        link_embed: isHls ? "" : (embed?.href || target.href),
       }];
     }),
   })).filter((server) => server.server_data.length);
@@ -2287,7 +2346,8 @@ function mergeMovieSources(primary, backup) {
   const seen = new Set();
   const episodes = [];
   for (const server of [...(primary.episodes || []), ...(backup.episodes || [])]) {
-    const links = (server?.server_data || []).map((episode) => directStreamTarget(episode)?.target?.href).filter(Boolean);
+    const links = (server?.server_data || []).map((episode) =>
+      directStreamTarget(episode)?.target?.href || streamCEmbedTarget(episode?.link_embed)?.href).filter(Boolean);
     const key = links.join("|");
     if (!key || seen.has(key)) continue;
     seen.add(key);
@@ -2440,18 +2500,20 @@ async function handleMoviePlayback(request, env) {
     await recordMovieAvailability(env, slug, "offline", "NO_DIRECT_STREAM");
     return textError("Server này không có luồng phát trực tiếp tương thích.", 404, "STREAM_NOT_AVAILABLE");
   }
-  candidates.sort((a, b) => Number(b.target.href === selected?.target?.href) - Number(a.target.href === selected?.target?.href));
+  candidates.sort((a, b) => Number(b.target?.href === selected?.target?.href) - Number(a.target?.href === selected?.target?.href));
   let chosen = null;
   // Catalog entries can outlive their provider files. Verify the selected
   // stream before issuing a ticket so the client can immediately try another
   // server instead of remaining at 00:00 with a native-player error.
   for (const source of candidates) try {
-    const { target, isHls } = source;
+    const resolvedSource = source.embed ? await resolveStreamCPlaylist(source.embed, slug) : source;
+    if (!resolvedSource) continue;
+    const { target, isHls, referer = "", streamC = false } = resolvedSource;
     let clientDirectFallback = false;
     const probeRequest = new Request(request.url, { method: "GET", headers: request.headers });
     // This is only an availability probe. Keep movie startup responsive; the
     // actual stream request still gets the normal, longer media timeout.
-    const { response: probe } = await fetchProtectedUpstream(target.href, probeRequest, env, isHls ? "hls" : "media", 4, true, 2500);
+    const { response: probe } = await fetchProtectedUpstream(target.href, probeRequest, env, isHls ? "hls" : "media", 4, !streamC, 2500, referer);
     if (!probe.ok && probe.status !== 206) {
       const sourceIsGone = probe.status === 404 || probe.status === 410;
       probe.body?.cancel?.().catch?.(() => {});
@@ -2467,6 +2529,7 @@ async function handleMoviePlayback(request, env) {
       // configured), issue a short-lived authenticated redirect so playback
       // can continue entirely on the viewer device. A dead source will simply
       // fail in the player, which can then try the next catalog server.
+      if (streamC) continue;
       if (!configuredRelayOrigin(env)) clientDirectFallback = true;
       else continue;
     }
@@ -2477,6 +2540,7 @@ async function handleMoviePlayback(request, env) {
       if (bytes.byteLength > MAX_HLS_MANIFEST_BYTES || !new TextDecoder().decode(bytes).trimStart().startsWith("#EXTM3U")) {
         // Some providers serve an anti-bot HTML page to Cloudflare but serve
         // the exact same URL normally to the viewer's device.
+        if (streamC) continue;
         if (!configuredRelayOrigin(env)) clientDirectFallback = true;
         else continue;
       }
@@ -2484,14 +2548,15 @@ async function handleMoviePlayback(request, env) {
       const contentType = String(probe.headers.get("content-type") || "").toLowerCase();
       probe.body?.cancel?.().catch?.(() => {});
       if (!/^(?:video\/|audio\/|application\/(?:octet-stream|mp2t))/.test(contentType)) {
+        if (streamC) continue;
         if (!configuredRelayOrigin(env)) clientDirectFallback = true;
         else continue;
       }
     }
-    chosen = { ...source, clientDirectFallback };
+    chosen = { ...source, ...resolvedSource, streamC, referer, clientDirectFallback };
     break;
   } catch (_error) {
-    if (!configuredRelayOrigin(env)) {
+    if (!configuredRelayOrigin(env) && source.target) {
       chosen = { ...source, clientDirectFallback: true };
       break;
     }
@@ -2509,6 +2574,8 @@ async function handleMoviePlayback(request, env) {
       format: isHls ? "hls" : "media",
       sid: identity.sessionId || "",
       clientDirectFallback,
+      ref: chosen.referer || "",
+      streamC: chosen.streamC === true,
     }),
     isHls,
     selectedServer: chosen.serverIndex,
@@ -2560,9 +2627,15 @@ async function fetchVpsRelay(initialUrl, request, env, mediaFormat = "media") {
   return { response, target: finalTarget };
 }
 
-async function fetchProtectedUpstream(initialUrl, request, env, mediaFormat = "media", maxRedirects = 4, allowRelay = true, timeoutMs = 0) {
+async function fetchProtectedUpstream(initialUrl, request, env, mediaFormat = "media", maxRedirects = 4, allowRelay = true, timeoutMs = 0, refererOverride = "") {
   const format = mediaFormat === "hls" ? "hls" : "media";
-  if (allowRelay && configuredRelayOrigin(env)) return fetchVpsRelay(initialUrl, request, env, format);
+  if (allowRelay && configuredRelayOrigin(env)) {
+    try {
+      const relayed = await fetchVpsRelay(initialUrl, request, env, format);
+      if (relayed.response.ok || relayed.response.status === 206) return relayed;
+      try { await relayed.response.body?.cancel(); } catch (_error) {}
+    } catch (_error) {}
+  }
   let target = safePublicHttpsUrl(initialUrl);
   if (!target) throw new Error("UNSAFE_MEDIA_TARGET");
   for (let attempt = 0; attempt <= maxRedirects; attempt += 1) {
@@ -2572,7 +2645,9 @@ async function fetchProtectedUpstream(initialUrl, request, env, mediaFormat = "m
       "accept-language": "vi,en-US;q=0.8,en;q=0.6",
       "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148",
     });
-    if (catalogOrigin) headers.set("referer", `${catalogOrigin.origin}/`);
+    const safeReferer = safePublicHttpsUrl(refererOverride);
+    if (safeReferer) headers.set("referer", safeReferer.href);
+    else if (catalogOrigin) headers.set("referer", `${catalogOrigin.origin}/`);
     const range = format === "hls" ? "" : request.headers.get("range");
     if (range && /^bytes=\d*-\d*$/.test(range)) headers.set("range", range);
     const response = await fetch(target.href, {
@@ -2594,9 +2669,14 @@ async function protectHlsReference(reference, baseUrl, request, env, expiresAt, 
   if (!value || value.startsWith("data:")) throw new Error("UNSAFE_HLS_REFERENCE");
   const target = safePublicHttpsUrl(new URL(value, baseUrl).href);
   if (!target) throw new Error("UNSAFE_HLS_REFERENCE");
+  const base = safePublicHttpsUrl(baseUrl);
+  const streamC = Boolean(base && /^embed\d{1,3}\.streamc\.xyz$/i.test(base.hostname));
   return protectedMediaUrl(request, env, target.href, "stream", expiresAt, {
     format: /\.m3u8(?:$|[?#])/i.test(target.href) ? "hls" : "media",
     sid: sessionId,
+    ref: streamC ? `${base.origin}/` : "",
+    streamC,
+    disguisedMedia: streamC && /\.png(?:$|[?#])/i.test(target.href),
   });
 }
 
@@ -2643,7 +2723,7 @@ async function handleMovieStream(request, env) {
   let upstream;
   let target;
   try {
-    ({ response: upstream, target } = await fetchProtectedUpstream(ticket.url, request, env, ticket.format));
+    ({ response: upstream, target } = await fetchProtectedUpstream(ticket.url, request, env, ticket.format, 4, ticket.streamC !== true, 0, ticket.ref));
   } catch (_error) {
     // A master playlist may pass its probe while a variant, key, or segment
     // is later blocked at a Cloudflare edge. The session has already been
@@ -2672,9 +2752,10 @@ async function handleMovieStream(request, env) {
       return textError("Danh sách phát chứa liên kết không an toàn.", 502, "UNSAFE_HLS_MANIFEST");
     }
   }
-  if (!/^(?:video\/|audio\/|application\/(?:octet-stream|mp2t))/.test(contentType)) return textError("Nguồn phát trả về nội dung không hợp lệ.", 502, "INVALID_STREAM_RESPONSE");
+  const disguisedMedia = ticket.streamC === true && ticket.disguisedMedia === true && contentType.startsWith("image/");
+  if (!disguisedMedia && !/^(?:video\/|audio\/|application\/(?:octet-stream|mp2t))/.test(contentType)) return textError("Nguồn phát trả về nội dung không hợp lệ.", 502, "INVALID_STREAM_RESPONSE");
   const headers = new Headers(CORS_HEADERS);
-  headers.set("content-type", contentType || "application/octet-stream");
+  headers.set("content-type", disguisedMedia ? "video/mp2t" : (contentType || "application/octet-stream"));
   headers.set("cache-control", "private, no-store");
   headers.set("x-content-type-options", "nosniff");
   for (const name of ["accept-ranges", "content-length", "content-range"]) {

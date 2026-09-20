@@ -99,9 +99,10 @@ test('catalog detail strips raw media links and playback uses encrypted Worker c
 });
 
 test('streaming through the VPS relay uses a signed server-to-server request and never redirects the client', async () => {
-  const relayEnv = {
+const relayEnv = {
     ...env,
     VPS_RELAY_ORIGIN: 'https://relay.example',
+    VPS_RELAY_ENABLED: '1',
     VPS_RELAY_SECRET: 'fixture-vps-relay-secret-at-least-32-characters',
     MEDIA_RELAY_FALLBACK: 'disabled',
   };
@@ -159,6 +160,7 @@ test('relay and Cloudflare blocked HLS falls back to a short-lived authenticated
   const relayEnv = {
     ...env,
     VPS_RELAY_ORIGIN: 'https://blocked-relay.example',
+    VPS_RELAY_ENABLED: '1',
     VPS_RELAY_SECRET: 'fixture-vps-relay-secret-at-least-32-characters',
     MEDIA_RELAY_FALLBACK: 'disabled',
   };
@@ -196,7 +198,7 @@ test('relay and Cloudflare blocked HLS falls back to a short-lived authenticated
     assert.equal(stream.status, 307);
     assert.equal(stream.headers.get('location'), 'https://video.example/path/master.m3u8');
     assert.equal(relayCalls, 1);
-    assert.equal(directCalls, 1, 'Cloudflare must be tried once before the viewer-device fallback');
+    assert.equal(directCalls, 2, 'the dead relay path and entrypoint retry must both fall back through Cloudflare');
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -312,6 +314,7 @@ test('entrypoint bypasses relay health checks for protected artwork', async () =
   const relayEnv = {
     ...env,
     VPS_RELAY_ORIGIN: 'https://unused-relay.example',
+    VPS_RELAY_ENABLED: '1',
     VPS_RELAY_SECRET: 'fixture-vps-relay-secret-at-least-32-characters',
   };
   const source = 'https://images.example/uploads/poster.webp';
@@ -339,6 +342,7 @@ test('entrypoint replays playback POST directly when a healthy relay rejects med
   const relayEnv = {
     ...env,
     VPS_RELAY_ORIGIN: 'https://misconfigured-relay.example',
+    VPS_RELAY_ENABLED: '1',
     VPS_RELAY_SECRET: 'fixture-vps-relay-secret-at-least-32-characters',
   };
   const originalFetch = globalThis.fetch;
