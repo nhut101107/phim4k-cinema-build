@@ -23,6 +23,15 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
+      - name: Check Cloudflare deployment credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo '::error::Worker was NOT deployed. Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID under GitHub Settings > Secrets and variables > Actions, then rerun this workflow.'
+            exit 1
+          fi
+
       - name: Check out source
         uses: actions/checkout@v4
 
@@ -41,15 +50,13 @@ jobs:
       - name: Run Worker regression tests
         run: node --test backend-worker/test/*.test.mjs
 
-      - name: Cloudflare deployment status
+      - name: Deploy Worker
+        run: npx wrangler deploy --config backend-worker/wrangler.toml
+
+      - name: Verify live Worker is ready
         shell: bash
         run: |
-          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
-            echo 'CLOUDFLARE_API_TOKEN is not configured; source is ready but automatic Worker deploy is skipped.'
-          else
-            echo 'Cloudflare deployment credentials detected.'
-          fi
-
-      - name: Deploy Worker
-        if: env.CLOUDFLARE_API_TOKEN != ''
-        run: npx wrangler deploy --config backend-worker/wrangler.toml
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 3 --retry-delay 2 --max-time 20 \
+            'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/api/health' \
+            | node -e 'let body="";process.stdin.on("data",chunk=>body+=chunk);process.stdin.on("end",()=>{const result=JSON.parse(body);if(result.service!=="phim4k-license-api"||result.ready!==true){console.error("Worker health check did not report ready");process.exitCode=1;}})'
