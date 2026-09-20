@@ -36,7 +36,7 @@ test('public installer routes stream the fixed 3.55 files without exposing a red
     assert.equal(response.headers.get('content-disposition'), 'attachment; filename="4K-Cinema-iOS-3.55-unsigned.ipa"');
     assert.equal(response.headers.get('content-range'), 'bytes 0-2/4422377');
     assert.equal(requests[0].options.headers.get('range'), 'bytes=0-2');
-    assert.match(requests[0].url, /4K-Cinema-iOS-3\.55-unsigned\.ipa$/);
+    assert.match(requests[0].url, /^https:\/\/drive\.usercontent\.google\.com\/download\?id=1Qv25YSevfJmhvBX3hYqbk5jGFH_VVVr_/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -53,7 +53,9 @@ test('downloads admin route is authorized, atomic and compatible with clients', 
   const response = await worker.fetch(new Request('https://example.test/api/app/downloads'), env);
   const data = await response.json();
   assert.equal(data.windows.url, data.windowsUrl);
-  assert.equal(data.android_tv.version, '3.4.14');
+  assert.equal(data.android_tv.version, '3.55');
+  assert.match(data.android_tv.url, /^https:\/\/drive\.usercontent\.google\.com\/download/);
+  assert.equal(data.android_tv.sha256, 'db161b95b46b5728ad8a4cdf53b1a3f4bdb3ec14802fa65882ed3671336a1df0');
 });
 test('streamed JSON body is bounded even without Content-Length', async () => {
   const f = fixture();

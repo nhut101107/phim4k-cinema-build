@@ -58,21 +58,55 @@ const INSTALLER_RELEASES = Object.freeze({
   "/download/android": {
     filename: "4K-Cinema-Android-3.55.apk",
     contentType: "application/vnd.android.package-archive",
+    url: "https://drive.usercontent.google.com/download?id=1CMxjT0LyFnrwD2T8N2-ggbwuZJ0zvy0A&export=download&confirm=t",
   },
   "/download/android-tv": {
     filename: "4K-Cinema-Android-TV-3.55.apk",
     contentType: "application/vnd.android.package-archive",
+    url: "https://drive.usercontent.google.com/download?id=1C6ZxnWeEdEi3h1fTPYRnX8TRgHe1if8g&export=download&confirm=t",
   },
   "/download/ios": {
     filename: "4K-Cinema-iOS-3.55-unsigned.ipa",
     contentType: "application/octet-stream",
+    url: "https://drive.usercontent.google.com/download?id=1Qv25YSevfJmhvBX3hYqbk5jGFH_VVVr_&export=download&confirm=t",
   },
   "/download/windows": {
     filename: "4K-Cinema-Windows-3.55-x64.exe",
     contentType: "application/vnd.microsoft.portable-executable",
+    url: "https://drive.usercontent.google.com/download?id=1uOmdX9AwTPVHFYQsTlQp0ifyvNmSYU4_&export=download&confirm=t",
   },
 });
-const INSTALLER_RELEASE_ORIGIN = "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.55";
+
+const PUBLIC_RELEASES = Object.freeze({
+  android: Object.freeze({
+    url: INSTALLER_RELEASES["/download/android"].url,
+    version: "3.55",
+    sha256: "c1cc73cb504ab90c7c7d8cbedf73f00c0484e13ab3d499b02d6aa37a4e1d44b4",
+    sizeBytes: 3959616,
+    signer: "github-actions[bot]",
+  }),
+  android_tv: Object.freeze({
+    url: INSTALLER_RELEASES["/download/android-tv"].url,
+    version: "3.55",
+    sha256: "db161b95b46b5728ad8a4cdf53b1a3f4bdb3ec14802fa65882ed3671336a1df0",
+    sizeBytes: 3959616,
+    signer: "github-actions[bot]",
+  }),
+  ios: Object.freeze({
+    url: INSTALLER_RELEASES["/download/ios"].url,
+    version: "3.55",
+    sha256: "43b3b432d14f1a404cb5a840518c38a27212870de2242724672ae5e7cae932b7",
+    sizeBytes: 4411895,
+    signer: "github-actions[bot]",
+  }),
+  windows: Object.freeze({
+    url: INSTALLER_RELEASES["/download/windows"].url,
+    version: "3.55",
+    sha256: "1b2721c02e442c4abb4c48da854b153df24876d85f3fae72920adb2ecdb49f31",
+    sizeBytes: 120964411,
+    signer: "github-actions[bot]",
+  }),
+});
 
 // Provider configuration belongs in encrypted Worker Secrets. The client only
 // receives this Worker's origin plus short-lived, opaque AES-GCM capabilities.
@@ -295,7 +329,7 @@ async function handleInstallerDownload(request, pathname) {
   const upstreamHeaders = new Headers({ "user-agent": "4K-Cinema-Release/3.55" });
   const range = request.headers.get("range");
   if (range && /^bytes=\d*-\d*$/.test(range)) upstreamHeaders.set("range", range);
-  const upstream = await fetch(`${INSTALLER_RELEASE_ORIGIN}/${release.filename}`, {
+  const upstream = await fetch(release.url, {
     method: request.method,
     headers: upstreamHeaders,
     redirect: "follow",
@@ -1011,7 +1045,8 @@ async function getVerifiedAdminUpdate(db, request, forceStatus) {
   const currentVersion = appVersion(request);
   if (!platform || !/^\d+(?:\.\d+){1,3}$/.test(currentVersion)) return forceStatus;
 
-  const release = await queryOne(db, "SELECT url, version, sha256, size_bytes, signer FROM downloads WHERE platform = ?", platform);
+  const storedRelease = await queryOne(db, "SELECT url, version, sha256, size_bytes, signer FROM downloads WHERE platform = ?", platform);
+  const release = preferredRelease(platform, storedRelease);
   const releaseVersion = String(release?.version || "").trim();
   if (!release || !validDownloadUrl(release.url) || !validReleaseSha256(release.sha256) || !/^\d+(?:\.\d+){1,3}$/.test(releaseVersion)) return forceStatus;
   if (compareAppVersions(currentVersion, releaseVersion) >= 0) return forceStatus;
@@ -1024,7 +1059,7 @@ async function getVerifiedAdminUpdate(db, request, forceStatus) {
     minVersion: releaseVersion,
     downloadUrl: release.url,
     downloadSha256: String(release.sha256).toLowerCase(),
-    downloadSizeBytes: validReleaseSize(release.size_bytes) ? Number(release.size_bytes) : 0,
+    downloadSizeBytes: validReleaseSize(release.sizeBytes) ? Number(release.sizeBytes) : 0,
     downloadSigner: cleanProgressText(release.signer, 200),
     message: `Có bản ${releaseVersion}. Hãy tải đúng bản dành cho thiết bị này để cập nhật.`,
   };
@@ -1853,15 +1888,10 @@ async function handleDownloads(request, env) {
   if (missing) return missing;
   if (request.method === "GET") {
     const rows = await env.DB.prepare("SELECT * FROM downloads").all();
+    const stored = new Map((rows.results || []).map((row) => [row.platform, row]));
     const output = {};
-    for (const row of rows.results || []) {
-      if (['android', 'android_tv', 'ios', 'windows'].includes(row.platform)) output[row.platform] = {
-        url: validDownloadUrl(row.url) ? row.url : '',
-        version: row.version,
-        sha256: validReleaseSha256(row.sha256) ? String(row.sha256).toLowerCase() : '',
-        sizeBytes: validReleaseSize(row.size_bytes) ? Number(row.size_bytes) : 0,
-        signer: cleanProgressText(row.signer, 200),
-      };
+    for (const platform of ['android', 'android_tv', 'ios', 'windows']) {
+      output[platform] = preferredRelease(platform, stored.get(platform));
     }
     return json({
       ...output,
@@ -1913,6 +1943,25 @@ export function validReleaseSha256(value) {
 function validReleaseSize(value) {
   const size = Number(value);
   return Number.isSafeInteger(size) && size > 0 && size <= 2 * 1024 * 1024 * 1024;
+}
+
+function preferredRelease(platform, storedRelease) {
+  const bundled = PUBLIC_RELEASES[platform] || null;
+  const storedVersion = String(storedRelease?.version || '').trim();
+  const stored = storedRelease
+    && validDownloadUrl(storedRelease.url)
+    && validReleaseSha256(storedRelease.sha256)
+    && /^\d+(?:\.\d+){1,3}$/.test(storedVersion)
+    ? {
+        url: String(storedRelease.url).trim(),
+        version: storedVersion,
+        sha256: String(storedRelease.sha256).trim().toLowerCase(),
+        sizeBytes: validReleaseSize(storedRelease.size_bytes) ? Number(storedRelease.size_bytes) : 0,
+        signer: cleanProgressText(storedRelease.signer, 200),
+      }
+    : null;
+  if (!bundled) return stored;
+  return stored && compareAppVersions(stored.version, bundled.version) > 0 ? stored : { ...bundled };
 }
 
 function catalogPage(value) {
@@ -2853,12 +2902,13 @@ export default {
         const status = await getForceUpdate(env.DB, version);
         const platform = url.searchParams.get('platform') || requestPlatform(request) || 'web';
         if (!status.forceUpdate && ['ios', 'android', 'android_tv', 'windows'].includes(platform)) {
-          const release = await queryOne(env.DB, 'SELECT * FROM downloads WHERE platform = ?', platform);
+          const storedRelease = await queryOne(env.DB, 'SELECT * FROM downloads WHERE platform = ?', platform);
+          const release = preferredRelease(platform, storedRelease);
           if (release && validDownloadUrl(release.url) && validReleaseSha256(release.sha256)) {
             status.latestVersion = release.version;
             status.isLatest = compareAppVersions(version, release.version) >= 0;
             status.downloadSha256 = String(release.sha256).toLowerCase();
-            status.downloadSizeBytes = validReleaseSize(release.size_bytes) ? Number(release.size_bytes) : 0;
+            status.downloadSizeBytes = validReleaseSize(release.sizeBytes) ? Number(release.sizeBytes) : 0;
             status.downloadSigner = cleanProgressText(release.signer, 200);
             status.message = status.isLatest ? 'Bạn đang dùng phiên bản mới nhất.' : `Có bản ${release.version}. Mở Tải ứng dụng để cập nhật.`;
           } else {

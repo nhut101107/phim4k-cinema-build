@@ -275,7 +275,7 @@ test('media tickets stop working when their session is revoked or the ticket exp
   } finally { f.sqlite.close(); }
 });
 
-test('release records require HTTPS and SHA-256 metadata in production', async () => {
+test('unverifiable newer release records cannot replace the bundled public release', async () => {
   const f = fixture();
   try {
     // A public read does not publish unverifiable entries.
@@ -284,7 +284,8 @@ test('release records require HTTPS and SHA-256 metadata in production', async (
     const check = await worker.fetch(new Request('https://test.example/api/app/check-update?version=1.0.0&platform=ios'), f.env);
     const result = await check.json();
     assert.equal(result.isLatest, false);
-    assert.equal(result.downloadSha256, undefined);
+    assert.equal(result.latestVersion, '3.55');
+    assert.equal(result.downloadSha256, '43b3b432d14f1a404cb5a840518c38a27212870de2242724672ae5e7cae932b7');
     assert.notEqual(releaseHash, '');
   } finally { f.sqlite.close(); }
 });

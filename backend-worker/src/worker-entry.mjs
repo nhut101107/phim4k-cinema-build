@@ -1,8 +1,5 @@
 import coreWorker from './worker.mjs';
 
-const RELEASE_API = 'https://api.github.com/repos/nhut101107/phim4k-cinema-build/releases/latest';
-const RELEASE_CACHE_KEY_PREFIX = 'https://phim4k-release-metadata.invalid/latest-v2';
-const RELEASE_CACHE_SECONDS = 300;
 const RELAY_HEALTH_TTL_MS = 30_000;
 const RELAY_HEALTH_TIMEOUT_MS = 2_500;
 // Artwork is fetched directly by the Worker and never uses the VPS relay. Do
@@ -14,11 +11,35 @@ const RETRYABLE_RELAY_STATUSES = new Set([502, 503, 504]);
 let relayHealth = { origin: '', checkedAt: 0, healthy: true };
 let relayHealthCheck = null;
 
-const RELEASE_MATCHERS = Object.freeze({
-  android_tv: (name) => /^4K-Cinema-Android-TV-[0-9.]+\.apk$/i.test(name),
-  android: (name) => /^4K-Cinema-Android-[0-9.]+\.apk$/i.test(name),
-  ios: (name) => /^4K-Cinema-iOS-[0-9.]+(?:-unsigned)?\.ipa$/i.test(name),
-  windows: (name) => /^4K-Cinema-Windows-[0-9.]+-x64\.exe$/i.test(name),
+const PUBLIC_RELEASES = Object.freeze({
+  android: Object.freeze({
+    url: 'https://drive.usercontent.google.com/download?id=1CMxjT0LyFnrwD2T8N2-ggbwuZJ0zvy0A&export=download&confirm=t',
+    version: '3.55',
+    sha256: 'c1cc73cb504ab90c7c7d8cbedf73f00c0484e13ab3d499b02d6aa37a4e1d44b4',
+    sizeBytes: 3959616,
+    signer: 'github-actions[bot]',
+  }),
+  android_tv: Object.freeze({
+    url: 'https://drive.usercontent.google.com/download?id=1C6ZxnWeEdEi3h1fTPYRnX8TRgHe1if8g&export=download&confirm=t',
+    version: '3.55',
+    sha256: 'db161b95b46b5728ad8a4cdf53b1a3f4bdb3ec14802fa65882ed3671336a1df0',
+    sizeBytes: 3959616,
+    signer: 'github-actions[bot]',
+  }),
+  ios: Object.freeze({
+    url: 'https://drive.usercontent.google.com/download?id=1Qv25YSevfJmhvBX3hYqbk5jGFH_VVVr_&export=download&confirm=t',
+    version: '3.55',
+    sha256: '43b3b432d14f1a404cb5a840518c38a27212870de2242724672ae5e7cae932b7',
+    sizeBytes: 4411895,
+    signer: 'github-actions[bot]',
+  }),
+  windows: Object.freeze({
+    url: 'https://drive.usercontent.google.com/download?id=1uOmdX9AwTPVHFYQsTlQp0ifyvNmSYU4_&export=download&confirm=t',
+    version: '3.55',
+    sha256: '1b2721c02e442c4abb4c48da854b153df24876d85f3fae72920adb2ecdb49f31',
+    sizeBytes: 120964411,
+    signer: 'github-actions[bot]',
+  }),
 });
 
 function responseHeaders(cacheControl = 'no-store') {
@@ -35,20 +56,6 @@ function jsonResponse(payload, status = 200, cacheControl = 'no-store') {
     status,
     headers: responseHeaders(cacheControl),
   });
-}
-
-function cleanDigest(value) {
-  const match = String(value || '').trim().toLowerCase().match(/^sha256:([a-f0-9]{64})$/);
-  return match ? match[1] : '';
-}
-
-function releaseVersion(release, assetName = '') {
-  const values = [assetName, release?.tag_name, release?.name];
-  for (const value of values) {
-    const match = String(value || '').match(/(?:^|[^0-9])v?(\d+\.\d+(?:\.\d+)?)(?:[^0-9]|$)/i);
-    if (match) return match[1];
-  }
-  return '';
 }
 
 function compareVersions(left, right) {
@@ -77,63 +84,9 @@ function normalizeLegacyFields(downloads) {
   };
 }
 
-function releasePayload(release) {
-  const assets = Array.isArray(release?.assets) ? release.assets : [];
-  const output = {};
-
-  for (const [platform, matches] of Object.entries(RELEASE_MATCHERS)) {
-    const asset = assets.find((candidate) => matches(String(candidate?.name || '')));
-    if (!asset) continue;
-    const sha256 = cleanDigest(asset.digest);
-    const sizeBytes = Number(asset.size || 0);
-    const url = String(asset.browser_download_url || '').trim();
-    const version = releaseVersion(release, asset.name);
-    if (!/^https:\/\/github\.com\//i.test(url) || !sha256 || !Number.isSafeInteger(sizeBytes) || sizeBytes <= 0 || !version) continue;
-    output[platform] = {
-      url,
-      version,
-      sha256,
-      sizeBytes,
-      signer: String(asset?.uploader?.login || 'github-actions').slice(0, 200),
-    };
-  }
-
-  return normalizeLegacyFields(output);
-}
-
 async function fetchLiveDownloads(executionContext) {
-  const cache = typeof caches !== 'undefined' ? caches.default : null;
-  // A time-bucketed key bounds staleness even on runtimes that retain Cache
-  // API entries longer than their response Cache-Control metadata. Replacing a
-  // release asset under the same tag must update the app's hash and size within
-  // one cache window instead of leaving every client pinned to old metadata.
-  const cacheBucket = Math.floor(Date.now() / (RELEASE_CACHE_SECONDS * 1000));
-  const cacheRequest = new Request(`${RELEASE_CACHE_KEY_PREFIX}/${cacheBucket}`, { method: 'GET' });
-  if (cache) {
-    const cached = await cache.match(cacheRequest);
-    if (cached) return cached.json();
-  }
-
-  const response = await fetch(RELEASE_API, {
-    headers: {
-      accept: 'application/vnd.github+json',
-      'user-agent': '4K-Cinema-Release-Sync/1.0',
-      'x-github-api-version': '2022-11-28',
-    },
-    redirect: 'follow',
-  });
-  if (!response.ok) throw new Error(`GITHUB_RELEASE_HTTP_${response.status}`);
-
-  const release = await response.json();
-  const downloads = releasePayload(release);
-  const populated = ['android', 'android_tv', 'ios', 'windows'].filter((key) => downloads[key]?.url).length;
-  if (!populated) throw new Error('GITHUB_RELEASE_HAS_NO_VALID_ASSETS');
-
-  if (cache) {
-    const cachedResponse = jsonResponse(downloads, 200, `public, max-age=${RELEASE_CACHE_SECONDS}`);
-    executionContext?.waitUntil?.(cache.put(cacheRequest, cachedResponse));
-  }
-  return downloads;
+  void executionContext;
+  return normalizeLegacyFields(PUBLIC_RELEASES);
 }
 
 function configuredRelayOrigin(env) {

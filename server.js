@@ -64,10 +64,10 @@ function loadDownloadsConfig() {
     return JSON.parse(raw);
   } catch (err) {
     return {
-      android: { name: 'Phim 4K Cinema Android (ADR / APK)', url: 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android', version: '3.55', note: 'Điện thoại Android' },
-      android_tv: { name: 'Phim 4K Cinema Android TV (APK)', url: 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android-tv', version: '3.55', note: 'Android TV & TV Box' },
-      ios: { name: 'Phim 4K Cinema iOS (IPA)', url: 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/ios', version: '3.55', note: 'iPhone & iPad' },
-      windows: { name: 'Phim 4K Cinema Windows (EXE)', url: 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/windows', version: '3.55', note: 'Máy tính Windows' }
+      android: { name: 'Phim 4K Cinema Android (ADR / APK)', url: 'https://drive.usercontent.google.com/download?id=1CMxjT0LyFnrwD2T8N2-ggbwuZJ0zvy0A&export=download&confirm=t', version: '3.55', note: 'Điện thoại Android' },
+      android_tv: { name: 'Phim 4K Cinema Android TV (APK)', url: 'https://drive.usercontent.google.com/download?id=1C6ZxnWeEdEi3h1fTPYRnX8TRgHe1if8g&export=download&confirm=t', version: '3.55', note: 'Android TV & TV Box' },
+      ios: { name: 'Phim 4K Cinema iOS (IPA)', url: 'https://drive.usercontent.google.com/download?id=1Qv25YSevfJmhvBX3hYqbk5jGFH_VVVr_&export=download&confirm=t', version: '3.55', note: 'iPhone & iPad' },
+      windows: { name: 'Phim 4K Cinema Windows (EXE)', url: 'https://drive.usercontent.google.com/download?id=1uOmdX9AwTPVHFYQsTlQp0ifyvNmSYU4_&export=download&confirm=t', version: '3.55', note: 'Máy tính Windows' }
     };
   }
 }
