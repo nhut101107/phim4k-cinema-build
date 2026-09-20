@@ -83,6 +83,7 @@ const STREAM_TICKET_TTL_SECONDS = 12 * 60 * 60;
 const MAX_HLS_MANIFEST_BYTES = 2 * 1024 * 1024;
 const MOVIE_AVAILABILITY_AUDIT_LIMIT = 12;
 const MOVIE_AVAILABILITY_RECHECK_MINUTES = 30;
+const movieAvailabilitySchemaPromises = new WeakMap();
 const MOVIE_CATALOG_CATEGORIES = new Set([
   "phim-moi-cap-nhat", "phim-le", "phim-bo", "hoat-hinh", "tv-shows",
 ]);
@@ -1952,9 +1953,27 @@ function normalizedCatalogItems(data, env) {
   return resolveCatalogImageReferences(catalogItems(data), catalogImageBase(data, env));
 }
 
+async function ensureMovieAvailabilitySchema(env) {
+  const db = env?.DB;
+  if (!db || (typeof db !== "object" && typeof db !== "function")) return false;
+  if (!movieAvailabilitySchemaPromises.has(db)) {
+    movieAvailabilitySchemaPromises.set(db, (async () => {
+      await db.prepare(
+        "CREATE TABLE IF NOT EXISTS movie_availability (movie_slug TEXT PRIMARY KEY, status TEXT NOT NULL CHECK(status IN ('online', 'offline')), failure_count INTEGER NOT NULL DEFAULT 0, reason TEXT NOT NULL DEFAULT '', last_checked_at TEXT NOT NULL, next_check_at TEXT NOT NULL)",
+      ).bind().run();
+      await db.prepare(
+        "CREATE INDEX IF NOT EXISTS idx_movie_availability_recheck ON movie_availability(status, next_check_at)",
+      ).bind().run();
+      return true;
+    })().catch(() => false));
+  }
+  return movieAvailabilitySchemaPromises.get(db);
+}
+
 async function unavailableMovieSlugs(env, items) {
   if (!env?.DB || !Array.isArray(items) || !items.length) return new Set();
   try {
+    if (!await ensureMovieAvailabilitySchema(env)) return new Set();
     const result = await env.DB.prepare(
       "SELECT movie_slug FROM movie_availability WHERE status = 'offline' LIMIT 5000",
     ).bind().all();
@@ -1973,6 +1992,7 @@ async function filterAvailableCatalogItems(items, env) {
 async function movieIsUnavailable(env, slug) {
   if (!env?.DB || !slug) return false;
   try {
+    if (!await ensureMovieAvailabilitySchema(env)) return false;
     const row = await env.DB.prepare(
       "SELECT status FROM movie_availability WHERE movie_slug = ? LIMIT 1",
     ).bind(slug).first();
@@ -1988,6 +2008,7 @@ async function recordMovieAvailability(env, slug, status, reason = "", { insertO
   const checkedAt = now();
   const nextCheckAt = new Date(Date.now() + MOVIE_AVAILABILITY_RECHECK_MINUTES * 60 * 1000).toISOString();
   try {
+    if (!await ensureMovieAvailabilitySchema(env)) return;
     if (status === "online" && !insertOnline) {
       await env.DB.prepare(
         "UPDATE movie_availability SET status = 'online', failure_count = 0, reason = '', last_checked_at = ?, next_check_at = ? WHERE movie_slug = ? AND status = 'offline'",
@@ -2083,6 +2104,7 @@ async function auditMovieAvailability(slug, env) {
 
 async function runMovieAvailabilityAudit(env) {
   if (!env?.DB) return;
+  if (!await ensureMovieAvailabilitySchema(env)) return;
   const due = [];
   try {
     const rows = await env.DB.prepare(

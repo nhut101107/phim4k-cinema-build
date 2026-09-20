@@ -50,9 +50,6 @@ jobs:
       - name: Run Worker regression tests
         run: node --test backend-worker/test/*.test.mjs
 
-      - name: Apply idempotent movie availability schema
-        run: npx wrangler d1 execute phim4k-license --remote --yes --config backend-worker/wrangler.toml --file=backend-worker/migrations/0003_movie_availability.sql
-
       - name: Deploy Worker
         run: npx wrangler deploy --config backend-worker/wrangler.toml
 
