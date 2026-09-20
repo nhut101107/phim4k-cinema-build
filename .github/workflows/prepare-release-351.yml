@@ -1,0 +1,54 @@
+name: Prepare 4K Cinema 3.51
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/prepare-release-351.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Upgrade all platform build metadata and add verified copy-link controls
+        run: python3 scripts/prepare-release-351.py
+      - name: Check new browser code parses
+        run: node --check public/js/release-copy.js
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Run all application and Worker unit tests
+        run: npm test
+      - name: Verify iOS shell and scan for insecure assets
+        run: |
+          npm run ios:verify
+          npm run security:audit
+      - name: Commit tested release sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git status --short
+          git add -u
+          git diff --cached --check
+          git diff --cached --quiet && { echo 'Release sources already prepared'; exit 0; }
+          git commit -m 'Release 3.51: cross-platform version bump and copy verified download links'
+          git push origin HEAD:main
+      - name: Create draft release before cross-platform builders upload assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view ios-v3.51 >/dev/null 2>&1; then
+            echo 'Draft release already exists.'
+          else
+            gh release create ios-v3.51 --draft --target "$(git rev-parse HEAD)" --title '4K Cinema 3.51 - iOS, Android, Android TV, Windows' --notes 'Adds a verified copy-link button next to every download in both update dialogs. All platforms share the deployed playback backend. iOS IPA is unsigned and requires a user-managed certificate.'
+          fi
+          gh release view ios-v3.51 --json isDraft,tagName --jq '{draft: .isDraft, tag: .tagName}'
