@@ -1,0 +1,51 @@
+name: Verify Drive 3.56 anonymous downloads
+on:
+  push:
+    branches:
+      - release/drive-356-pending-public-access
+    paths:
+      - .github/workflows/verify-drive-356.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download all four files anonymously and verify exact size and SHA-256
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib, time, urllib.request
+          files = {
+            'Android': ('1cIKz4nVb1ODD5TFqRx_yxc6bn02QB8pS', 3963712, 'a3ddcdc054405ce0316fdde84e6db968d71326bf278327587d4146dd165b1143'),
+            'Android TV': ('132cxRcOetx_AsOm6m9vgDFoVJCZOwWhs', 3963712, 'b448a995be8e6c94cdb984621f233f743f086fc224d5992f77a18c671f77ee09'),
+            'iOS': ('14AOZdrCewKFU2Rn52oySmgXNqQiWzNW_', 4418972, 'dd70c5f01555825b795926fbc52f96c308856b7ca5e5536537ce3d7c2821a21f'),
+            'Windows': ('1Dc4UbCSsNl1gnOrqvWjWSB0ZpUN1CFrC', 120965208, '3d1ce8e2f5a85e6680bb2850752049448c102345a6046d38f2fff5b7ff384557'),
+          }
+          for name, (file_id, expected_size, expected_hash) in files.items():
+            url = f'https://drive.usercontent.google.com/download?id={file_id}&export=download&confirm=t'
+            for attempt in range(3):
+              try:
+                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/octet-stream,*/*'})
+                with urllib.request.urlopen(req, timeout=180) as response:
+                  content_type = response.headers.get('Content-Type', '')
+                  assert not content_type.lower().startswith('text/html'), f'{name}: HTML instead of download'
+                  digest = hashlib.sha256()
+                  count = 0
+                  while chunk := response.read(1024 * 1024):
+                    count += len(chunk)
+                    assert count <= expected_size, f'{name}: larger than expected'
+                    digest.update(chunk)
+                assert count == expected_size, f'{name}: size {count} != {expected_size}'
+                assert digest.hexdigest() == expected_hash, f'{name}: SHA-256 mismatch'
+                print(f'PASS {name}: anonymous binary download, bytes={count}, sha256={digest.hexdigest()}', flush=True)
+                break
+              except Exception as error:
+                print(f'Attempt {attempt + 1} for {name} failed: {type(error).__name__}: {error}', flush=True)
+                if attempt == 2:
+                  raise
+                time.sleep(3 * (attempt + 1))
+          print('PASS all 4 anonymous Google Drive downloads', flush=True)
+          PY
