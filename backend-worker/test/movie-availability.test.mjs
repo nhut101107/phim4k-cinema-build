@@ -172,7 +172,7 @@ test('backup discovery matches renamed provider slugs by title and season', asyn
     { slug: 'reacher-phat-sung-cuoi-cung-phan-4', name: 'Reacher: Phát Súng Cuối Cùng (Phần 4)', original_name: 'Reacher (Season 4)' },
   ] };
   const backup = { movie: { slug: 'reacher-phat-sung-cuoi-cung-phan-4', episodes: [
-    { server_name: 'Vietsub #1', items: [{ name: '1', slug: 'tap-1', embed: 'https://embed12.streamc.xyz/embed.php?hash=d2ba6338e8354a4f95576076958e934d' }] },
+    { server_name: 'Vietsub #1', items: [{ name: '1', slug: 'tap-1', link_m3u8: 'https://video.example/live.m3u8' }] },
   ] } };
   const requests = [];
   globalThis.fetch = async (input) => {
@@ -182,14 +182,17 @@ test('backup discovery matches renamed provider slugs by title and season', asyn
     if (url.pathname === '/api/film/phat-sung-cuoi-cung-phan-4') return new Response('missing', { status: 404 });
     if (url.pathname === '/api/films/search') return new Response(JSON.stringify(search), { headers: { 'content-type': 'application/json' } });
     if (url.pathname === '/api/film/reacher-phat-sung-cuoi-cung-phan-4') return new Response(JSON.stringify(backup), { headers: { 'content-type': 'application/json' } });
+    if (url.href === 'https://video.example/dead.m3u8') return new Response('gone', { status: 404 });
+    if (url.href === 'https://video.example/live.m3u8') return new Response('#EXTM3U\n#EXT-X-ENDLIST', { headers: { 'content-type': 'application/vnd.apple.mpegurl' } });
     throw new Error(`unexpected upstream: ${url.href}`);
   };
   try {
-    const detail = await worker.fetch(viewerRequest('/api/movies/detail/phat-sung-cuoi-cung-phan-4'), f.env);
-    assert.equal(detail.status, 200);
-    const payload = await detail.json();
-    assert.equal(payload.episodes.length, 2);
-    assert.equal(payload.episodes[1].server_name, 'Vietsub #1');
+    const playback = await worker.fetch(viewerRequest('/api/movies/play', {
+      method: 'POST',
+      body: JSON.stringify({ movie: 'phat-sung-cuoi-cung-phan-4', server: 0, episode: 0 }),
+    }), f.env);
+    assert.equal(playback.status, 200);
+    assert.equal((await playback.json()).selectedServer, 1);
     assert.ok(requests.some((url) => url.includes('/api/films/search?keyword=Reacher')));
     assert.ok(requests.some((url) => url.includes('/api/film/reacher-phat-sung-cuoi-cung-phan-4')));
     assert.ok(!requests.some((url) => url.includes('/api/film/reacher-phat-sung-cuoi-cung-phan-3')));
@@ -266,7 +269,7 @@ test('a StreamC backup is resolved server-side and disguised segments are relaye
     assert.equal(deadPrimaryProbes, 2);
     assert.equal(playlistFetches, 0);
     assert.ok(timeoutValues.includes(12000), `missing backup-detail timeout: ${timeoutValues.join(',')}`);
-    assert.ok(timeoutValues.includes(18000), `missing StreamC bootstrap timeout: ${timeoutValues.join(',')}`);
+    assert.ok(timeoutValues.includes(25000), `missing StreamC bootstrap timeout: ${timeoutValues.join(',')}`);
 
     const manifestResponse = await worker.fetch(new Request(playbackJson.streamUrl), f.env);
     assert.equal(manifestResponse.status, 200);
