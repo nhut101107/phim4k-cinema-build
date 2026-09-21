@@ -16,7 +16,7 @@ jobs:
         shell: bash
         run: |
           python3 - <<'PY'
-          import json, time, urllib.parse, urllib.request
+          import json, time, urllib.parse, urllib.request, urllib.error
           origin='https://phim4k-license-api.phim4k-pwdbhdz.workers.dev'
           releases={
             'android':('1cIKz4nVb1ODD5TFqRx_yxc6bn02QB8pS',3963712,'a3ddcdc054405ce0316fdde84e6db968d71326bf278327587d4146dd165b1143'),
@@ -27,10 +27,17 @@ jobs:
           def get(path):
             for attempt in range(4):
               try:
-                with urllib.request.urlopen(urllib.request.Request(origin+path,headers={'Accept':'application/json'}),timeout=25) as r:
+                with urllib.request.urlopen(urllib.request.Request(origin+path,headers={'Accept':'application/json','User-Agent':'4K-Cinema-Release-QA/3.56'}),timeout=25) as r:
+                  print('HTTP',path,r.status,r.headers.get('content-type'),flush=True)
                   assert r.status==200,(path,r.status)
                   return json.load(r)
-              except Exception:
+              except urllib.error.HTTPError as error:
+                details=error.read(220).decode('utf-8','replace').replace('\n',' ')
+                print('HTTP ERROR',path,error.code,'type=',error.headers.get('content-type'),'server=',error.headers.get('server'),'ray=',error.headers.get('cf-ray'),'body=',details,flush=True)
+                if attempt==3:raise
+                time.sleep(3)
+              except Exception as error:
+                print('FETCH ERROR',path,type(error).__name__,str(error),flush=True)
                 if attempt==3:raise
                 time.sleep(3)
           manifest=get('/api/app/downloads')
