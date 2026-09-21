@@ -152,7 +152,9 @@ const API = {
       // budget when the primary catalog URL is gone and StreamC must mint a
       // fresh signed HLS playlist. Aborting at 15 seconds made the UI report
       // every server dead just before the healthy backup became ready.
-      const timeoutMs = endpoint === '/api/movies/play' ? 45000 : 15000;
+      const timeoutMs = endpoint === '/api/movies/play'
+        ? 60000
+        : (endpoint.startsWith('/api/movies/detail/') ? 30000 : 15000);
       const response = await this.fetchWithTimeout(endpoint, { ...options, headers }, timeoutMs);
       const payload = await response.json().catch(() => ({}));
       if (response.status === 401 && payload.code === 'ACCESS_TOKEN_EXPIRED' && !retried) {

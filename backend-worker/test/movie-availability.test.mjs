@@ -287,3 +287,37 @@ test('a StreamC backup is resolved server-side and disguised segments are relaye
     f.sqlite.close();
   }
 });
+
+test('a native app resolves StreamC on-device when Cloudflare is blocked', async () => {
+  const f = fixture();
+  const originalFetch = globalThis.fetch;
+  const embed = 'https://embed12.streamc.xyz/embed.php?hash=d2ba6338e8354a4f95576076958e934d';
+  const primary = {
+    movie: { slug: 'native-backup', name: 'Native backup' },
+    episodes: [{ server_name: 'Primary', server_data: [{ name: 'Full', slug: 'full', link_m3u8: 'https://video.example/dead.m3u8' }] }],
+  };
+  const backup = { movie: { slug: 'native-backup', episodes: [
+    { server_name: 'Vietsub #1', items: [{ name: 'Full', slug: 'full', embed }] },
+  ] } };
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(input);
+    if (url.origin === 'https://catalog.example') return new Response(JSON.stringify(primary), { headers: { 'content-type': 'application/json' } });
+    if (url.origin === 'https://phim.nguonc.com') return new Response(JSON.stringify(backup), { headers: { 'content-type': 'application/json' } });
+    if (url.href === 'https://video.example/dead.m3u8') return new Response('gone', { status: 404 });
+    if (url.href === embed && init.method === 'POST') return new Response('blocked', { status: 403 });
+    throw new Error(`unexpected upstream: ${url.href}`);
+  };
+  try {
+    const playback = await worker.fetch(viewerRequest('/api/movies/play', {
+      method: 'POST', body: JSON.stringify({ movie: 'native-backup', server: 0, episode: 0 }),
+    }), f.env);
+    assert.equal(playback.status, 200);
+    const payload = await playback.json();
+    assert.equal(payload.selectedServer, 1);
+    assert.equal(payload.nativeBootstrap.url, embed);
+    assert.equal(payload.streamUrl, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+    f.sqlite.close();
+  }
+});

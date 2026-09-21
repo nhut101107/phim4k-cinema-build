@@ -88,7 +88,7 @@
       void this.refreshPlaybackTicketAndResume('load-timeout', Number(this.video?.currentTime) || resumeTime || 0);
     // Slow backup providers can need one bootstrap plus the first HLS segment.
     // Do not cancel and remint the ticket while that first load is still valid.
-    }, 40000);
+    }, 55000);
   };
 
   Player.scheduleStallRecovery = function scheduleStallRecovery(reason = 'stall', delayMs = 12000) {

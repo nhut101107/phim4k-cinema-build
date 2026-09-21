@@ -372,8 +372,8 @@ test('native bundle contains no direct movie provider or raw media fallback', ()
 test('slow backup playback is not aborted by the normal API or startup watchdog budget', () => {
   const api = read('../public/js/api.js');
   const diagnostics = read('../public/js/diagnostics.js');
-  assert.match(api, /endpoint === '\/api\/movies\/play' \? 45000 : 15000/);
-  assert.match(diagnostics, /startStreamLoadWatchdog[\s\S]*?}, 40000\);/);
+  assert.match(api, /endpoint === '\/api\/movies\/play'[\s\S]*?60000[\s\S]*?endpoint\.startsWith\('\/api\/movies\/detail\/'\) \? 30000 : 15000/);
+  assert.match(diagnostics, /startStreamLoadWatchdog[\s\S]*?}, 55000\);/);
 });
 
 test('iOS workflow audits the completed IPA before uploading it', () => {

@@ -2693,6 +2693,7 @@ async function handleMoviePlayback(request, env) {
     if (!resolvedSource) throw new Error("STREAMC_UNAVAILABLE");
     return { ...source, ...resolvedSource, clientDirectFallback: false };
   })).catch(() => null);
+  const nativeBootstrapCandidate = candidates.find((source) => source.embed) || null;
   const directCandidates = candidates.filter((source) => !source.embed);
   directCandidates.sort((a, b) =>
     Number(b.target?.href === selected?.target?.href) - Number(a.target?.href === selected?.target?.href));
@@ -2763,6 +2764,19 @@ async function handleMoviePlayback(request, env) {
     }
   }
   if (!chosen) chosen = await streamChoicePromise;
+  if (!chosen && nativeBootstrapCandidate) {
+    const expiresAt = Math.floor(Date.now() / 1000) + STREAM_TICKET_TTL_SECONDS;
+    return json({
+      success: true,
+      nativeBootstrap: {
+        url: nativeBootstrapCandidate.embed.href,
+        referrer: `https://phim.nguonc.com/phim/${encodeURIComponent(slug)}`,
+      },
+      isHls: true,
+      selectedServer: nativeBootstrapCandidate.serverIndex,
+      expiresAt: new Date(expiresAt * 1000).toISOString(),
+    });
+  }
   if (!chosen) chosen = clientFallbackCandidate;
   if (!chosen) {
     await recordMovieAvailability(env, slug, "offline", "ALL_SOURCES_GONE");
@@ -2783,36 +2797,6 @@ async function handleMoviePlayback(request, env) {
     isHls,
     selectedServer: chosen.serverIndex,
     expiresAt: new Date(expiresAt * 1000).toISOString(),
-  });
-}
-
-async function release356SourceCheck(request, env) {
-  const signedInput = new URL(request.url).searchParams.get("playlist");
-  if (signedInput) {
-    const signed = safePublicHttpsUrl(signedInput);
-    if (!signed || !/^embed\d{1,3}\.streamc\.xyz$/i.test(signed.hostname)) {
-      return textError("invalid check target", 400, "INVALID_CHECK_TARGET");
-    }
-    const response = await fetch(signed.href, {
-      headers: { accept: "application/vnd.apple.mpegurl,*/*", referer: `${signed.origin}/` },
-      signal: AbortSignal.timeout(15000),
-    }).catch(() => null);
-    const text = response ? await response.text() : "";
-    return json({ success: Boolean(response?.ok && text.trimStart().startsWith("#EXTM3U")), status: response?.status || 0 });
-  }
-  const slug = "phat-sung-cuoi-cung-phan-4";
-  const startedAt = Date.now();
-  const primary = await fetchProtectedCatalogJson(`/phim/${slug}`, env, { force: true, ttl: 1 }).catch(() => null);
-  const backup = primary ? await fetchBackupMovieDetail(slug, env, primary.movie, { skipExact: true }) : null;
-  const embed = backup?.episodes?.flatMap((server) => server?.server_data || [])
-    .map((episode) => streamCEmbedTarget(episode?.link_embed)?.href).find(Boolean);
-  const resolved = embed ? await resolveStreamCPlaylist(embed, slug) : null;
-  return json({
-    success: Boolean(primary && backup && resolved),
-    primary: Boolean(primary),
-    renamedBackup: Boolean(backup),
-    streamResolved: Boolean(resolved),
-    elapsedMs: Date.now() - startedAt,
   });
 }
 
@@ -3025,7 +3009,6 @@ export default {
       }
       if (request.method === "GET" && pathname === "/api/media/image") return await handleProtectedMovieImage(request, env, executionContext);
       if (request.method === "GET" && pathname === "/api/media/stream") return await handleMovieStream(request, env);
-      if (request.method === "GET" && pathname === "/api/_release356_check_c9f2a7") return await release356SourceCheck(request, env);
       if (request.method === "POST" && pathname === "/api/movies/play") return await handleMoviePlayback(request, env);
       if (request.method === "GET" && pathname.startsWith("/api/movies/")) return await handleProtectedMovieCatalog(request, env, executionContext);
       const missing = dbUnavailable(env);

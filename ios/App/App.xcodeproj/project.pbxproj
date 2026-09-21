@@ -14,6 +14,7 @@
 		A14C16F32C914E2C009A1D7B /* RuntimeIntegrityGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A14C16F22C914E2C009A1D7B /* RuntimeIntegrityGuard.swift */; };
 		A14C16F52C914E2C009A1D7B /* RuntimeIntegrityManifest.generated.swift in Sources */ = {isa = PBXBuildFile; fileRef = A14C16F42C914E2C009A1D7B /* RuntimeIntegrityManifest.generated.swift */; };
 		B25D27A12D10000100BEEF01 /* SecureSessionPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = B25D27A02D10000100BEEF01 /* SecureSessionPlugin.swift */; };
+		C36E38B12D20000100BEEF02 /* StreamResolverPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = C36E38B02D20000100BEEF02 /* StreamResolverPlugin.swift */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
@@ -29,6 +30,7 @@
 		A14C16F22C914E2C009A1D7B /* RuntimeIntegrityGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeIntegrityGuard.swift; sourceTree = "<group>"; };
 		A14C16F42C914E2C009A1D7B /* RuntimeIntegrityManifest.generated.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeIntegrityManifest.generated.swift; sourceTree = "<group>"; };
 		B25D27A02D10000100BEEF01 /* SecureSessionPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureSessionPlugin.swift; sourceTree = "<group>"; };
+		C36E38B02D20000100BEEF02 /* StreamResolverPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamResolverPlugin.swift; sourceTree = "<group>"; };
 		504EC30C1FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		504EC30E1FED79650016851F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		504EC3111FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
@@ -76,6 +78,7 @@
 				A14C16F22C914E2C009A1D7B /* RuntimeIntegrityGuard.swift */,
 				A14C16F42C914E2C009A1D7B /* RuntimeIntegrityManifest.generated.swift */,
 				B25D27A02D10000100BEEF01 /* SecureSessionPlugin.swift */,
+				C36E38B02D20000100BEEF02 /* StreamResolverPlugin.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -172,6 +175,7 @@
 				A14C16F32C914E2C009A1D7B /* RuntimeIntegrityGuard.swift in Sources */,
 				A14C16F52C914E2C009A1D7B /* RuntimeIntegrityManifest.generated.swift in Sources */,
 				B25D27A12D10000100BEEF01 /* SecureSessionPlugin.swift in Sources */,
+				C36E38B12D20000100BEEF02 /* StreamResolverPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

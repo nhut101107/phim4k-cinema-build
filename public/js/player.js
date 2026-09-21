@@ -188,7 +188,18 @@ const Player = {
     try {
       const result = await API.getPlaybackTicket(episode.stream_ref);
       if (requestId !== this.playbackTicketRequest || this.modal?.classList.contains('hidden')) return;
-      this.loadStream(result.streamUrl, { ...options, isHls: Boolean(result.isHls) });
+      let streamUrl = result.streamUrl;
+      let nativeDirectHls = false;
+      if (result.nativeBootstrap) {
+        this.showBuffering(true, 'Đang kết nối nguồn dự phòng…');
+        const resolver = this.getNativePlugin('StreamResolver') || window.Phim4KStreamResolver;
+        if (!resolver?.resolve) throw Object.assign(new Error('Thiết bị chưa hỗ trợ nguồn dự phòng.'), { code: 'NATIVE_STREAM_RESOLVER_UNAVAILABLE' });
+        const resolved = await resolver.resolve(result.nativeBootstrap);
+        if (requestId !== this.playbackTicketRequest || this.modal?.classList.contains('hidden')) return;
+        streamUrl = resolved?.playlist;
+        nativeDirectHls = true;
+      }
+      this.loadStream(streamUrl, { ...options, isHls: Boolean(result.isHls), nativeDirectHls });
     } catch (error) {
       if (requestId !== this.playbackTicketRequest) return;
       this.showBuffering(false);
@@ -207,6 +218,7 @@ const Player = {
     const resumeTime = Number(options.resumeTime) || 0;
     const autoplay = options.autoplay !== false;
     const isHls = options.isHls === true;
+    const nativeDirectHls = options.nativeDirectHls === true;
     if (!streamUrl) {
       this.showBuffering(false);
       this.showAlert('Không có luồng phát tương thích ở server này. Đang thử server khác…');
@@ -238,7 +250,10 @@ const Player = {
     // can play the same HTTPS playlist directly. Android WebView instead uses
     // hls.js when MSE is available, preserving adaptive quality and recovery;
     // the native video element below remains its compatibility fallback.
-    if (isHls && this.nativePlatform() === 'ios') {
+    let preferNativeHls = false;
+    if (isHls && this.nativePlatform() === 'ios') preferNativeHls = true;
+    if (isHls && nativeDirectHls && this.isNativeRuntime()) preferNativeHls = true;
+    if (preferNativeHls) {
       this.usingNativeHls = true;
       this.populateNativeHlsMenu();
       this.setQualityButtonLabel('Tự động');

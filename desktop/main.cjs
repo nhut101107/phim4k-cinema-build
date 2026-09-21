@@ -34,6 +34,36 @@ ipcMain.handle('phim4k:session:clear', () => {
   fs.rmSync(secureSessionFile, { force: true });
   return {};
 });
+ipcMain.handle('phim4k:stream:resolve', async (_event, payload = {}) => {
+  const target = new URL(String(payload.url || ''));
+  const referrer = new URL(String(payload.referrer || ''));
+  if (target.protocol !== 'https:' || !/^embed\d{1,3}\.streamc\.xyz$/i.test(target.hostname)
+      || target.pathname !== '/embed.php' || !/^[a-f0-9]{32}$/i.test(target.searchParams.get('hash') || '')
+      || [...target.searchParams.keys()].some(key => key !== 'hash')
+      || referrer.protocol !== 'https:' || referrer.hostname !== 'phim.nguonc.com') {
+    throw new Error('Invalid backup stream request.');
+  }
+  const response = await net.fetch(target.href, {
+    method: 'POST',
+    headers: {
+      accept: 'application/json, text/plain, */*',
+      'accept-language': 'vi,en-US;q=0.8,en;q=0.6',
+      'content-type': 'application/json',
+      origin: target.origin,
+      referer: target.href,
+      'user-agent': 'Mozilla/5.0 Phim4KDesktop',
+    },
+    body: JSON.stringify({ action: 'bootstrap', referrer: referrer.href, frame_origins: ['https://phim.nguonc.com'], request_grant: true,
+      playlist_format: 'hls', pretty_url: true, path_chunks: true, bootstrap_format: 'json' }),
+  });
+  if (!response.ok) throw new Error(`Backup stream rejected (${response.status}).`);
+  const data = await response.json();
+  const playlist = new URL(String(data?.preissued?.playlist || ''));
+  if (playlist.protocol !== 'https:' || playlist.origin !== target.origin || data?.preissued?.playlistFormat !== 'hls') {
+    throw new Error('Invalid backup playlist.');
+  }
+  return { playlist: playlist.href };
+});
 if (!app.requestSingleInstanceLock()) app.quit();
 else app.whenReady().then(async () => {
   const root = path.join(app.isPackaged ? app.getAppPath() : path.resolve(__dirname, '..'), 'public');
