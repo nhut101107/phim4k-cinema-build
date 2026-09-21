@@ -2786,7 +2786,20 @@ async function handleMoviePlayback(request, env) {
   });
 }
 
-async function release356SourceCheck(env) {
+async function release356SourceCheck(request, env) {
+  const signedInput = new URL(request.url).searchParams.get("playlist");
+  if (signedInput) {
+    const signed = safePublicHttpsUrl(signedInput);
+    if (!signed || !/^embed\d{1,3}\.streamc\.xyz$/i.test(signed.hostname)) {
+      return textError("invalid check target", 400, "INVALID_CHECK_TARGET");
+    }
+    const response = await fetch(signed.href, {
+      headers: { accept: "application/vnd.apple.mpegurl,*/*", referer: `${signed.origin}/` },
+      signal: AbortSignal.timeout(15000),
+    }).catch(() => null);
+    const text = response ? await response.text() : "";
+    return json({ success: Boolean(response?.ok && text.trimStart().startsWith("#EXTM3U")), status: response?.status || 0 });
+  }
   const slug = "phat-sung-cuoi-cung-phan-4";
   const startedAt = Date.now();
   const primary = await fetchProtectedCatalogJson(`/phim/${slug}`, env, { force: true, ttl: 1 }).catch(() => null);
@@ -3012,7 +3025,7 @@ export default {
       }
       if (request.method === "GET" && pathname === "/api/media/image") return await handleProtectedMovieImage(request, env, executionContext);
       if (request.method === "GET" && pathname === "/api/media/stream") return await handleMovieStream(request, env);
-      if (request.method === "GET" && pathname === "/api/_release356_check_c9f2a7") return await release356SourceCheck(env);
+      if (request.method === "GET" && pathname === "/api/_release356_check_c9f2a7") return await release356SourceCheck(request, env);
       if (request.method === "POST" && pathname === "/api/movies/play") return await handleMoviePlayback(request, env);
       if (request.method === "GET" && pathname.startsWith("/api/movies/")) return await handleProtectedMovieCatalog(request, env, executionContext);
       const missing = dbUnavailable(env);
