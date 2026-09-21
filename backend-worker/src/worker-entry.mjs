@@ -11,33 +11,35 @@ const RETRYABLE_RELAY_STATUSES = new Set([502, 503, 504]);
 let relayHealth = { origin: '', checkedAt: 0, healthy: true };
 let relayHealthCheck = null;
 
+// Do not merge or deploy this 3.56 manifest until all four Drive files permit
+// anonymous reader access. The previous 3.55 production links remain active.
 const PUBLIC_RELEASES = Object.freeze({
   android: Object.freeze({
-    url: 'https://drive.usercontent.google.com/download?id=1CMxjT0LyFnrwD2T8N2-ggbwuZJ0zvy0A&export=download&confirm=t',
-    version: '3.55',
-    sha256: 'c1cc73cb504ab90c7c7d8cbedf73f00c0484e13ab3d499b02d6aa37a4e1d44b4',
-    sizeBytes: 3959616,
+    url: 'https://drive.usercontent.google.com/download?id=1cIKz4nVb1ODD5TFqRx_yxc6bn02QB8pS&export=download&confirm=t',
+    version: '3.56',
+    sha256: 'a3ddcdc054405ce0316fdde84e6db968d71326bf278327587d4146dd165b1143',
+    sizeBytes: 3963712,
     signer: 'github-actions[bot]',
   }),
   android_tv: Object.freeze({
-    url: 'https://drive.usercontent.google.com/download?id=1C6ZxnWeEdEi3h1fTPYRnX8TRgHe1if8g&export=download&confirm=t',
-    version: '3.55',
-    sha256: 'db161b95b46b5728ad8a4cdf53b1a3f4bdb3ec14802fa65882ed3671336a1df0',
-    sizeBytes: 3959616,
+    url: 'https://drive.usercontent.google.com/download?id=132cxRcOetx_AsOm6m9vgDFoVJCZOwWhs&export=download&confirm=t',
+    version: '3.56',
+    sha256: 'b448a995be8e6c94cdb984621f233f743f086fc224d5992f77a18c671f77ee09',
+    sizeBytes: 3963712,
     signer: 'github-actions[bot]',
   }),
   ios: Object.freeze({
-    url: 'https://drive.usercontent.google.com/download?id=1Qv25YSevfJmhvBX3hYqbk5jGFH_VVVr_&export=download&confirm=t',
-    version: '3.55',
-    sha256: '43b3b432d14f1a404cb5a840518c38a27212870de2242724672ae5e7cae932b7',
-    sizeBytes: 4411895,
+    url: 'https://drive.usercontent.google.com/download?id=14AOZdrCewKFU2Rn52oySmgXNqQiWzNW_&export=download&confirm=t',
+    version: '3.56',
+    sha256: 'dd70c5f01555825b795926fbc52f96c308856b7ca5e5536537ce3d7c2821a21f',
+    sizeBytes: 4418972,
     signer: 'github-actions[bot]',
   }),
   windows: Object.freeze({
-    url: 'https://drive.usercontent.google.com/download?id=1uOmdX9AwTPVHFYQsTlQp0ifyvNmSYU4_&export=download&confirm=t',
-    version: '3.55',
-    sha256: '1b2721c02e442c4abb4c48da854b153df24876d85f3fae72920adb2ecdb49f31',
-    sizeBytes: 120964411,
+    url: 'https://drive.usercontent.google.com/download?id=1Dc4UbCSsNl1gnOrqvWjWSB0ZpUN1CFrC&export=download&confirm=t',
+    version: '3.56',
+    sha256: '3d1ce8e2f5a85e6680bb2850752049448c102345a6046d38f2fff5b7ff384557',
+    sizeBytes: 120965208,
     signer: 'github-actions[bot]',
   }),
 });
