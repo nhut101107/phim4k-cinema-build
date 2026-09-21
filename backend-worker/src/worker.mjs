@@ -2160,7 +2160,7 @@ async function resolveStreamCPlaylistUncached(embed, slug) {
       redirect: "manual",
       // StreamC commonly needs 8-12 seconds to issue a signed playlist. The
       // previous 6.5 second cutoff rejected healthy Rick & Morty episodes.
-      signal: AbortSignal.timeout(18000),
+      signal: AbortSignal.timeout(25000),
     });
     if (!response.ok || !String(response.headers.get("content-type") || "").includes("application/json")) return null;
     const payload = await response.json();
@@ -2354,7 +2354,10 @@ async function fetchProtectedCatalogJson(path, env, { force = false, ttl = 15 } 
   }
   const response = await fetch(`${origin.href.replace(/\/$/, "")}${path}`, {
     headers: { accept: "application/json" },
-    signal: AbortSignal.timeout(5000),
+    // The catalog occasionally needs 10-13 seconds even when healthy. A five
+    // second cutoff discarded the metadata that is required to discover a
+    // renamed backup title, turning a slow response into "all servers down".
+    signal: AbortSignal.timeout(15000),
     redirect: "manual",
     cf: { cacheEverything: true, cacheTtl: ttl },
   });
@@ -2411,6 +2414,10 @@ function movieSeason(value) {
   return match ? Number(match[1]) : 0;
 }
 
+function providerSlug(value) {
+  return normalizedMovieIdentity(value).replace(/\s+/g, "-").slice(0, 80);
+}
+
 async function fetchBackupMovieBySlug(origin, slug) {
   try {
     const response = await fetch(`${origin.href.replace(/\/$/, "")}/api/film/${encodeURIComponent(slug)}`, {
@@ -2434,7 +2441,14 @@ async function fetchBackupMovieDetail(slug, env, primaryMovie = null, { skipExac
     if (exact) return exact;
   }
   if (!primaryMovie) return null;
-  try {
+  const originalPrefix = providerSlug(primaryMovie.origin_name);
+  const guessedSlug = originalPrefix && !slug.startsWith(`${originalPrefix}-`)
+    ? `${originalPrefix}-${slug}`.slice(0, 180)
+    : "";
+  const guessedPromise = guessedSlug
+    ? fetchBackupMovieBySlug(origin, guessedSlug)
+    : Promise.resolve(null);
+  const searchPromise = (async () => {
     const query = String(primaryMovie.origin_name || primaryMovie.name || slug).trim().slice(0, 100);
     const response = await fetch(`${origin.href.replace(/\/$/, "")}/api/films/search?keyword=${encodeURIComponent(query)}`, {
       headers: { accept: "application/json" },
@@ -2466,9 +2480,13 @@ async function fetchBackupMovieDetail(slug, env, primaryMovie = null, { skipExac
     }).filter((candidate) => candidate.score >= 4 && candidate.item?.slug)
       .sort((left, right) => right.score - left.score);
     return ranked[0] ? fetchBackupMovieBySlug(origin, ranked[0].item.slug) : null;
-  } catch (_error) {
-    return null;
-  }
+  })().catch(() => null);
+  try {
+    return await Promise.any([guessedPromise, searchPromise].map((promise) => promise.then((result) => {
+      if (!result) throw new Error("BACKUP_NOT_FOUND");
+      return result;
+    })));
+  } catch (_error) { return null; }
 }
 
 function prewarmBackupStreams(data, slug, executionContext) {
@@ -2608,12 +2626,31 @@ async function handleProtectedMovieCatalog(request, env, executionContext) {
   if (detailMatch) {
     const slug = catalogSlug(detailMatch[1]);
     if (!slug) return textError("Mã phim không hợp lệ.", 400, "INVALID_MOVIE_SLUG");
-    const [primary, exactBackup] = await Promise.all([
-      fetchProtectedCatalogJson(`/phim/${slug}`, env, { ttl: 120 }).catch(() => null),
-      fetchBackupMovieDetail(slug, env),
-    ]);
-    const backup = exactBackup || await fetchBackupMovieDetail(slug, env, primary?.movie, { skipExact: true });
-    const data = mergeMovieSources(primary, backup);
+    const primaryPromise = fetchProtectedCatalogJson(`/phim/${slug}`, env, { ttl: 120 }).catch(() => null);
+    const exactBackupPromise = fetchBackupMovieDetail(slug, env);
+    const primary = await primaryPromise;
+    // Render the detail screen as soon as the primary metadata is ready. The
+    // renamed backup is discovered and prewarmed in the background; playback
+    // independently merges it, so the Play button still falls through to it.
+    if (primary) {
+      const eagerBackup = await Promise.race([
+        exactBackupPromise,
+        new Promise((resolve) => setTimeout(() => resolve(null), 250)),
+      ]);
+      if (eagerBackup) {
+        const data = mergeMovieSources(primary, eagerBackup);
+        prewarmBackupStreams(data, slug, executionContext);
+        return json(await protectMovieDetail(data, request, env, slug));
+      }
+      executionContext?.waitUntil?.((async () => {
+        const exactBackup = await exactBackupPromise;
+        const backup = exactBackup || await fetchBackupMovieDetail(slug, env, primary.movie, { skipExact: true });
+        if (backup) prewarmBackupStreams(mergeMovieSources(primary, backup), slug, executionContext);
+      })().catch(() => {}));
+      return json(await protectMovieDetail(primary, request, env, slug));
+    }
+    const backup = await exactBackupPromise;
+    const data = mergeMovieSources(null, backup);
     if (!data) return textError("Chưa tải được thông tin phim từ các nguồn.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
     prewarmBackupStreams(data, slug, executionContext);
     return json(await protectMovieDetail(data, request, env, slug));
@@ -2631,11 +2668,14 @@ async function handleMoviePlayback(request, env) {
   if (!slug || !Number.isInteger(serverIndex) || serverIndex < 0 || serverIndex > 50 || !Number.isInteger(episodeIndex) || episodeIndex < 0 || episodeIndex > 5000) {
     return textError("Tham chiếu tập phim không hợp lệ.", 400, "INVALID_STREAM_REFERENCE");
   }
-  const [primary, exactBackup] = await Promise.all([
-    fetchProtectedCatalogJson(`/phim/${slug}`, env, { ttl: 120 }).catch(() => null),
-    fetchBackupMovieDetail(slug, env),
-  ]);
-  const backup = exactBackup || await fetchBackupMovieDetail(slug, env, primary?.movie, { skipExact: true });
+  const primaryPromise = fetchProtectedCatalogJson(`/phim/${slug}`, env, { ttl: 120 }).catch(() => null);
+  const exactBackupPromise = fetchBackupMovieDetail(slug, env);
+  const primary = await primaryPromise;
+  const aliasBackupPromise = primary
+    ? fetchBackupMovieDetail(slug, env, primary.movie, { skipExact: true })
+    : Promise.resolve(null);
+  const [exactBackup, aliasBackup] = await Promise.all([exactBackupPromise, aliasBackupPromise]);
+  const backup = exactBackup || aliasBackup;
   const data = mergeMovieSources(primary, backup);
   if (!data) return textError("Chưa kết nối được các nguồn phim. Vui lòng thử lại.", 503, "MOVIE_UPSTREAM_UNAVAILABLE");
   const episode = data?.episodes?.[serverIndex]?.server_data?.[episodeIndex];
@@ -2657,6 +2697,7 @@ async function handleMoviePlayback(request, env) {
   directCandidates.sort((a, b) =>
     Number(b.target?.href === selected?.target?.href) - Number(a.target?.href === selected?.target?.href));
   let chosen = null;
+  let clientFallbackCandidate = null;
   // Catalog entries can outlive their provider files. Verify the selected
   // stream before issuing a ticket so the client can immediately try another
   // server instead of remaining at 00:00 with a native-player error.
@@ -2707,15 +2748,22 @@ async function handleMoviePlayback(request, env) {
         else continue;
       }
     }
-    chosen = { ...source, ...resolvedSource, streamC, referer, clientDirectFallback };
+    if (clientDirectFallback) {
+      // A timeout or anti-bot response is not proof that the source works on
+      // the viewer device. Keep it only as the final emergency fallback and
+      // give the verified backup resolver a chance to finish first.
+      clientFallbackCandidate ||= { ...source, ...resolvedSource, streamC, referer, clientDirectFallback: true };
+      continue;
+    }
+    chosen = { ...source, ...resolvedSource, streamC, referer, clientDirectFallback: false };
     break;
   } catch (_error) {
     if (!configuredRelayOrigin(env) && source.target) {
-      chosen = { ...source, clientDirectFallback: true };
-      break;
+      clientFallbackCandidate ||= { ...source, clientDirectFallback: true };
     }
   }
   if (!chosen) chosen = await streamChoicePromise;
+  if (!chosen) chosen = clientFallbackCandidate;
   if (!chosen) {
     await recordMovieAvailability(env, slug, "offline", "ALL_SOURCES_GONE");
     return textError("Các server của phim đang tạm thời không phản hồi; phim vẫn được giữ trong kho.", 404, "STREAM_SOURCE_OFFLINE");
@@ -2735,6 +2783,23 @@ async function handleMoviePlayback(request, env) {
     isHls,
     selectedServer: chosen.serverIndex,
     expiresAt: new Date(expiresAt * 1000).toISOString(),
+  });
+}
+
+async function release356SourceCheck(env) {
+  const slug = "phat-sung-cuoi-cung-phan-4";
+  const startedAt = Date.now();
+  const primary = await fetchProtectedCatalogJson(`/phim/${slug}`, env, { force: true, ttl: 1 }).catch(() => null);
+  const backup = primary ? await fetchBackupMovieDetail(slug, env, primary.movie, { skipExact: true }) : null;
+  const embed = backup?.episodes?.flatMap((server) => server?.server_data || [])
+    .map((episode) => streamCEmbedTarget(episode?.link_embed)?.href).find(Boolean);
+  const resolved = embed ? await resolveStreamCPlaylist(embed, slug) : null;
+  return json({
+    success: Boolean(primary && backup && resolved),
+    primary: Boolean(primary),
+    renamedBackup: Boolean(backup),
+    streamResolved: Boolean(resolved),
+    elapsedMs: Date.now() - startedAt,
   });
 }
 
@@ -2947,6 +3012,7 @@ export default {
       }
       if (request.method === "GET" && pathname === "/api/media/image") return await handleProtectedMovieImage(request, env, executionContext);
       if (request.method === "GET" && pathname === "/api/media/stream") return await handleMovieStream(request, env);
+      if (request.method === "GET" && pathname === "/api/_release356_check_c9f2a7") return await release356SourceCheck(env);
       if (request.method === "POST" && pathname === "/api/movies/play") return await handleMoviePlayback(request, env);
       if (request.method === "GET" && pathname.startsWith("/api/movies/")) return await handleProtectedMovieCatalog(request, env, executionContext);
       const missing = dbUnavailable(env);
