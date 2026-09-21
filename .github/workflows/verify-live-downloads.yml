@@ -1,0 +1,52 @@
+name: Verify live app downloads
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-live-downloads.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check production app release manifest and update endpoints
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, time, urllib.parse, urllib.request
+          origin='https://phim4k-license-api.phim4k-pwdbhdz.workers.dev'
+          releases={
+            'android':('1cIKz4nVb1ODD5TFqRx_yxc6bn02QB8pS',3963712,'a3ddcdc054405ce0316fdde84e6db968d71326bf278327587d4146dd165b1143'),
+            'android_tv':('132cxRcOetx_AsOm6m9vgDFoVJCZOwWhs',3963712,'b448a995be8e6c94cdb984621f233f743f086fc224d5992f77a18c671f77ee09'),
+            'ios':('14AOZdrCewKFU2Rn52oySmgXNqQiWzNW_',4418972,'dd70c5f01555825b795926fbc52f96c308856b7ca5e5536537ce3d7c2821a21f'),
+            'windows':('1Dc4UbCSsNl1gnOrqvWjWSB0ZpUN1CFrC',120965208,'3d1ce8e2f5a85e6680bb2850752049448c102345a6046d38f2fff5b7ff384557'),
+          }
+          def get(path):
+            for attempt in range(4):
+              try:
+                with urllib.request.urlopen(urllib.request.Request(origin+path,headers={'Accept':'application/json'}),timeout=25) as r:
+                  assert r.status==200,(path,r.status)
+                  return json.load(r)
+              except Exception:
+                if attempt==3:raise
+                time.sleep(3)
+          manifest=get('/api/app/downloads')
+          for platform,(file_id,size,sha) in releases.items():
+            entry=manifest[platform]
+            url=urllib.parse.urlsplit(entry['url'])
+            assert url.hostname=='drive.usercontent.google.com',(platform,url.hostname)
+            assert urllib.parse.parse_qs(url.query).get('id')==[file_id],platform
+            assert entry['version']=='3.56',platform
+            assert entry['sha256']==sha,platform
+            assert entry['sizeBytes']==size,platform
+            print('PASS live app downloads:',platform,'v3.56 Drive URL, size, SHA-256',flush=True)
+            status=get('/api/app/check-update?'+urllib.parse.urlencode({'platform':platform,'version':'3.55'}))
+            assert status['latestVersion']=='3.56',(platform,status)
+            assert status['downloadSha256']==sha,platform
+            assert status['downloadSizeBytes']==size,platform
+            print('PASS live check-update:',platform,flush=True)
+          print('PASS all 4 production release and update endpoints',flush=True)
+          PY
