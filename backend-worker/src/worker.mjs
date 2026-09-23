@@ -2699,7 +2699,20 @@ async function fetchJsonFromOrigin(origin, path, { ttl = 30, timeoutMs = 12000 }
   }
 }
 
-function normalizeNguonCListItem(item) {
+function absoluteProviderAsset(value, origin, fallbackPath = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const direct = safePublicHttpsUrl(raw);
+  if (direct) return direct.href;
+  if (!origin || /^[a-z][a-z0-9+.-]*:/i.test(raw)) return "";
+  try {
+    return new URL(raw.replace(/^\/+/, ""), fallbackPath ? new URL(fallbackPath, `${origin.origin}/`) : `${origin.origin}/`).href;
+  } catch (_error) {
+    return "";
+  }
+}
+
+function normalizeNguonCListItem(item, origin) {
   if (!item || typeof item !== "object") return null;
   const slug = catalogSlug(item.slug);
   if (!slug) return null;
@@ -2708,8 +2721,8 @@ function normalizeNguonCListItem(item) {
     name: cleanProgressText(item.name, 200),
     slug,
     origin_name: cleanProgressText(item.original_name || item.origin_name, 200),
-    thumb_url: String(item.thumb_url || ""),
-    poster_url: String(item.poster_url || item.thumb_url || ""),
+    thumb_url: absoluteProviderAsset(item.thumb_url, origin),
+    poster_url: absoluteProviderAsset(item.poster_url || item.thumb_url, origin),
     year: Number(item.year || 0) || undefined,
     quality: cleanProgressText(item.quality, 40),
     lang: cleanProgressText(item.language || item.lang, 80),
@@ -2795,10 +2808,14 @@ async function fetchOphimMovieBySlug(slug, env) {
     const movie = payload?.movie || payload?.data?.item;
     if (!movie || typeof movie !== "object") continue;
     const episodes = Array.isArray(payload?.episodes) ? payload.episodes : (Array.isArray(payload?.data?.episodes) ? payload.data.episodes : []);
+    const imageBaseRaw = payload?.data?.APP_DOMAIN_CDN_IMAGE || payload?.APP_DOMAIN_CDN_IMAGE || "https://img.ophim.live/uploads/movies/";
+    const imageBase = safePublicHttpsUrl(imageBaseRaw);
     return {
       ...payload,
       movie: {
         ...movie,
+        thumb_url: absoluteProviderAsset(movie.thumb_url, imageBase || origin),
+        poster_url: absoluteProviderAsset(movie.poster_url || movie.thumb_url, imageBase || origin),
         _source_candidates: mergeSourceCandidateTags(movie._source_candidates || [], sourceCandidateTag("ophim", "OPhim", movie.slug || slug)),
       },
       episodes,
@@ -2904,7 +2921,7 @@ async function resolveEnsMovieStyleSources(slug, env) {
   ].filter((entry) => entry.data?.movie);
 }
 
-function normalizeBackupMovieDetail(payload) {
+function normalizeBackupMovieDetail(payload, origin = null) {
   const movie = payload?.movie && typeof payload.movie === "object" ? payload.movie : null;
   if (!movie) return null;
   const episodes = (Array.isArray(movie.episodes) ? movie.episodes : []).map((server, serverIndex) => ({
@@ -2924,6 +2941,8 @@ function normalizeBackupMovieDetail(payload) {
     }),
   })).filter((server) => server.server_data.length);
   const { episodes: _ignored, ...movieMetadata } = movie;
+  movieMetadata.thumb_url = absoluteProviderAsset(movieMetadata.thumb_url, origin);
+  movieMetadata.poster_url = absoluteProviderAsset(movieMetadata.poster_url || movieMetadata.thumb_url, origin);
   return { movie: movieMetadata, episodes };
 }
 
@@ -2956,7 +2975,7 @@ async function fetchBackupMovieBySlug(origin, slug) {
       cf: { cacheEverything: true, cacheTtl: 60 },
     });
     if (!response.ok || !String(response.headers.get("content-type") || "").includes("application/json")) return null;
-    return normalizeBackupMovieDetail(await response.json());
+    return normalizeBackupMovieDetail(await response.json(), origin);
   } catch (_error) {
     return null;
   }
@@ -3169,7 +3188,7 @@ async function fetchEnsMovieStyleCatalog(mode, env, { page = 1, query = "", cate
       .then((data) => data ? ({
         id: "nguonphim",
         name: "Nguồn Phim",
-        items: (Array.isArray(data?.items) ? data.items : []).map(normalizeNguonCListItem).filter(Boolean),
+        items: (Array.isArray(data?.items) ? data.items : []).map((item) => normalizeNguonCListItem(item, nguonOrigin)).filter(Boolean),
         raw: data,
       }) : null)
       .catch(() => null));
