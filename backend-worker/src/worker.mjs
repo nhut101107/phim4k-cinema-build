@@ -645,6 +645,112 @@ async function queryOne(db, statement, ...values) {
   return db.prepare(statement).bind(...values).first();
 }
 
+const multiDeviceSchemaReady = new WeakSet();
+
+async function ensureMultiDeviceSchema(db) {
+  if (!db || typeof db !== "object" || multiDeviceSchemaReady.has(db)) return;
+  await db.prepare(
+    "CREATE TABLE IF NOT EXISTS license_limits (license_key TEXT PRIMARY KEY, max_devices INTEGER NOT NULL DEFAULT 1 CHECK(max_devices BETWEEN 1 AND 20), updated_at TEXT NOT NULL, FOREIGN KEY (license_key) REFERENCES license_keys(license_key) ON DELETE CASCADE)",
+  ).bind().run();
+  await db.prepare(
+    "CREATE TABLE IF NOT EXISTS license_devices (license_key TEXT NOT NULL, device_id TEXT NOT NULL, slot INTEGER NOT NULL, created_at TEXT NOT NULL, last_seen_at TEXT NOT NULL, approved_by TEXT, PRIMARY KEY (license_key, device_id), UNIQUE (license_key, slot), FOREIGN KEY (license_key) REFERENCES license_keys(license_key) ON DELETE CASCADE)",
+  ).bind().run();
+  await db.prepare("CREATE INDEX IF NOT EXISTS idx_license_devices_device ON license_devices(device_id)").bind().run();
+  await db.prepare(
+    "INSERT OR IGNORE INTO license_limits (license_key, max_devices, updated_at) SELECT license_key, 1, updated_at FROM license_keys",
+  ).bind().run();
+  await db.prepare(
+    "INSERT OR IGNORE INTO license_devices (license_key, device_id, slot, created_at, last_seen_at, approved_by) SELECT license_key, device_id, 1, created_at, updated_at, 'legacy' FROM license_keys WHERE device_id IS NOT NULL AND TRIM(device_id) <> ''",
+  ).bind().run();
+  await db.prepare("DROP INDEX IF EXISTS idx_auth_sessions_active_user").bind().run();
+  await db.prepare(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_sessions_active_user_device ON auth_sessions(license_key, device_id) WHERE role = 'user' AND revoked_at IS NULL",
+  ).bind().run();
+  multiDeviceSchemaReady.add(db);
+}
+
+async function licenseDeviceState(db, key) {
+  await ensureMultiDeviceSchema(db);
+  const limit = await queryOne(db, "SELECT max_devices FROM license_limits WHERE license_key = ?", key);
+  const rows = await db.prepare(
+    "SELECT device_id, slot, created_at, last_seen_at, approved_by FROM license_devices WHERE license_key = ? ORDER BY slot ASC",
+  ).bind(key).all();
+  const maxDevices = Math.min(20, Math.max(1, Number(limit?.max_devices || 1)));
+  const devices = (rows.results || []).map((item) => ({
+    deviceId: item.device_id,
+    slot: Number(item.slot || 0),
+    createdAt: item.created_at || "",
+    lastSeenAt: item.last_seen_at || "",
+    approvedBy: item.approved_by || "",
+  }));
+  // Compatibility fallback for databases/tests upgrading from the original
+  // one-device column before license_devices has been populated.
+  if (!devices.length) {
+    const legacy = await queryOne(db, "SELECT device_id, created_at, updated_at FROM license_keys WHERE license_key = ?", key);
+    const legacyDeviceId = normalizeDeviceId(legacy?.device_id);
+    if (legacyDeviceId) {
+      devices.push({
+        deviceId: legacyDeviceId,
+        slot: 1,
+        createdAt: legacy?.created_at || "",
+        lastSeenAt: legacy?.updated_at || "",
+        approvedBy: "legacy",
+      });
+    }
+  }
+  return { maxDevices, deviceCount: devices.length, devices };
+}
+
+async function registerLicenseDevice(db, key, deviceId, { approvedBy = "activation" } = {}) {
+  const cleanDeviceId = normalizeDeviceId(deviceId);
+  if (!cleanDeviceId) return { allowed: false, code: "INVALID_DEVICE_ID" };
+  const state = await licenseDeviceState(db, key);
+  const existing = state.devices.find((item) => item.deviceId === cleanDeviceId);
+  if (existing) {
+    await db.prepare("UPDATE license_devices SET last_seen_at = ? WHERE license_key = ? AND device_id = ?")
+      .bind(now(), key, cleanDeviceId).run();
+    return { allowed: true, ...state, existing: true };
+  }
+  if (state.deviceCount >= state.maxDevices) {
+    return { allowed: false, code: "DEVICE_LIMIT_REACHED", ...state };
+  }
+  const timestamp = now();
+  for (let slot = 1; slot <= state.maxDevices; slot += 1) {
+    try {
+      await db.prepare(
+        "INSERT INTO license_devices (license_key, device_id, slot, created_at, last_seen_at, approved_by) VALUES (?, ?, ?, ?, ?, ?)",
+      ).bind(key, cleanDeviceId, slot, timestamp, timestamp, String(approvedBy || "activation").slice(0, 80)).run();
+      await db.prepare(
+        "UPDATE license_keys SET device_id = COALESCE(device_id, ?), updated_at = ? WHERE license_key = ?",
+      ).bind(cleanDeviceId, timestamp, key).run();
+      const nextState = await licenseDeviceState(db, key);
+      return { allowed: true, ...nextState, existing: false };
+    } catch (_error) {
+      const concurrent = await queryOne(db, "SELECT slot FROM license_devices WHERE license_key = ? AND device_id = ?", key, cleanDeviceId);
+      if (concurrent) {
+        const nextState = await licenseDeviceState(db, key);
+        return { allowed: true, ...nextState, existing: true };
+      }
+    }
+  }
+  const latest = await licenseDeviceState(db, key);
+  return { allowed: false, code: "DEVICE_LIMIT_REACHED", ...latest };
+}
+
+async function removeLicenseDevice(db, key, deviceId) {
+  await ensureMultiDeviceSchema(db);
+  const cleanDeviceId = normalizeDeviceId(deviceId);
+  if (!cleanDeviceId) return;
+  const timestamp = now();
+  await db.prepare("DELETE FROM license_devices WHERE license_key = ? AND device_id = ?").bind(key, cleanDeviceId).run();
+  await db.prepare("UPDATE auth_sessions SET revoked_at = ?, updated_at = ? WHERE license_key = ? AND device_id = ? AND revoked_at IS NULL")
+    .bind(timestamp, timestamp, key, cleanDeviceId).run();
+  const replacement = await queryOne(db, "SELECT device_id FROM license_devices WHERE license_key = ? ORDER BY slot ASC LIMIT 1", key);
+  await db.prepare("UPDATE license_keys SET device_id = ?, updated_at = ? WHERE license_key = ?")
+    .bind(replacement?.device_id || null, timestamp, key).run();
+}
+
+
 function sessionError(code) {
   const values = {
     ACCESS_TOKEN_REQUIRED: ["Phiên đăng nhập là bắt buộc.", 401],
@@ -719,10 +825,13 @@ async function authorizeSessionRecord(session, env) {
     await revokeSession(env.DB, session.session_id);
     return { error: textError("Key đã hết hạn.", 403, "KEY_EXPIRED") };
   }
-  if (!record.device_id || record.device_id !== session.device_id) {
+  const deviceState = await licenseDeviceState(env.DB, record.license_key);
+  if (!deviceState.devices.some((item) => item.deviceId === session.device_id)) {
     await revokeSession(env.DB, session.session_id);
     return { error: sessionError("DEVICE_MISMATCH") };
   }
+  await env.DB.prepare("UPDATE license_devices SET last_seen_at = ? WHERE license_key = ? AND device_id = ?")
+    .bind(now(), record.license_key, session.device_id).run();
   const owner = normalizeId(record.activated_telegram_id || record.assigned_telegram_id);
   if (owner && await queryOne(env.DB, "SELECT reason FROM bans WHERE telegram_id = ?", owner)) {
     await revokeSession(env.DB, session.session_id);
@@ -739,6 +848,8 @@ async function authorizeSessionRecord(session, env) {
     keyHint: maskedValue(record.license_key),
     expiresAt: record.expires_at || null,
     licenseKey: record.license_key,
+    maxDevices: deviceState.maxDevices,
+    deviceCount: deviceState.deviceCount,
   };
 }
 
@@ -783,7 +894,8 @@ async function verifyLegacyTelemetryViewer(request, env) {
   if (!record || !record.active || isExpired(record.expires_at)) {
     return { error: textError("Phiên người dùng đã hết hiệu lực.", 403, "VIEWER_SESSION_INACTIVE") };
   }
-  if (!record.device_id || record.device_id !== deviceId) {
+  const deviceState = await licenseDeviceState(env.DB, key);
+  if (!deviceState.devices.some((item) => item.deviceId === deviceId)) {
     return { error: textError("Thiết bị không khớp với phiên đã kích hoạt.", 403, "DEVICE_MISMATCH") };
   }
   const boundTelegram = normalizeId(record.activated_telegram_id || record.assigned_telegram_id);
@@ -828,7 +940,7 @@ async function handleTelemetry(request, env) {
 async function ensureWatchProgressTable(db) {
   await db.prepare(
     "CREATE TABLE IF NOT EXISTS watch_progress (owner_id TEXT NOT NULL, movie_slug TEXT NOT NULL, episode_id TEXT NOT NULL, movie_name TEXT NOT NULL, episode_name TEXT NOT NULL, thumb_url TEXT NOT NULL DEFAULT '', current_seconds REAL NOT NULL, duration_seconds REAL NOT NULL, progress_percent INTEGER NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (owner_id, movie_slug, episode_id))",
-  ).run();
+  ).bind().run();
   await db.prepare(
     "CREATE INDEX IF NOT EXISTS idx_watch_progress_owner_updated ON watch_progress(owner_id, updated_at DESC)",
   ).run();
@@ -992,7 +1104,7 @@ async function handleWatchProgress(request, env) {
     ).bind(identity.ownerId, item.slug, item.episodeId, item.name, item.epName, item.thumb, item.currentTime, item.duration, item.progressPercent, timestamp).run();
   }
   await env.DB.prepare(
-    "DELETE FROM watch_progress WHERE owner_id = ? AND rowid NOT IN (SELECT rowid FROM watch_progress WHERE owner_id = ? ORDER BY updated_at DESC LIMIT 10)",
+    "DELETE FROM watch_progress WHERE owner_id = ? AND rowid NOT IN (SELECT rowid FROM watch_progress WHERE owner_id = ? ORDER BY updated_at DESC LIMIT 50)",
   ).bind(identity.ownerId, identity.ownerId).run();
   return json({ success: true, saved: items.length, updatedAt: timestamp }, 202);
 }
@@ -1240,23 +1352,56 @@ async function activationStatus({ db, key, telegramId, deviceId, request, env, a
   if (isExpired(record.expires_at)) return textError("Key đã hết hạn.", 403, "KEY_EXPIRED");
   const owner = record.activated_telegram_id || record.assigned_telegram_id;
   if (owner && await queryOne(db, 'SELECT reason FROM bans WHERE telegram_id = ?', owner)) return textError('Tài khoản đã bị khóa.', 403, 'USER_BANNED');
-  if (record.device_id && record.device_id !== deviceId) {
-    return textError("Key đã được khóa với thiết bị khác. Liên hệ quản trị để reset.", 403, "DEVICE_MISMATCH");
+
+  let deviceState = await licenseDeviceState(db, key);
+  let isBoundDevice = deviceState.devices.some((item) => item.deviceId === deviceId);
+  if (!isBoundDevice && activation) {
+    const registration = await registerLicenseDevice(db, key, deviceId);
+    if (!registration.allowed) {
+      return json({
+        success: false,
+        active: false,
+        code: "DEVICE_LIMIT_REACHED",
+        message: `Key này đã đủ ${registration.maxDevices || 1} thiết bị. Liên hệ Admin để tăng giới hạn hoặc gỡ thiết bị cũ.`,
+        maxDevices: registration.maxDevices || 1,
+        deviceCount: registration.deviceCount || 0,
+      }, 403);
+    }
+    deviceState = registration;
+    isBoundDevice = true;
+    await logEvent(db, "license_activated", {
+      detail: `key=${maskedValue(key)} device=${maskedValue(deviceId, 6)} slots=${registration.deviceCount}/${registration.maxDevices} version=${appVersion(request)}`,
+    });
   }
 
-  if (activation && !record.device_id) {
-    await db.prepare(
-      "UPDATE license_keys SET device_id = ?, updated_at = ? WHERE license_key = ? AND device_id IS NULL AND active = 1",
-    ).bind(deviceId, now(), key).run();
-    await logEvent(db, "license_activated", { detail: `key=${maskedValue(key)} version=${appVersion(request)}` });
+  if (!isBoundDevice) {
+    return json({
+      success: false,
+      active: false,
+      code: "DEVICE_MISMATCH",
+      message: "Thiết bị này chưa được gắn với key.",
+      maxDevices: deviceState.maxDevices,
+      deviceCount: deviceState.deviceCount,
+    }, 403);
   }
+  await db.prepare("UPDATE license_devices SET last_seen_at = ? WHERE license_key = ? AND device_id = ?")
+    .bind(now(), key, deviceId).run();
 
   const bound = await queryOne(db, 'SELECT * FROM license_keys WHERE license_key = ?', key);
   if (!bound?.active || isExpired(bound.expires_at)) return textError('Key không còn hiệu lực.', 403, 'KEY_DISABLED');
-  if (bound.device_id !== deviceId) return textError('Key chưa kích hoạt trên máy này hoặc đã gắn máy khác.', 403, 'DEVICE_MISMATCH');
 
   const force = await getForceUpdate(db, appVersion(request));
-  return json({ success: true, active: true, isAdmin: false, keyOnly: true, plan: bound.plan, expiresAt: bound.expires_at || null, ...force });
+  return json({
+    success: true,
+    active: true,
+    isAdmin: false,
+    keyOnly: true,
+    plan: bound.plan,
+    expiresAt: bound.expires_at || null,
+    maxDevices: deviceState.maxDevices,
+    deviceCount: deviceState.deviceCount,
+    ...force,
+  });
 }
 
 function sessionClientPayload(identity, tokens = {}) {
@@ -1269,6 +1414,8 @@ function sessionClientPayload(identity, tokens = {}) {
     plan: identity.plan || "STANDARD",
     keyHint: identity.keyHint || "",
     expiresAt: identity.expiresAt || null,
+    maxDevices: Number(identity.maxDevices || 0) || undefined,
+    deviceCount: Number(identity.deviceCount || 0) || undefined,
     ...tokens,
   };
 }
@@ -1361,7 +1508,7 @@ async function logoutSession(request, env) {
 async function ensureDeviceAccessTable(db) {
   await db.prepare(
     "CREATE TABLE IF NOT EXISTS device_access_requests (license_key TEXT NOT NULL, device_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')), requested_at TEXT NOT NULL, decided_at TEXT, decided_by TEXT, PRIMARY KEY (license_key, device_id), FOREIGN KEY (license_key) REFERENCES license_keys(license_key) ON DELETE CASCADE)",
-  ).run();
+  ).bind().run();
   await db.prepare("CREATE INDEX IF NOT EXISTS idx_device_access_status ON device_access_requests(status, requested_at)").run();
 }
 
@@ -1381,7 +1528,7 @@ async function notifyDeviceRequest(env, key, deviceId) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         chat_id: chatId,
-        text: `Phim4K: Có yêu cầu đăng nhập không Telegram.\nKey: ${maskedValue(key)}\nThiết bị: ${maskedValue(deviceId, 6)}\nMở Panel Admin > Yêu cầu thiết bị để duyệt.`,
+        text: `MNHUT: Có yêu cầu duyệt thiết bị.\nKey: ${maskedValue(key)}\nThiết bị: ${maskedValue(deviceId, 6)}\nMở Panel Admin > Yêu cầu thiết bị để xử lý.`,
       }),
     });
     return response.ok;
@@ -1409,8 +1556,14 @@ async function requestDeviceAccess(request, env) {
     "INSERT INTO device_access_requests (license_key, device_id, status, requested_at) VALUES (?, ?, 'pending', ?) ON CONFLICT(license_key, device_id) DO UPDATE SET status = CASE WHEN device_access_requests.status = 'approved' THEN 'approved' ELSE 'pending' END, requested_at = CASE WHEN device_access_requests.status = 'approved' THEN device_access_requests.requested_at ELSE excluded.requested_at END, decided_at = CASE WHEN device_access_requests.status = 'approved' THEN device_access_requests.decided_at ELSE NULL END, decided_by = CASE WHEN device_access_requests.status = 'approved' THEN device_access_requests.decided_by ELSE NULL END",
   ).bind(key, deviceId, now()).run();
   const existing = await queryOne(env.DB, "SELECT status FROM device_access_requests WHERE license_key = ? AND device_id = ?", key, deviceId);
-  if (existing?.status === "approved" && record.device_id === deviceId) {
-    return json({ success: true, status: "approved", message: "Thiết bị đã được Admin cấp phép." });
+  if (existing?.status === "approved") {
+    const state = await licenseDeviceState(env.DB, key);
+    if (state.devices.some((item) => item.deviceId === deviceId)) {
+      return json({ success: true, status: "approved", message: "Thiết bị đã được Admin cấp phép.", maxDevices: state.maxDevices, deviceCount: state.deviceCount });
+    }
+    await env.DB.prepare(
+      "UPDATE device_access_requests SET status = 'pending', requested_at = ?, decided_at = NULL, decided_by = NULL WHERE license_key = ? AND device_id = ?",
+    ).bind(now(), key, deviceId).run();
   }
   const notified = await notifyDeviceRequest(env, key, deviceId);
   await logEvent(env.DB, "device_access_requested", { targetKey: key, detail: `device=${maskedValue(deviceId, 6)} notified=${notified}` });
@@ -1435,7 +1588,8 @@ async function deviceAccessStatus(request, env) {
   if (!record) return textError("Key không tồn tại.", 404, "KEY_NOT_FOUND");
   if (!record.active) return textError("Key đã bị vô hiệu hóa.", 403, "KEY_DISABLED");
   if (isExpired(record.expires_at)) return textError("Key đã hết hạn.", 403, "KEY_EXPIRED");
-  if (record.device_id !== deviceId) return textError("Quyền thiết bị đã thay đổi. Hãy gửi yêu cầu mới.", 403, "DEVICE_MISMATCH");
+  const state = await licenseDeviceState(env.DB, key);
+  if (!state.devices.some((item) => item.deviceId === deviceId)) return textError("Quyền thiết bị đã thay đổi. Hãy gửi yêu cầu mới.", 403, "DEVICE_MISMATCH");
   const force = await getForceUpdate(env.DB, appVersion(request));
   return json({
     success: true,
@@ -1446,6 +1600,8 @@ async function deviceAccessStatus(request, env) {
     plan: record.plan,
     keyHint: maskedValue(key),
     expiresAt: record.expires_at || null,
+    maxDevices: state.maxDevices,
+    deviceCount: state.deviceCount,
     ...force,
   });
 }
@@ -1456,7 +1612,7 @@ async function listDeviceAccessRequests(request, env) {
   await ensureDeviceAccessTable(env.DB);
   const rows = await env.DB.prepare(
     "SELECT r.license_key, r.device_id, r.status, r.requested_at, r.decided_at, k.plan, k.expires_at, k.active FROM device_access_requests r JOIN license_keys k ON k.license_key = r.license_key ORDER BY CASE r.status WHEN 'pending' THEN 0 ELSE 1 END, r.requested_at DESC LIMIT 100",
-  ).all();
+  ).bind().all();
   return json({ requests: rows.results || [] });
 }
 
@@ -1475,7 +1631,16 @@ async function decideDeviceAccess(request, env) {
   if (decision === "approved") {
     const record = await queryOne(env.DB, "SELECT active, expires_at FROM license_keys WHERE license_key = ?", key);
     if (!record || !record.active || isExpired(record.expires_at)) return textError("Key không còn hoạt động.", 403, "KEY_INACTIVE");
-    await env.DB.prepare("UPDATE license_keys SET device_id = ?, updated_at = ? WHERE license_key = ?").bind(deviceId, timestamp, key).run();
+    const registration = await registerLicenseDevice(env.DB, key, deviceId, { approvedBy: requestTelegram(request) || "admin" });
+    if (!registration.allowed) {
+      return json({
+        success: false,
+        code: "DEVICE_LIMIT_REACHED",
+        message: `Key đã đủ ${registration.maxDevices || 1} thiết bị. Hãy tăng giới hạn thiết bị hoặc gỡ máy cũ trước.`,
+        maxDevices: registration.maxDevices || 1,
+        deviceCount: registration.deviceCount || 0,
+      }, 409);
+    }
   }
   await env.DB.prepare("UPDATE device_access_requests SET status = ?, decided_at = ?, decided_by = ? WHERE license_key = ? AND device_id = ?").bind(decision, timestamp, requestTelegram(request), key, deviceId).run();
   await logEvent(env.DB, `device_access_${decision}`, { actorTelegramId: requestTelegram(request), targetKey: key, detail: `device=${maskedValue(deviceId, 6)}` });
@@ -1487,15 +1652,37 @@ async function listKeys(request, env) {
   if (denied) return denied;
   const missing = dbUnavailable(env);
   if (missing) return missing;
-  const rows = await env.DB.prepare("SELECT * FROM license_keys ORDER BY created_at DESC").all();
-  const keys = (rows.results || []).map((item) => keyPayload(item, true));
+  await ensureMultiDeviceSchema(env.DB);
+  const rows = await env.DB.prepare("SELECT * FROM license_keys ORDER BY created_at DESC").bind().all();
+  const deviceRows = await env.DB.prepare("SELECT license_key, device_id, slot, created_at, last_seen_at FROM license_devices ORDER BY license_key, slot").bind().all();
+  const limitRows = await env.DB.prepare("SELECT license_key, max_devices FROM license_limits").bind().all();
+  const devicesByKey = new Map();
+  for (const item of (deviceRows.results || [])) {
+    if (!devicesByKey.has(item.license_key)) devicesByKey.set(item.license_key, []);
+    devicesByKey.get(item.license_key).push({
+      deviceId: item.device_id,
+      slot: Number(item.slot || 0),
+      createdAt: item.created_at || "",
+      lastSeenAt: item.last_seen_at || "",
+    });
+  }
+  const limits = new Map((limitRows.results || []).map((item) => [item.license_key, Math.min(20, Math.max(1, Number(item.max_devices || 1)))]));
+  const keys = (rows.results || []).map((item) => {
+    const payload = keyPayload(item, true);
+    const devices = devicesByKey.get(item.license_key) || [];
+    payload.devices = devices;
+    payload.deviceCount = devices.length;
+    payload.maxDevices = limits.get(item.license_key) || 1;
+    payload.boundDeviceId = devices[0]?.deviceId || item.device_id || "";
+    return payload;
+  });
   const banCount = await queryOne(env.DB, "SELECT COUNT(*) AS total FROM bans");
   return json({
     keys,
     stats: {
       totalKeys: keys.length,
       activeKeys: keys.filter((item) => item.active).length,
-      boundDevices: keys.filter((item) => item.boundDeviceId).length,
+      boundDevices: keys.reduce((total, item) => total + Number(item.deviceCount || 0), 0),
       bannedUsersCount: Number(banCount?.total || 0),
       // This is per Worker isolate. Cloudflare's edge is the primary DDoS layer.
       ddosBlockedCount: rateLimitBlocked,
@@ -1510,21 +1697,40 @@ async function createKey(request, env) {
   if (missing) return missing;
   const body = await parseBody(request);
   const key = normalizeKey(body.key);
-  const durationDays = numericDays(body.durationDays);
+  const requestedDurationDays = Number.parseInt(String(body.durationDays ?? ""), 10);
+  const isLifetime = requestedDurationDays === 0;
+  const durationDays = isLifetime ? 0 : numericDays(requestedDurationDays);
   const assignedTelegramId = normalizeId(body.assignedTelegramId);
+  const maxDevices = Number.parseInt(String(body.maxDevices || "1"), 10);
   if (!validKey(key)) return textError("Key phải gồm chữ in hoa, số hoặc dấu gạch ngang.", 400, "INVALID_KEY_FORMAT");
-  if (!durationDays) return textError("Thời hạn key phải từ 1 đến 3650 ngày.", 400, "INVALID_DURATION");
+  if (!isLifetime && !durationDays) return textError("Thời hạn key phải từ 1 đến 3650 ngày hoặc 0 để dùng vĩnh viễn.", 400, "INVALID_DURATION");
+  if (!Number.isInteger(maxDevices) || maxDevices < 1 || maxDevices > 20) return textError("Giới hạn thiết bị phải từ 1 đến 20.", 400, "INVALID_DEVICE_LIMIT");
   if (assignedTelegramId && !validTelegramId(assignedTelegramId)) return textError("Telegram ID is invalid.", 400, "INVALID_TELEGRAM_ID");
   const createdAt = now();
   try {
+    await ensureMultiDeviceSchema(env.DB);
     await env.DB.prepare(
       "INSERT INTO license_keys (license_key, plan, expires_at, active, assigned_telegram_id, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?, ?)",
-    ).bind(key, String(body.plan || "STANDARD").trim().slice(0, 64) || "STANDARD", plusDays(null, durationDays), assignedTelegramId, createdAt, createdAt).run();
+    ).bind(
+      key,
+      String(body.plan || "STANDARD").trim().slice(0, 64) || "STANDARD",
+      isLifetime ? null : plusDays(null, durationDays),
+      assignedTelegramId,
+      createdAt,
+      createdAt,
+    ).run();
+    await env.DB.prepare(
+      "INSERT OR REPLACE INTO license_limits (license_key, max_devices, updated_at) VALUES (?, ?, ?)",
+    ).bind(key, maxDevices, createdAt).run();
   } catch (_error) {
     return textError("Key đã tồn tại.", 409, "KEY_ALREADY_EXISTS");
   }
-  await logEvent(env.DB, "key_created", { actorTelegramId: requestTelegram(request), targetKey: key, detail: `days=${durationDays}` });
-  return json({ success: true, message: "Đã tạo key mới.", key }, 201);
+  await logEvent(env.DB, "key_created", {
+    actorTelegramId: requestTelegram(request),
+    targetKey: key,
+    detail: `days=${isLifetime ? "lifetime" : durationDays} maxDevices=${maxDevices}`,
+  });
+  return json({ success: true, message: `Đã tạo key · tối đa ${maxDevices} thiết bị.`, key, maxDevices }, 201);
 }
 
 async function updateKey(request, env, operation) {
@@ -1562,9 +1768,31 @@ async function updateKey(request, env, operation) {
     await env.DB.prepare("UPDATE license_keys SET active = ?, updated_at = ? WHERE license_key = ?").bind(row.active ? 0 : 1, timestamp, key).run();
     message = "Đã đổi trạng thái key.";
   } else if (operation === "reset-device") {
+    await ensureMultiDeviceSchema(env.DB);
+    await env.DB.prepare("DELETE FROM license_devices WHERE license_key = ?").bind(key).run();
     await env.DB.prepare("UPDATE license_keys SET device_id = NULL, updated_at = ? WHERE license_key = ?").bind(timestamp, key).run();
     await env.DB.prepare("UPDATE auth_sessions SET revoked_at = ?, updated_at = ? WHERE license_key = ? AND revoked_at IS NULL").bind(timestamp, timestamp, key).run();
-    message = "Đã reset thiết bị.";
+    message = "Đã gỡ toàn bộ thiết bị khỏi key.";
+  } else if (operation === "max-devices") {
+    await ensureMultiDeviceSchema(env.DB);
+    const maxDevices = Number.parseInt(String(body.maxDevices || ""), 10);
+    if (!Number.isInteger(maxDevices) || maxDevices < 1 || maxDevices > 20) {
+      return textError("Giới hạn thiết bị phải từ 1 đến 20.", 400, "INVALID_DEVICE_LIMIT");
+    }
+    const state = await licenseDeviceState(env.DB, key);
+    if (maxDevices < state.deviceCount) {
+      return json({
+        success: false,
+        code: "DEVICE_LIMIT_BELOW_ACTIVE",
+        message: `Key đang có ${state.deviceCount} thiết bị. Hãy gỡ bớt thiết bị trước khi giảm giới hạn xuống ${maxDevices}.`,
+        deviceCount: state.deviceCount,
+        maxDevices: state.maxDevices,
+      }, 409);
+    }
+    await env.DB.prepare(
+      "INSERT INTO license_limits (license_key, max_devices, updated_at) VALUES (?, ?, ?) ON CONFLICT(license_key) DO UPDATE SET max_devices = excluded.max_devices, updated_at = excluded.updated_at",
+    ).bind(key, maxDevices, timestamp).run();
+    message = `Đã đặt key dùng tối đa ${maxDevices} thiết bị.`;
   } else if (operation === "reset-telegram") {
     const newTelegramId = normalizeId(body.newTelegramId);
     if (newTelegramId && !validTelegramId(newTelegramId)) return textError("Telegram ID is invalid.", 400, "INVALID_TELEGRAM_ID");
@@ -1590,20 +1818,44 @@ async function listUsers(request, env) {
   if (denied) return denied;
   const missing = dbUnavailable(env);
   if (missing) return missing;
-  const rows = await env.DB.prepare(
-    "SELECT license_keys.*, bans.telegram_id AS banned_telegram_id, bans.reason AS ban_reason FROM license_keys LEFT JOIN bans ON bans.telegram_id = COALESCE(license_keys.activated_telegram_id, license_keys.assigned_telegram_id) WHERE license_keys.device_id IS NOT NULL OR license_keys.activated_telegram_id IS NOT NULL OR license_keys.assigned_telegram_id IS NOT NULL ORDER BY license_keys.updated_at DESC",
-  ).bind().all();
-  return json({ users: (rows.results || []).map((record) => ({
-    telegramId: record.activated_telegram_id || record.assigned_telegram_id || "",
-    key: record.license_key,
-    plan: record.plan,
-    isBanned: !Boolean(record.active) || Boolean(record.banned_telegram_id),
-    banReason: record.ban_reason || "",
-    active: Boolean(record.active) && !isExpired(record.expires_at),
-    status: !record.active ? "Đã bị ban" : (isExpired(record.expires_at) ? "Hết hạn" : "Bình thường"),
-    expiresAt: record.expires_at || null,
-    boundDeviceId: record.device_id || "",
-  })) });
+  await ensureMultiDeviceSchema(env.DB);
+  const [rows, deviceRows, limitRows] = await Promise.all([
+    env.DB.prepare(
+      "SELECT license_keys.*, bans.telegram_id AS banned_telegram_id, bans.reason AS ban_reason FROM license_keys LEFT JOIN bans ON bans.telegram_id = COALESCE(license_keys.activated_telegram_id, license_keys.assigned_telegram_id) ORDER BY license_keys.updated_at DESC",
+    ).bind().all(),
+    env.DB.prepare("SELECT license_key, device_id, slot, last_seen_at FROM license_devices ORDER BY license_key, slot").bind().all(),
+    env.DB.prepare("SELECT license_key, max_devices FROM license_limits").bind().all(),
+  ]);
+  const devicesByKey = new Map();
+  for (const item of (deviceRows.results || [])) {
+    if (!devicesByKey.has(item.license_key)) devicesByKey.set(item.license_key, []);
+    devicesByKey.get(item.license_key).push({
+      deviceId: item.device_id,
+      slot: Number(item.slot || 0),
+      lastSeenAt: item.last_seen_at || "",
+    });
+  }
+  const limits = new Map((limitRows.results || []).map((item) => [item.license_key, Number(item.max_devices || 1)]));
+  const users = (rows.results || []).flatMap((record) => {
+    const devices = devicesByKey.get(record.license_key) || [];
+    const telegramId = record.activated_telegram_id || record.assigned_telegram_id || "";
+    if (!telegramId && !devices.length) return [];
+    return [{
+      telegramId,
+      key: record.license_key,
+      plan: record.plan,
+      isBanned: !Boolean(record.active) || Boolean(record.banned_telegram_id),
+      banReason: record.ban_reason || "",
+      active: Boolean(record.active) && !isExpired(record.expires_at),
+      status: !record.active ? "Đã bị ban" : (isExpired(record.expires_at) ? "Hết hạn" : "Bình thường"),
+      expiresAt: record.expires_at || null,
+      boundDeviceId: devices[0]?.deviceId || record.device_id || "",
+      devices,
+      deviceCount: devices.length,
+      maxDevices: Math.min(20, Math.max(1, limits.get(record.license_key) || 1)),
+    }];
+  });
+  return json({ users });
 }
 
 async function setBan(request, env, banned) {
@@ -1624,7 +1876,13 @@ async function setBan(request, env, banned) {
   // older imported key does not match today's key format instead of rejecting
   // a real user before the device lookup can run.
   if (!license && deviceId) {
-    license = await queryOne(env.DB, "SELECT * FROM license_keys WHERE device_id = ?", deviceId);
+    await ensureMultiDeviceSchema(env.DB);
+    const linked = await queryOne(env.DB, "SELECT license_key FROM license_devices WHERE device_id = ? LIMIT 1", deviceId);
+    if (linked?.license_key) {
+      license = await queryOne(env.DB, "SELECT * FROM license_keys WHERE license_key = ?", linked.license_key);
+    } else {
+      license = await queryOne(env.DB, "SELECT * FROM license_keys WHERE device_id = ?", deviceId);
+    }
   }
 
   // Current viewer accounts are identified by their license and bound device.
@@ -1887,7 +2145,7 @@ async function handleDownloads(request, env) {
   const missing = dbUnavailable(env);
   if (missing) return missing;
   if (request.method === "GET") {
-    const rows = await env.DB.prepare("SELECT * FROM downloads").all();
+    const rows = await env.DB.prepare("SELECT * FROM downloads").bind().all();
     const stored = new Map((rows.results || []).map((row) => [row.platform, row]));
     const output = {};
     for (const platform of ['android', 'android_tv', 'ios', 'windows']) {
@@ -3102,6 +3360,18 @@ export default {
       if (request.method === "POST" && pathname === "/api/admin/set-key-expiry") return await updateKey(request, env, "expiry");
       if (request.method === "POST" && pathname === "/api/admin/toggle-key") return await updateKey(request, env, "toggle");
       if (request.method === "POST" && pathname === "/api/admin/reset-device") return await updateKey(request, env, "reset-device");
+      if (request.method === "POST" && pathname === "/api/admin/set-max-devices") return await updateKey(request, env, "max-devices");
+      if (request.method === "POST" && pathname === "/api/admin/remove-device") {
+        const denied = await requireVerifiedAdmin(request, env);
+        if (denied) return denied;
+        const body = await parseBody(request);
+        const key = normalizeKey(body.key);
+        const deviceId = normalizeDeviceId(body.deviceId);
+        if (!validKey(key) || !deviceId) return textError("Thiết bị cần gỡ không hợp lệ.", 400, "INVALID_DEVICE_TARGET");
+        await removeLicenseDevice(env.DB, key, deviceId);
+        await logEvent(env.DB, "key_remove_device", { actorTelegramId: requestTelegram(request), targetKey: key, detail: `device=${maskedValue(deviceId, 6)}` });
+        return json({ success: true, message: "Đã gỡ thiết bị khỏi key." });
+      }
       if (request.method === "POST" && pathname === "/api/admin/reset-telegram") return await updateKey(request, env, "reset-telegram");
       if (request.method === "POST" && pathname === "/api/admin/delete-key") return await updateKey(request, env, "delete");
       if (request.method === "GET" && pathname === "/api/admin/users") return await listUsers(request, env);

@@ -21,14 +21,15 @@ test('MNHUT activation gate keeps the authentication contract intact', () => {
   assert.match(index, /onclick="Auth\.retryAfterMaintenance\(\)"/);
 });
 
-test('activation gate uses the dedicated MNHUT premium layout', () => {
+test('activation gate uses restrained MNHUT branding and compact copy', () => {
   assert.match(index, /class="gate-card license-shell"/);
   assert.match(index, /class="mnhut-mark"/);
   assert.match(index, />MNHUT</);
-  assert.match(index, /CINEMA ACCESS/);
-  assert.match(index, /Kích hoạt thiết bị/);
+  assert.match(index, />CINEMA</);
+  assert.match(index, /Xác thực thiết bị/);
+  assert.match(index, /<h2>Nhập key<\/h2>/);
+  assert.match(index, /Nhập key một lần/);
   assert.match(css, /\.gate-card\.license-shell\s*\{/);
-  assert.match(css, /grid-template-columns:\s*minmax\(0, 1\.02fr\)/);
   assert.match(css, /@media \(max-width: 520px\)/);
   assert.match(css, /\.license-key-field/);
 });

@@ -1896,3 +1896,65 @@
 .btn-copy-release { flex: 1 1 140px; min-height: 44px; border: 1px solid rgba(255, 210, 100, .65); border-radius: 10px; background: rgba(255, 210, 100, .13); color: #ffe5a0; font: inherit; font-weight: 700; cursor: pointer; padding: 10px 12px; }
 .btn-copy-release:disabled { opacity: .45; cursor: not-allowed; }
 .btn-copy-release:focus-visible { outline: 3px solid #ffcf59; outline-offset: 2px; }
+
+
+/* Admin multi-device license controls */
+.device-capacity {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 118px;
+}
+
+.device-capacity > strong {
+  color: var(--text-main);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.device-capacity > small {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.device-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.device-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 150px;
+  padding: 4px 5px 4px 8px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 999px;
+  background: rgba(255,255,255,.035);
+  color: var(--text-muted);
+  font: 650 10px/1 var(--font);
+}
+
+.device-chip-remove {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(239,68,68,.11);
+  color: #f87171;
+  font: 800 13px/1 var(--font);
+  cursor: pointer;
+}
+
+.device-chip-remove:hover {
+  background: rgba(239,68,68,.2);
+  color: #fff;
+}
+
+.license-activate-btn.is-loading .activate-arrow {
+  visibility: hidden;
+}
