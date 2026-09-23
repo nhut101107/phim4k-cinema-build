@@ -1,0 +1,29 @@
+name: Validate MNHUT final release
+
+on:
+  push:
+    branches: [mnhut-release-final]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Syntax
+        run: |
+          node --check public/js/auth.js
+          node --check public/js/admin.js
+          node --check public/js/session-vault.js
+          node --check backend-worker/src/session-security.mjs
+          node --check backend-worker/src/worker.mjs
+      - name: Full regression suite
+        run: npm test
