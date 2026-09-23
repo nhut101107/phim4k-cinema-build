@@ -552,7 +552,7 @@ function openLicenseModal() {
 
   const featuresList = document.getElementById('licFeatures');
   featuresList.innerHTML = '';
-  const feats = d.features || ['Xem phim chuẩn 4K / FHD', 'Chất Lượng Gốc 4K Cinema', '1 Telegram ID duy nhất', '1 Thiết bị duy nhất'];
+  const feats = d.features || ['Xem phim chuẩn 4K / FHD', 'Chất lượng gốc MNHUT Cinema', '1 Telegram ID duy nhất', '1 Thiết bị duy nhất'];
   feats.forEach(f => {
     const li = document.createElement('li');
     li.textContent = f;
