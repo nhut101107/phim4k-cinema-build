@@ -66,13 +66,55 @@ test('watch progress follows an authenticated license after an approved device r
     const otherRead = await (await f.request('/api/watch-progress', { headers: { 'x-license-key': 'P4K-WATCH-TWO', 'x-device-id': 'other-phone' } })).json();
     assert.deepEqual(otherRead.items, []);
 
-    f.sqlite.prepare('UPDATE license_keys SET device_id=? WHERE license_key=?').run('new-phone', 'P4K-WATCH-ONE');
+    const adminHeaders = {
+      'x-license-key': f.env.ADMIN_LICENSE_KEY,
+      'x-telegram-id': f.env.ADMIN_TELEGRAM_ID,
+    };
+    const reset = await f.request('/api/admin/reset-device', {
+      method: 'POST',
+      headers: adminHeaders,
+      body: { key: 'P4K-WATCH-ONE' },
+    });
+    assert.equal(reset.status, 200);
+
+    const reactivated = await f.request('/api/auth/activate', {
+      method: 'POST',
+      body: { key: 'P4K-WATCH-ONE', deviceId: 'new-phone' },
+    });
+    assert.equal(reactivated.status, 200);
+
     const restored = await (await f.request('/api/watch-progress', { headers: { 'x-license-key': 'P4K-WATCH-ONE', 'x-device-id': 'new-phone' } })).json();
     assert.equal(restored.items[0].epName, 'Tập 12');
     assert.equal(restored.items[0].currentTime, progress.currentTime);
 
     const staleDevice = await f.request('/api/watch-progress', { headers: ownerHeaders });
     assert.equal(staleDevice.status, 403);
+  } finally { f.sqlite.close(); }
+});
+
+test('allowed devices on the same key share continue-watching progress', async () => {
+  const f = fixture();
+  f.seed('MNHUT-WATCH-MULTI');
+  try {
+    const adminHeaders = {
+      'x-license-key': f.env.ADMIN_LICENSE_KEY,
+      'x-telegram-id': f.env.ADMIN_TELEGRAM_ID,
+    };
+    assert.equal((await f.request('/api/admin/set-max-devices', {
+      method: 'POST',
+      headers: adminHeaders,
+      body: { key: 'MNHUT-WATCH-MULTI', maxDevices: 2 },
+    })).status, 200);
+    assert.equal((await f.request('/api/auth/activate', { method: 'POST', body: { key: 'MNHUT-WATCH-MULTI', deviceId: 'phone-one' } })).status, 200);
+    assert.equal((await f.request('/api/auth/activate', { method: 'POST', body: { key: 'MNHUT-WATCH-MULTI', deviceId: 'phone-two' } })).status, 200);
+
+    const first = { 'x-license-key': 'MNHUT-WATCH-MULTI', 'x-device-id': 'phone-one' };
+    const second = { 'x-license-key': 'MNHUT-WATCH-MULTI', 'x-device-id': 'phone-two' };
+    assert.equal((await f.request('/api/watch-progress', { method: 'POST', headers: first, body: { item: progress } })).status, 202);
+    const resumed = await (await f.request('/api/watch-progress', { headers: second })).json();
+    assert.equal(resumed.items.length, 1);
+    assert.equal(resumed.items[0].slug, progress.slug);
+    assert.equal(resumed.items[0].currentTime, progress.currentTime);
   } finally { f.sqlite.close(); }
 });
 
