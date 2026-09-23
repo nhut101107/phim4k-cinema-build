@@ -79,7 +79,7 @@ jobs:
           app_path="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/App.app"
           test -d "$app_path"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Info.plist")" = "com.phim4k.cinema"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$app_path/Info.plist")" = "4K Cinema"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$app_path/Info.plist")" = "MNHUT Cinema"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_path/Info.plist")" = "3.56"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app_path/Info.plist")" = "56"
           package_dir="$RUNNER_TEMP/phim4k-ipa"
