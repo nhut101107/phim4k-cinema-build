@@ -92,6 +92,32 @@ test('watch progress follows an authenticated license after an approved device r
   } finally { f.sqlite.close(); }
 });
 
+test('allowed devices on the same key share continue-watching progress', async () => {
+  const f = fixture();
+  f.seed('MNHUT-WATCH-MULTI');
+  try {
+    const adminHeaders = {
+      'x-license-key': f.env.ADMIN_LICENSE_KEY,
+      'x-telegram-id': f.env.ADMIN_TELEGRAM_ID,
+    };
+    assert.equal((await f.request('/api/admin/set-max-devices', {
+      method: 'POST',
+      headers: adminHeaders,
+      body: { key: 'MNHUT-WATCH-MULTI', maxDevices: 2 },
+    })).status, 200);
+    assert.equal((await f.request('/api/auth/activate', { method: 'POST', body: { key: 'MNHUT-WATCH-MULTI', deviceId: 'phone-one' } })).status, 200);
+    assert.equal((await f.request('/api/auth/activate', { method: 'POST', body: { key: 'MNHUT-WATCH-MULTI', deviceId: 'phone-two' } })).status, 200);
+
+    const first = { 'x-license-key': 'MNHUT-WATCH-MULTI', 'x-device-id': 'phone-one' };
+    const second = { 'x-license-key': 'MNHUT-WATCH-MULTI', 'x-device-id': 'phone-two' };
+    assert.equal((await f.request('/api/watch-progress', { method: 'POST', headers: first, body: { item: progress } })).status, 202);
+    const resumed = await (await f.request('/api/watch-progress', { headers: second })).json();
+    assert.equal(resumed.items.length, 1);
+    assert.equal(resumed.items[0].slug, progress.slug);
+    assert.equal(resumed.items[0].currentTime, progress.currentTime);
+  } finally { f.sqlite.close(); }
+});
+
 test('watch progress validates input, removes completed items and supports server clear', async () => {
   const f = fixture();
   f.seed('P4K-WATCH-CLEAR');
