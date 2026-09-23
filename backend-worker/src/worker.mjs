@@ -2111,7 +2111,7 @@ function normalizedEpisodeIdentity(value) {
     .trim();
 }
 
-function episodeOrdinalHint(episode) {
+export function episodeOrdinalHint(episode) {
   for (const value of [episode?.slug, episode?.filename, episode?.name]) {
     const text = normalizedEpisodeIdentity(value);
     if (!text) continue;
@@ -2123,7 +2123,7 @@ function episodeOrdinalHint(episode) {
   return null;
 }
 
-function equivalentProviderEpisode(serverEpisodes, episode, episodeIndex) {
+export function equivalentProviderEpisode(serverEpisodes, episode, episodeIndex) {
   const list = Array.isArray(serverEpisodes) ? serverEpisodes : [];
   const identity = [episode?.slug, episode?.name, episode?.filename]
     .map(normalizedEpisodeIdentity)
