@@ -20,6 +20,18 @@
       .filter(Boolean);
   }
 
+  function episodeOrdinal(episode) {
+    for (const value of [episode?.slug, episode?.filename, episode?.name]) {
+      const text = normalise(value);
+      if (!text) continue;
+      const prefixed = text.match(/(?:^|\s)(?:tap|episode|ep|e)\s*0*(\d{1,4})(?:\s|$)/);
+      if (prefixed) return Number(prefixed[1]);
+      const standalone = text.match(/^0*(\d{1,4})$/);
+      if (standalone) return Number(standalone[1]);
+    }
+    return null;
+  }
+
   function findEquivalentEpisode(episodes, currentEpisode, fallbackIndex) {
     const list = Array.isArray(episodes) ? episodes : [];
     if (!list.length) return { episode: null, index: -1 };
@@ -27,6 +39,14 @@
     const currentKeys = new Set(episodeKeys(currentEpisode));
     if (currentKeys.size) {
       const matchedIndex = list.findIndex((episode) => episodeKeys(episode).some((key) => currentKeys.has(key)));
+      if (matchedIndex >= 0) return { episode: list[matchedIndex], index: matchedIndex };
+    }
+
+    // Different providers often call the same episode "Tap 03", "Episode 3",
+    // "EP03", etc. Match the real episode number before trusting list order.
+    const ordinal = episodeOrdinal(currentEpisode);
+    if (ordinal !== null) {
+      const matchedIndex = list.findIndex((episode) => episodeOrdinal(episode) === ordinal);
       if (matchedIndex >= 0) return { episode: list[matchedIndex], index: matchedIndex };
     }
 
@@ -97,6 +117,7 @@
 
   return {
     findEquivalentEpisode,
+    episodeOrdinal,
     uniqueQualityOptions,
     clampResumeTime,
     qualityOption,
