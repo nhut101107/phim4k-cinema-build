@@ -57,7 +57,7 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs 4K-Cinema-Android-3.56.apk | tee "$RUNNER_TEMP/phone-cert.txt"
           grep -qi 'ABAFDA2EAD9478B2540328C98774B4B0A9432014F7B31CBF40FB3EF1F6FECBC8' "$RUNNER_TEMP/phone-cert.txt"
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging 4K-Cinema-Android-3.56.apk | grep "package: name='com.phim4k.cinema'.*versionCode='56'.*versionName='3.56'"
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging 4K-Cinema-Android-3.56.apk | grep "application-label:'4K Cinema'"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging 4K-Cinema-Android-3.56.apk | grep "application-label:'MNHUT Cinema'"
           python3 scripts/package_ios_web_update.py --audit-only 4K-Cinema-Android-3.56.apk
       - name: Enable emulator acceleration
         run: |
