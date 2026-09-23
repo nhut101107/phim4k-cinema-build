@@ -3188,24 +3188,27 @@ async function handleProtectedMovieCatalog(request, env, executionContext) {
   const { pathname } = url;
 
   if (pathname === "/api/movies/home") {
-    const paths = homeCatalogPaths(new Date().getUTCFullYear());
-    const results = await Promise.allSettled(paths.map((path, index) => fetchProtectedCatalogJson(path, env, { ttl: index ? 60 : 15 })));
-    const items = results.flatMap((result) => result.status === "fulfilled" ? normalizedCatalogItems(result.value, env) : []);
-    if (!items.length) return textError("Nguồn danh mục tạm thời không khả dụng.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
-    return json(await protectCatalogImages(HomeCuration.build(items), request, env));
+    const resolved = await fetchEnsMovieStyleHomeCatalog(env);
+    if (!resolved.items.length) return textError("Nguồn danh mục tạm thời không khả dụng.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
+    const payload = HomeCuration.build(resolved.items);
+    payload.sources = resolved.sources;
+    return json(await protectCatalogImages(payload, request, env));
   }
 
   if (pathname === "/api/movies/catalog") {
     const page = catalogPage(url.searchParams.get("page"));
-    const data = await fetchProtectedCatalogJson(`/v1/api/danh-sach/phim-moi-cap-nhat?page=${page}&limit=48&sort_field=modified.time&sort_type=desc`, env, { ttl: page === 1 ? 15 : 120 });
+    const resolved = await fetchEnsMovieStyleCatalog("latest", env, { page });
+    if (!resolved.items.length) return textError("Chưa tải được kho phim từ các nguồn.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
+    const data = resolved.primaryRaw || {};
     const pagination = data.pagination || data.data?.params?.pagination || {
       currentPage: page,
       totalPages: 1,
-      totalItems: catalogItems(data).length,
+      totalItems: resolved.items.length,
     };
     return json({
       title: "Toàn bộ kho phim",
-      items: await protectCatalogImages(normalizedCatalogItems(data, env), request, env),
+      sources: resolved.sources,
+      items: await protectCatalogImages(resolved.items, request, env),
       pagination,
     });
   }
@@ -3230,51 +3233,47 @@ async function handleProtectedMovieCatalog(request, env, executionContext) {
     const category = categoryMatch[1];
     if (!MOVIE_CATALOG_CATEGORIES.has(category)) return textError("Danh mục phim không hợp lệ.", 400, "INVALID_CATEGORY");
     const page = catalogPage(url.searchParams.get("page"));
-    const target = `/v1/api/danh-sach/${category}?page=${page}&limit=48&sort_field=modified.time&sort_type=desc`;
-    const data = await fetchProtectedCatalogJson(target, env);
-    return json({ title: category, items: await protectCatalogImages(normalizedCatalogItems(data, env), request, env), pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1 } });
+    const resolved = await fetchEnsMovieStyleCatalog("category", env, { page, category });
+    if (!resolved.items.length) return textError("Danh mục này chưa tải được từ các nguồn.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
+    const data = resolved.primaryRaw || {};
+    return json({
+      title: category,
+      sources: resolved.sources,
+      items: await protectCatalogImages(resolved.items, request, env),
+      pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1 },
+    });
   }
 
   if (pathname === "/api/movies/search") {
     const query = String(url.searchParams.get("q") || "").trim().slice(0, 100);
     if (!query) return textError("Thiếu từ khóa tìm kiếm.", 400, "MISSING_QUERY");
     const page = catalogPage(url.searchParams.get("page"));
-    const data = await fetchProtectedCatalogJson(`/v1/api/tim-kiem?keyword=${encodeURIComponent(query)}&page=${page}&limit=48`, env);
-    return json({ query, items: await protectCatalogImages(normalizedCatalogItems(data, env), request, env), pagination: data.data?.params?.pagination || { currentPage: page, totalPages: 1 } });
+    const resolved = await fetchEnsMovieStyleCatalog("search", env, { page, query });
+    const data = resolved.primaryRaw || {};
+    return json({
+      query,
+      sources: resolved.sources,
+      items: await protectCatalogImages(resolved.items, request, env),
+      pagination: data.data?.params?.pagination || data.pagination || { currentPage: page, totalPages: 1 },
+    });
   }
 
   const detailMatch = pathname.match(/^\/api\/movies\/detail\/([^/]+)$/);
   if (detailMatch) {
     const slug = catalogSlug(detailMatch[1]);
     if (!slug) return textError("Mã phim không hợp lệ.", 400, "INVALID_MOVIE_SLUG");
-    const primaryPromise = fetchProtectedCatalogJson(`/phim/${slug}`, env, { ttl: 120 }).catch(() => null);
-    const exactBackupPromise = fetchBackupMovieDetail(slug, env);
-    const primary = await primaryPromise;
-    // Render the detail screen as soon as the primary metadata is ready. The
-    // renamed backup is discovered and prewarmed in the background; playback
-    // independently merges it, so the Play button still falls through to it.
-    if (primary) {
-      const eagerBackup = await Promise.race([
-        exactBackupPromise,
-        new Promise((resolve) => setTimeout(() => resolve(null), 250)),
-      ]);
-      if (eagerBackup) {
-        const data = mergeMovieSources(primary, eagerBackup);
-        prewarmBackupStreams(data, slug, executionContext);
-        return json(await protectMovieDetail(data, request, env, slug));
-      }
-      executionContext?.waitUntil?.((async () => {
-        const exactBackup = await exactBackupPromise;
-        const backup = exactBackup || await fetchBackupMovieDetail(slug, env, primary.movie, { skipExact: true });
-        if (backup) prewarmBackupStreams(mergeMovieSources(primary, backup), slug, executionContext);
-      })().catch(() => {}));
-      return json(await protectMovieDetail(primary, request, env, slug));
-    }
-    const backup = await exactBackupPromise;
-    const data = mergeMovieSources(null, backup);
+    const entries = await resolveEnsMovieStyleSources(slug, env);
+    const data = mergeResolvedMovieSources(entries);
     if (!data) return textError("Chưa tải được thông tin phim từ các nguồn.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
     prewarmBackupStreams(data, slug, executionContext);
-    return json(await protectMovieDetail(data, request, env, slug));
+    const output = await protectMovieDetail(data, request, env, slug);
+    output.sources = entries.map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+      servers: Array.isArray(entry.data?.episodes) ? entry.data.episodes.length : 0,
+      episodes: countPlayableEpisodes(entry.data),
+    }));
+    return json(output);
   }
   return textError("Không tìm thấy dữ liệu phim.", 404, "MOVIE_NOT_FOUND");
 }
@@ -3289,15 +3288,8 @@ async function handleMoviePlayback(request, env) {
   if (!slug || !Number.isInteger(serverIndex) || serverIndex < 0 || serverIndex > 50 || !Number.isInteger(episodeIndex) || episodeIndex < 0 || episodeIndex > 5000) {
     return textError("Tham chiếu tập phim không hợp lệ.", 400, "INVALID_STREAM_REFERENCE");
   }
-  const primaryPromise = fetchProtectedCatalogJson(`/phim/${slug}`, env, { ttl: 120 }).catch(() => null);
-  const exactBackupPromise = fetchBackupMovieDetail(slug, env);
-  const primary = await primaryPromise;
-  const aliasBackupPromise = primary
-    ? fetchBackupMovieDetail(slug, env, primary.movie, { skipExact: true })
-    : Promise.resolve(null);
-  const [exactBackup, aliasBackup] = await Promise.all([exactBackupPromise, aliasBackupPromise]);
-  const backup = exactBackup || aliasBackup;
-  const data = mergeMovieSources(primary, backup);
+  const entries = await resolveEnsMovieStyleSources(slug, env);
+  const data = mergeResolvedMovieSources(entries);
   if (!data) return textError("Chưa kết nối được các nguồn phim. Vui lòng thử lại.", 503, "MOVIE_UPSTREAM_UNAVAILABLE");
   const episode = data?.episodes?.[serverIndex]?.server_data?.[episodeIndex];
   const selected = directStreamTarget(episode);
