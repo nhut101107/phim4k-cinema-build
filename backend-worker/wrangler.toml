@@ -2,6 +2,11 @@ name = "phim4k-license-api"
 main = "src/worker-entry.mjs"
 compatibility_date = "2026-09-04"
 
+[vars]
+MOVIE_CATALOG_ORIGIN = "https://phimapi.com"
+MOVIE_OPHIM_ORIGIN = "https://ophim1.com"
+MOVIE_BACKUP_CATALOG_ORIGIN = "https://phim.nguonc.com"
+
 # Create the D1 database after logging in, then replace this placeholder with
 # the ID printed by `wrangler d1 create phim4k-license`.
 [[d1_databases]]

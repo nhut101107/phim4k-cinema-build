@@ -169,6 +169,21 @@ function configuredBackupCatalogOrigin(env) {
   }
 }
 
+function configuredOphimOrigin(env) {
+  // EnsMovie keeps OPhim and PhimAPI as separate gateway candidates. Mirror
+  // that behaviour without depending on EnsMovie's private signed gateway.
+  const raw = String(env?.MOVIE_OPHIM_ORIGIN || "").trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:" || url.username || url.password || url.port || url.search || url.hash) return null;
+    url.pathname = url.pathname === "/" ? "" : url.pathname.replace(/\/+$/, "");
+    return url;
+  } catch (_error) {
+    return null;
+  }
+}
+
 function configuredImageHosts(env) {
   const configured = String(env?.MOVIE_IMAGE_HOSTS || "")
     .split(",")
@@ -176,7 +191,7 @@ function configuredImageHosts(env) {
     .filter((value) => /^[a-z0-9.-]+$/.test(value) && !value.startsWith(".") && !value.endsWith("."));
   // Keep the current CDN plus the legacy hostname during provider migration.
   // Without phimimg.com the catalog succeeds but every protected poster is blank.
-  return new Set([...configured, "phimimg.com", "img.ophim.live"]);
+  return new Set([...configured, "phimimg.com", "img.ophim.live", "phim.nguonc.com"]);
 }
 
 function configuredRelayOrigin(env) {
@@ -2669,7 +2684,245 @@ async function fetchProtectedCatalogJson(path, env, { force = false, ttl = 15 } 
   return payload;
 }
 
-function normalizeBackupMovieDetail(payload) {
+async function fetchJsonFromOrigin(origin, path, { ttl = 30, timeoutMs = 12000 } = {}) {
+  if (!origin || !path.startsWith("/") || path.startsWith("//") || path.includes("\\") || path.includes("#")) return null;
+  try {
+    const response = await fetch(`${origin.href.replace(/\/$/, "")}${path}`, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(timeoutMs),
+      redirect: "manual",
+      cf: { cacheEverything: true, cacheTtl: ttl },
+    });
+    if (!response.ok || !String(response.headers.get("content-type") || "").includes("application/json")) return null;
+    return await response.json();
+  } catch (_error) {
+    return null;
+  }
+}
+
+function absoluteProviderAsset(value, origin, fallbackPath = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const direct = safePublicHttpsUrl(raw);
+  if (direct) return direct.href;
+  if (!origin || /^[a-z][a-z0-9+.-]*:/i.test(raw)) return "";
+  try {
+    return new URL(raw.replace(/^\/+/, ""), fallbackPath ? new URL(fallbackPath, `${origin.origin}/`) : `${origin.origin}/`).href;
+  } catch (_error) {
+    return "";
+  }
+}
+
+function normalizeNguonCListItem(item, origin) {
+  if (!item || typeof item !== "object") return null;
+  const slug = catalogSlug(item.slug);
+  if (!slug) return null;
+  return {
+    _id: String(item.id || item._id || slug),
+    name: cleanProgressText(item.name, 200),
+    slug,
+    origin_name: cleanProgressText(item.original_name || item.origin_name, 200),
+    thumb_url: absoluteProviderAsset(item.thumb_url, origin),
+    poster_url: absoluteProviderAsset(item.poster_url || item.thumb_url, origin),
+    year: Number(item.year || 0) || undefined,
+    quality: cleanProgressText(item.quality, 40),
+    lang: cleanProgressText(item.language || item.lang, 80),
+    time: cleanProgressText(item.time, 80),
+    episode_current: cleanProgressText(item.current_episode || item.episode_current, 80),
+    episode_total: cleanProgressText(item.total_episodes || item.episode_total, 80),
+    modified: typeof item.modified === "object" ? item.modified : { time: item.modified || item.updated_at || "" },
+    _source_candidates: [{ id: "nguonphim", slug, name: "Nguồn Phim" }],
+  };
+}
+
+function sourceCandidateTag(id, name, slug) {
+  const safeSlug = catalogSlug(slug);
+  return safeSlug ? { id, name, slug: safeSlug } : null;
+}
+
+function mergeSourceCandidateTags(...values) {
+  const output = [];
+  const seen = new Set();
+  for (const value of values.flat()) {
+    if (!value || typeof value !== "object") continue;
+    const id = String(value.id || "").trim().toLowerCase();
+    const slug = catalogSlug(value.slug);
+    if (!id || !slug) continue;
+    const key = `${id}|${slug}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    output.push({ id, slug, name: cleanProgressText(value.name, 80) || id });
+  }
+  return output;
+}
+
+function movieListIdentity(item) {
+  const tmdbId = Number(item?.tmdb?.id || item?.tmdb_id || 0);
+  const tmdbType = String(item?.tmdb?.type || item?.type || "").toLowerCase();
+  if (tmdbId > 0) return `tmdb|${tmdbType}|${tmdbId}|${Number(item?.tmdb?.season || 0)}`;
+  const original = normalizedMovieIdentity(item?.origin_name || item?.original_name);
+  const name = normalizedMovieIdentity(item?.name);
+  const year = Number(item?.year || 0) || 0;
+  return `name|${original || name}|${year}`;
+}
+
+function mergeCatalogMovieItems(sourceLists) {
+  const output = [];
+  const byIdentity = new Map();
+  for (const entry of sourceLists) {
+    const sourceId = String(entry?.id || "").trim();
+    const sourceName = String(entry?.name || sourceId).trim();
+    for (const raw of (Array.isArray(entry?.items) ? entry.items : [])) {
+      if (!raw || typeof raw !== "object" || !catalogSlug(raw.slug)) continue;
+      const tagged = {
+        ...raw,
+        _source_candidates: mergeSourceCandidateTags(
+          raw._source_candidates || [],
+          sourceCandidateTag(sourceId, sourceName, raw.slug),
+        ),
+      };
+      const identity = movieListIdentity(tagged);
+      const existingIndex = byIdentity.get(identity);
+      if (existingIndex === undefined) {
+        byIdentity.set(identity, output.length);
+        output.push(tagged);
+        continue;
+      }
+      const existing = output[existingIndex];
+      output[existingIndex] = {
+        ...existing,
+        thumb_url: existing.thumb_url || tagged.thumb_url,
+        poster_url: existing.poster_url || tagged.poster_url,
+        origin_name: existing.origin_name || tagged.origin_name,
+        _source_candidates: mergeSourceCandidateTags(existing._source_candidates || [], tagged._source_candidates || []),
+      };
+    }
+  }
+  return output;
+}
+
+async function fetchOphimMovieBySlug(slug, env) {
+  const origin = configuredOphimOrigin(env);
+  if (!origin || !slug) return null;
+  for (const path of [`/phim/${encodeURIComponent(slug)}`, `/v1/api/phim/${encodeURIComponent(slug)}`]) {
+    const payload = await fetchJsonFromOrigin(origin, path, { ttl: 120, timeoutMs: 12000 });
+    const movie = payload?.movie || payload?.data?.item;
+    if (!movie || typeof movie !== "object") continue;
+    const episodes = Array.isArray(payload?.episodes) ? payload.episodes : (Array.isArray(payload?.data?.episodes) ? payload.data.episodes : []);
+    const imageBaseRaw = payload?.data?.APP_DOMAIN_CDN_IMAGE || payload?.APP_DOMAIN_CDN_IMAGE || "https://img.ophim.live/uploads/movies/";
+    const imageBase = safePublicHttpsUrl(imageBaseRaw);
+    return {
+      ...payload,
+      movie: {
+        ...movie,
+        thumb_url: absoluteProviderAsset(movie.thumb_url, imageBase || origin),
+        poster_url: absoluteProviderAsset(movie.poster_url || movie.thumb_url, imageBase || origin),
+        _source_candidates: mergeSourceCandidateTags(movie._source_candidates || [], sourceCandidateTag("ophim", "OPhim", movie.slug || slug)),
+      },
+      episodes,
+    };
+  }
+  return null;
+}
+
+async function fetchOphimMovieDetail(slug, env, primaryMovie = null) {
+  const exact = await fetchOphimMovieBySlug(slug, env);
+  if (exact) return exact;
+  const origin = configuredOphimOrigin(env);
+  if (!origin || !primaryMovie) return null;
+  const query = String(primaryMovie.origin_name || primaryMovie.name || slug).trim().slice(0, 100);
+  const payload = await fetchJsonFromOrigin(origin, `/v1/api/tim-kiem?keyword=${encodeURIComponent(query)}&page=1&limit=12`, { ttl: 60 });
+  const items = catalogItems(payload);
+  const primarySeason = Number(primaryMovie?.tmdb?.season || 0)
+    || movieSeason(primaryMovie?.slug)
+    || movieSeason(primaryMovie?.origin_name)
+    || movieSeason(primaryMovie?.name);
+  const primaryOriginal = normalizedMovieIdentity(primaryMovie?.origin_name);
+  const primaryName = normalizedMovieIdentity(primaryMovie?.name);
+  const ranked = items.map((item) => {
+    const candidateSeason = movieSeason(item?.slug) || movieSeason(item?.origin_name) || movieSeason(item?.name);
+    if (primarySeason && candidateSeason && primarySeason !== candidateSeason) return { item, score: -1 };
+    const candidateOriginal = normalizedMovieIdentity(item?.origin_name);
+    const candidateName = normalizedMovieIdentity(item?.name);
+    let score = 0;
+    if (primarySeason && candidateSeason === primarySeason) score += 12;
+    if (primaryOriginal && candidateOriginal === primaryOriginal) score += 10;
+    if (primaryName && candidateName === primaryName) score += 8;
+    if (primaryOriginal && candidateOriginal && (primaryOriginal.includes(candidateOriginal) || candidateOriginal.includes(primaryOriginal))) score += 4;
+    if (primaryName && candidateName && (primaryName.includes(candidateName) || candidateName.includes(primaryName))) score += 3;
+    return { item, score };
+  }).filter((candidate) => candidate.score >= 4 && candidate.item?.slug)
+    .sort((left, right) => right.score - left.score);
+  return ranked[0] ? fetchOphimMovieBySlug(ranked[0].item.slug, env) : null;
+}
+
+function countPlayableEpisodes(data) {
+  return (Array.isArray(data?.episodes) ? data.episodes : []).reduce((total, server) => total + (Array.isArray(server?.server_data) ? server.server_data.length : 0), 0);
+}
+
+function sourceDetailScore(entry) {
+  if (!entry?.data?.movie) return -1;
+  const movie = entry.data.movie;
+  const sourceBonus = entry.id === "phimapi" ? 6 : entry.id === "ophim" ? 4 : 2;
+  const metadata = ["name", "origin_name", "poster_url", "thumb_url", "content", "year"].reduce((score, key) => score + (movie[key] ? 1 : 0), 0);
+  return sourceBonus + metadata + Math.min(40, countPlayableEpisodes(entry.data));
+}
+
+function tagMovieSource(data, id, name, requestedSlug) {
+  if (!data?.movie) return null;
+  const movieSlug = catalogSlug(data.movie.slug || requestedSlug) || requestedSlug;
+  return {
+    ...data,
+    movie: {
+      ...data.movie,
+      slug: movieSlug,
+      _source_candidates: mergeSourceCandidateTags(
+        data.movie._source_candidates || [],
+        sourceCandidateTag(id, name, movieSlug),
+      ),
+    },
+    episodes: (Array.isArray(data.episodes) ? data.episodes : []).map((server, index) => ({
+      ...server,
+      _source_id: id,
+      _source_name: name,
+      server_name: cleanProgressText(server?.server_name, 90) || `Server ${index + 1}`,
+    })),
+  };
+}
+
+async function resolveEnsMovieStyleSources(slug, env) {
+  const primaryPromise = fetchProtectedCatalogJson(`/phim/${slug}`, env, { ttl: 120 })
+    .then((data) => tagMovieSource(data, "phimapi", "PhimAPI", slug))
+    .catch(() => null);
+  const ophimPromise = fetchOphimMovieDetail(slug, env).then((data) => tagMovieSource(data, "ophim", "OPhim", slug)).catch(() => null);
+  const nguonExactPromise = fetchBackupMovieDetail(slug, env).then((data) => tagMovieSource(data, "nguonphim", "Nguồn Phim", slug)).catch(() => null);
+
+  let [primary, ophim, nguon] = await Promise.all([primaryPromise, ophimPromise, nguonExactPromise]);
+  const seedMovie = primary?.movie || ophim?.movie || nguon?.movie || null;
+  const fallbacks = [];
+  if (!ophim && seedMovie) fallbacks.push(fetchOphimMovieDetail(slug, env, seedMovie).then((data) => tagMovieSource(data, "ophim", "OPhim", slug)).catch(() => null));
+  if (!nguon && seedMovie) fallbacks.push(fetchBackupMovieDetail(slug, env, seedMovie, { skipExact: true }).then((data) => tagMovieSource(data, "nguonphim", "Nguồn Phim", slug)).catch(() => null));
+  if (fallbacks.length) {
+    const resolved = await Promise.all(fallbacks);
+    for (const item of resolved) {
+      if (!item) continue;
+      const sourceId = item.episodes?.[0]?._source_id;
+      if (sourceId === "ophim") ophim = item;
+      if (sourceId === "nguonphim") nguon = item;
+    }
+  }
+  // Keep server groups in a stable provider order so a stream_ref created by
+  // the detail response still resolves to the same source if another provider
+  // is temporarily slower on the next request. Metadata selection is scored
+  // independently inside mergeResolvedMovieSources.
+  return [
+    { id: "phimapi", name: "PhimAPI", data: primary },
+    { id: "ophim", name: "OPhim", data: ophim },
+    { id: "nguonphim", name: "Nguồn Phim", data: nguon },
+  ].filter((entry) => entry.data?.movie);
+}
+
+function normalizeBackupMovieDetail(payload, origin = null) {
   const movie = payload?.movie && typeof payload.movie === "object" ? payload.movie : null;
   if (!movie) return null;
   const episodes = (Array.isArray(movie.episodes) ? movie.episodes : []).map((server, serverIndex) => ({
@@ -2689,6 +2942,8 @@ function normalizeBackupMovieDetail(payload) {
     }),
   })).filter((server) => server.server_data.length);
   const { episodes: _ignored, ...movieMetadata } = movie;
+  movieMetadata.thumb_url = absoluteProviderAsset(movieMetadata.thumb_url, origin);
+  movieMetadata.poster_url = absoluteProviderAsset(movieMetadata.poster_url || movieMetadata.thumb_url, origin);
   return { movie: movieMetadata, episodes };
 }
 
@@ -2721,7 +2976,7 @@ async function fetchBackupMovieBySlug(origin, slug) {
       cf: { cacheEverything: true, cacheTtl: 60 },
     });
     if (!response.ok || !String(response.headers.get("content-type") || "").includes("application/json")) return null;
-    return normalizeBackupMovieDetail(await response.json());
+    return normalizeBackupMovieDetail(await response.json(), origin);
   } catch (_error) {
     return null;
   }
@@ -2793,21 +3048,54 @@ function prewarmBackupStreams(data, slug, executionContext) {
   })().catch(() => {}));
 }
 
-function mergeMovieSources(primary, backup) {
-  if (!primary && !backup) return null;
-  if (!primary) return backup;
-  if (!backup?.episodes?.length) return primary;
+function mergeResolvedMovieSources(entries) {
+  const available = (Array.isArray(entries) ? entries : []).filter((entry) => entry?.data?.movie);
+  if (!available.length) return null;
+  const primaryEntry = [...available].sort((left, right) => sourceDetailScore(right) - sourceDetailScore(left))[0];
+  const primary = primaryEntry.data;
   const seen = new Set();
   const episodes = [];
-  for (const server of [...(primary.episodes || []), ...(backup.episodes || [])]) {
-    const links = (server?.server_data || []).map((episode) =>
-      directStreamTarget(episode)?.target?.href || streamCEmbedTarget(episode?.link_embed)?.href).filter(Boolean);
-    const key = links.join("|");
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    episodes.push(server);
+  const candidates = [];
+  for (const entry of available) {
+    candidates.push(...(entry.data?.movie?._source_candidates || []));
+    for (const server of (entry.data?.episodes || [])) {
+      const links = (server?.server_data || []).map((episode) =>
+        directStreamTarget(episode)?.target?.href || streamCEmbedTarget(episode?.link_embed)?.href).filter(Boolean);
+      const identity = links.length
+        ? links.join("|")
+        : `${entry.id}|${normalizedMovieIdentity(server?.server_name)}|${(server?.server_data || []).length}`;
+      if (seen.has(identity)) continue;
+      seen.add(identity);
+      const sourceName = cleanProgressText(server?._source_name || entry.name, 40) || "Nguồn";
+      const rawName = cleanProgressText(server?.server_name, 80) || `Server ${episodes.length + 1}`;
+      const decoratedName = rawName.toLowerCase().includes(sourceName.toLowerCase())
+        ? rawName
+        : `[${sourceName}] ${rawName}`;
+      episodes.push({
+        ...server,
+        _source_id: server?._source_id || entry.id,
+        _source_name: sourceName,
+        _source_movie_slug: catalogSlug(entry.data?.movie?.slug) || "",
+        _source_server_name: rawName,
+        server_name: decoratedName,
+      });
+    }
   }
-  return { ...primary, episodes };
+  return {
+    ...primary,
+    movie: {
+      ...primary.movie,
+      _source_candidates: mergeSourceCandidateTags(candidates),
+    },
+    episodes,
+  };
+}
+
+function mergeMovieSources(primary, backup) {
+  const entries = [];
+  if (primary) entries.push({ id: "phimapi", name: "PhimAPI", data: tagMovieSource(primary, "phimapi", "PhimAPI", primary?.movie?.slug || "") });
+  if (backup) entries.push({ id: "nguonphim", name: "Nguồn Phim", data: tagMovieSource(backup, "nguonphim", "Nguồn Phim", backup?.movie?.slug || "") });
+  return mergeResolvedMovieSources(entries);
 }
 
 async function protectImageValue(value, request, env, expiresAt, extra = {}) {
@@ -2842,16 +3130,110 @@ async function protectMovieDetail(data, request, env, slug) {
   const output = await protectCatalogImages(resolved, request, env);
   if (output?.movie && typeof output.movie === "object") delete output.movie.trailer_url;
   const servers = Array.isArray(output?.episodes) ? output.episodes : [];
-  output.episodes = servers.map((server, serverIndex) => ({
-    server_name: cleanProgressText(server?.server_name, 100) || `Server ${serverIndex + 1}`,
-    server_data: (Array.isArray(server?.server_data) ? server.server_data : []).map((episode, episodeIndex) => ({
-      name: cleanProgressText(episode?.name, 120) || `Tập ${episodeIndex + 1}`,
-      slug: cleanProgressText(episode?.slug, 160),
-      filename: cleanProgressText(episode?.filename, 160),
-      stream_ref: { movie: slug, server: serverIndex, episode: episodeIndex },
-    })),
-  }));
+  output.episodes = servers.map((server, serverIndex) => {
+    const sourceId = cleanProgressText(server?._source_id, 40).toLowerCase();
+    const sourceMovieSlug = catalogSlug(server?._source_movie_slug) || slug;
+    const sourceServerName = cleanProgressText(server?._source_server_name || server?.server_name, 100) || `Server ${serverIndex + 1}`;
+    return {
+      server_name: cleanProgressText(server?.server_name, 100) || `Server ${serverIndex + 1}`,
+      source_id: sourceId,
+      source_name: cleanProgressText(server?._source_name, 80),
+      server_data: (Array.isArray(server?.server_data) ? server.server_data : []).map((episode, episodeIndex) => ({
+        name: cleanProgressText(episode?.name, 120) || `Tập ${episodeIndex + 1}`,
+        slug: cleanProgressText(episode?.slug, 160),
+        filename: cleanProgressText(episode?.filename, 160),
+        stream_ref: {
+          movie: slug,
+          server: serverIndex,
+          episode: episodeIndex,
+          source: sourceId,
+          sourceMovieSlug,
+          serverName: sourceServerName,
+          episodeSlug: cleanProgressText(episode?.slug, 160),
+          episodeName: cleanProgressText(episode?.name, 120),
+          episodeNumber: episodeOrdinalHint(episode),
+        },
+      })),
+    };
+  });
   return output;
+}
+
+async function fetchEnsMovieStyleCatalog(mode, env, { page = 1, query = "", category = "" } = {}) {
+  const sourceRequests = [];
+  const primaryPath = mode === "search"
+    ? `/v1/api/tim-kiem?keyword=${encodeURIComponent(query)}&page=${page}&limit=48`
+    : mode === "category"
+      ? `/v1/api/danh-sach/${category}?page=${page}&limit=48&sort_field=modified.time&sort_type=desc`
+      : `/v1/api/danh-sach/phim-moi-cap-nhat?page=${page}&limit=48&sort_field=modified.time&sort_type=desc`;
+
+  sourceRequests.push(fetchProtectedCatalogJson(primaryPath, env, { ttl: page === 1 ? 15 : 120 })
+    .then((data) => ({ id: "phimapi", name: "PhimAPI", items: normalizedCatalogItems(data, env), raw: data }))
+    .catch(() => null));
+
+  const ophimOrigin = configuredOphimOrigin(env);
+  if (ophimOrigin) {
+    sourceRequests.push(fetchJsonFromOrigin(ophimOrigin, primaryPath, { ttl: page === 1 ? 15 : 120 })
+      .then((data) => data ? ({ id: "ophim", name: "OPhim", items: normalizedCatalogItems(data, env), raw: data }) : null)
+      .catch(() => null));
+  }
+
+  const nguonOrigin = env?.MOVIE_BACKUP_CATALOG_ORIGIN ? configuredBackupCatalogOrigin(env) : null;
+  if (nguonOrigin) {
+    const nguonPath = mode === "search"
+      ? `/api/films/search?keyword=${encodeURIComponent(query)}&page=${page}`
+      : mode === "category"
+        ? `/api/films/danh-sach/${category}?page=${page}`
+        : `/api/films/phim-moi-cap-nhat?page=${page}`;
+    sourceRequests.push(fetchJsonFromOrigin(nguonOrigin, nguonPath, { ttl: page === 1 ? 15 : 120 })
+      .then((data) => data ? ({
+        id: "nguonphim",
+        name: "Nguồn Phim",
+        items: (Array.isArray(data?.items) ? data.items : []).map((item) => normalizeNguonCListItem(item, nguonOrigin)).filter(Boolean),
+        raw: data,
+      }) : null)
+      .catch(() => null));
+  }
+
+  const settled = (await Promise.all(sourceRequests)).filter(Boolean);
+  return {
+    sources: settled.map((entry) => ({ id: entry.id, name: entry.name, count: entry.items.length })),
+    items: mergeCatalogMovieItems(settled),
+    primaryRaw: settled.find((entry) => entry.id === "phimapi")?.raw || settled[0]?.raw || null,
+  };
+}
+
+async function fetchEnsMovieStyleHomeCatalog(env) {
+  const primaryPaths = homeCatalogPaths(new Date().getUTCFullYear());
+  const primaryResults = await Promise.allSettled(
+    primaryPaths.map((path, index) => fetchProtectedCatalogJson(path, env, { ttl: index ? 60 : 15 })),
+  );
+  const sourceEntries = [{
+    id: "phimapi",
+    name: "PhimAPI",
+    items: primaryResults.flatMap((result) => result.status === "fulfilled" ? normalizedCatalogItems(result.value, env) : []),
+  }];
+
+  const ophimOrigin = configuredOphimOrigin(env);
+  if (ophimOrigin) {
+    const data = await fetchJsonFromOrigin(ophimOrigin, "/v1/api/danh-sach/phim-moi-cap-nhat?page=1&limit=48&sort_field=modified.time&sort_type=desc", { ttl: 15 });
+    if (data) sourceEntries.push({ id: "ophim", name: "OPhim", items: normalizedCatalogItems(data, env) });
+  }
+
+  const nguonOrigin = env?.MOVIE_BACKUP_CATALOG_ORIGIN ? configuredBackupCatalogOrigin(env) : null;
+  if (nguonOrigin) {
+    const data = await fetchJsonFromOrigin(nguonOrigin, "/api/films/phim-moi-cap-nhat?page=1", { ttl: 15 });
+    if (data) sourceEntries.push({
+      id: "nguonphim",
+      name: "Nguồn Phim",
+      items: (Array.isArray(data?.items) ? data.items : []).map((item) => normalizeNguonCListItem(item, nguonOrigin)).filter(Boolean),
+    });
+  }
+
+  return {
+    sources: sourceEntries.map((entry) => ({ id: entry.id, name: entry.name, count: entry.items.length })),
+    items: mergeCatalogMovieItems(sourceEntries),
+  };
 }
 
 async function handleProtectedMovieCatalog(request, env, executionContext) {
@@ -2861,24 +3243,27 @@ async function handleProtectedMovieCatalog(request, env, executionContext) {
   const { pathname } = url;
 
   if (pathname === "/api/movies/home") {
-    const paths = homeCatalogPaths(new Date().getUTCFullYear());
-    const results = await Promise.allSettled(paths.map((path, index) => fetchProtectedCatalogJson(path, env, { ttl: index ? 60 : 15 })));
-    const items = results.flatMap((result) => result.status === "fulfilled" ? normalizedCatalogItems(result.value, env) : []);
-    if (!items.length) return textError("Nguồn danh mục tạm thời không khả dụng.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
-    return json(await protectCatalogImages(HomeCuration.build(items), request, env));
+    const resolved = await fetchEnsMovieStyleHomeCatalog(env);
+    if (!resolved.items.length) return textError("Nguồn danh mục tạm thời không khả dụng.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
+    const payload = HomeCuration.build(resolved.items);
+    payload.sources = resolved.sources;
+    return json(await protectCatalogImages(payload, request, env));
   }
 
   if (pathname === "/api/movies/catalog") {
     const page = catalogPage(url.searchParams.get("page"));
-    const data = await fetchProtectedCatalogJson(`/v1/api/danh-sach/phim-moi-cap-nhat?page=${page}&limit=48&sort_field=modified.time&sort_type=desc`, env, { ttl: page === 1 ? 15 : 120 });
+    const resolved = await fetchEnsMovieStyleCatalog("latest", env, { page });
+    if (!resolved.items.length) return textError("Chưa tải được kho phim từ các nguồn.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
+    const data = resolved.primaryRaw || {};
     const pagination = data.pagination || data.data?.params?.pagination || {
       currentPage: page,
       totalPages: 1,
-      totalItems: catalogItems(data).length,
+      totalItems: resolved.items.length,
     };
     return json({
       title: "Toàn bộ kho phim",
-      items: await protectCatalogImages(normalizedCatalogItems(data, env), request, env),
+      sources: resolved.sources,
+      items: await protectCatalogImages(resolved.items, request, env),
       pagination,
     });
   }
@@ -2903,51 +3288,47 @@ async function handleProtectedMovieCatalog(request, env, executionContext) {
     const category = categoryMatch[1];
     if (!MOVIE_CATALOG_CATEGORIES.has(category)) return textError("Danh mục phim không hợp lệ.", 400, "INVALID_CATEGORY");
     const page = catalogPage(url.searchParams.get("page"));
-    const target = `/v1/api/danh-sach/${category}?page=${page}&limit=48&sort_field=modified.time&sort_type=desc`;
-    const data = await fetchProtectedCatalogJson(target, env);
-    return json({ title: category, items: await protectCatalogImages(normalizedCatalogItems(data, env), request, env), pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1 } });
+    const resolved = await fetchEnsMovieStyleCatalog("category", env, { page, category });
+    if (!resolved.items.length) return textError("Danh mục này chưa tải được từ các nguồn.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
+    const data = resolved.primaryRaw || {};
+    return json({
+      title: category,
+      sources: resolved.sources,
+      items: await protectCatalogImages(resolved.items, request, env),
+      pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1 },
+    });
   }
 
   if (pathname === "/api/movies/search") {
     const query = String(url.searchParams.get("q") || "").trim().slice(0, 100);
     if (!query) return textError("Thiếu từ khóa tìm kiếm.", 400, "MISSING_QUERY");
     const page = catalogPage(url.searchParams.get("page"));
-    const data = await fetchProtectedCatalogJson(`/v1/api/tim-kiem?keyword=${encodeURIComponent(query)}&page=${page}&limit=48`, env);
-    return json({ query, items: await protectCatalogImages(normalizedCatalogItems(data, env), request, env), pagination: data.data?.params?.pagination || { currentPage: page, totalPages: 1 } });
+    const resolved = await fetchEnsMovieStyleCatalog("search", env, { page, query });
+    const data = resolved.primaryRaw || {};
+    return json({
+      query,
+      sources: resolved.sources,
+      items: await protectCatalogImages(resolved.items, request, env),
+      pagination: data.data?.params?.pagination || data.pagination || { currentPage: page, totalPages: 1 },
+    });
   }
 
   const detailMatch = pathname.match(/^\/api\/movies\/detail\/([^/]+)$/);
   if (detailMatch) {
     const slug = catalogSlug(detailMatch[1]);
     if (!slug) return textError("Mã phim không hợp lệ.", 400, "INVALID_MOVIE_SLUG");
-    const primaryPromise = fetchProtectedCatalogJson(`/phim/${slug}`, env, { ttl: 120 }).catch(() => null);
-    const exactBackupPromise = fetchBackupMovieDetail(slug, env);
-    const primary = await primaryPromise;
-    // Render the detail screen as soon as the primary metadata is ready. The
-    // renamed backup is discovered and prewarmed in the background; playback
-    // independently merges it, so the Play button still falls through to it.
-    if (primary) {
-      const eagerBackup = await Promise.race([
-        exactBackupPromise,
-        new Promise((resolve) => setTimeout(() => resolve(null), 250)),
-      ]);
-      if (eagerBackup) {
-        const data = mergeMovieSources(primary, eagerBackup);
-        prewarmBackupStreams(data, slug, executionContext);
-        return json(await protectMovieDetail(data, request, env, slug));
-      }
-      executionContext?.waitUntil?.((async () => {
-        const exactBackup = await exactBackupPromise;
-        const backup = exactBackup || await fetchBackupMovieDetail(slug, env, primary.movie, { skipExact: true });
-        if (backup) prewarmBackupStreams(mergeMovieSources(primary, backup), slug, executionContext);
-      })().catch(() => {}));
-      return json(await protectMovieDetail(primary, request, env, slug));
-    }
-    const backup = await exactBackupPromise;
-    const data = mergeMovieSources(null, backup);
+    const entries = await resolveEnsMovieStyleSources(slug, env);
+    const data = mergeResolvedMovieSources(entries);
     if (!data) return textError("Chưa tải được thông tin phim từ các nguồn.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
     prewarmBackupStreams(data, slug, executionContext);
-    return json(await protectMovieDetail(data, request, env, slug));
+    const output = await protectMovieDetail(data, request, env, slug);
+    output.sources = entries.map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+      servers: Array.isArray(entry.data?.episodes) ? entry.data.episodes.length : 0,
+      episodes: countPlayableEpisodes(entry.data),
+    }));
+    return json(output);
   }
   return textError("Không tìm thấy dữ liệu phim.", 404, "MOVIE_NOT_FOUND");
 }
@@ -2962,19 +3343,59 @@ async function handleMoviePlayback(request, env) {
   if (!slug || !Number.isInteger(serverIndex) || serverIndex < 0 || serverIndex > 50 || !Number.isInteger(episodeIndex) || episodeIndex < 0 || episodeIndex > 5000) {
     return textError("Tham chiếu tập phim không hợp lệ.", 400, "INVALID_STREAM_REFERENCE");
   }
-  const primaryPromise = fetchProtectedCatalogJson(`/phim/${slug}`, env, { ttl: 120 }).catch(() => null);
-  const exactBackupPromise = fetchBackupMovieDetail(slug, env);
-  const primary = await primaryPromise;
-  const aliasBackupPromise = primary
-    ? fetchBackupMovieDetail(slug, env, primary.movie, { skipExact: true })
-    : Promise.resolve(null);
-  const [exactBackup, aliasBackup] = await Promise.all([exactBackupPromise, aliasBackupPromise]);
-  const backup = exactBackup || aliasBackup;
-  const data = mergeMovieSources(primary, backup);
+  const entries = await resolveEnsMovieStyleSources(slug, env);
+  const data = mergeResolvedMovieSources(entries);
   if (!data) return textError("Chưa kết nối được các nguồn phim. Vui lòng thử lại.", 503, "MOVIE_UPSTREAM_UNAVAILABLE");
-  const episode = data?.episodes?.[serverIndex]?.server_data?.[episodeIndex];
+
+  // Mirror EnsMovie's resolveEpisodePlayback contract: source gateway, source
+  // movie slug, server name and episode identity are authoritative. Numeric
+  // indexes remain only as a backwards-compatible fallback.
+  const requestedSource = String(body?.source || "").trim().toLowerCase();
+  const requestedSourceMovieSlug = catalogSlug(body?.sourceMovieSlug);
+  const requestedServerName = normalizedMovieIdentity(body?.serverName);
+  const requestedEpisode = {
+    slug: cleanProgressText(body?.episodeSlug, 160),
+    name: cleanProgressText(body?.episodeName, 120),
+    filename: cleanProgressText(body?.episodeFilename, 160),
+  };
+  const requestedEpisodeNumber = Number.isInteger(Number(body?.episodeNumber))
+    ? Number(body.episodeNumber)
+    : episodeOrdinalHint(requestedEpisode);
+
+  let resolvedServerIndex = serverIndex;
+  if (requestedSource) {
+    const sourceMatches = (data.episodes || []).map((server, index) => ({ server, index }))
+      .filter(({ server }) => String(server?._source_id || "").toLowerCase() === requestedSource);
+    if (sourceMatches.length) {
+      const ranked = sourceMatches.map((candidate) => {
+        let score = 0;
+        if (requestedSourceMovieSlug && catalogSlug(candidate.server?._source_movie_slug) === requestedSourceMovieSlug) score += 12;
+        const candidateServerName = normalizedMovieIdentity(candidate.server?._source_server_name || candidate.server?.server_name);
+        if (requestedServerName && candidateServerName === requestedServerName) score += 10;
+        else if (requestedServerName && candidateServerName && (candidateServerName.includes(requestedServerName) || requestedServerName.includes(candidateServerName))) score += 4;
+        return { ...candidate, score };
+      }).sort((left, right) => right.score - left.score || left.index - right.index);
+      resolvedServerIndex = ranked[0].index;
+    }
+  }
+
+  const resolvedServer = data?.episodes?.[resolvedServerIndex];
+  const serverEpisodes = Array.isArray(resolvedServer?.server_data) ? resolvedServer.server_data : [];
+  let resolvedEpisodeIndex = episodeIndex;
+  if (serverEpisodes.length) {
+    const equivalent = equivalentProviderEpisode(serverEpisodes, requestedEpisode, episodeIndex);
+    const equivalentIndex = equivalent ? serverEpisodes.indexOf(equivalent) : -1;
+    if (equivalentIndex >= 0) resolvedEpisodeIndex = equivalentIndex;
+    if (requestedEpisodeNumber !== null && requestedEpisodeNumber !== undefined) {
+      const numberedIndex = serverEpisodes.findIndex((item) => episodeOrdinalHint(item) === requestedEpisodeNumber);
+      if (numberedIndex >= 0) resolvedEpisodeIndex = numberedIndex;
+    }
+  }
+
+  const episode = serverEpisodes[resolvedEpisodeIndex] || data?.episodes?.[serverIndex]?.server_data?.[episodeIndex];
+  if (!episode) return textError("Không tìm thấy đúng tập phim trên các nguồn hiện tại.", 404, "EPISODE_NOT_FOUND");
   const selected = directStreamTarget(episode);
-  const candidates = equivalentStreamTargets(data, episode, episodeIndex);
+  const candidates = equivalentStreamTargets(data, episode, resolvedEpisodeIndex);
   if (!candidates.length) {
     await recordMovieAvailability(env, slug, "offline", "NO_DIRECT_STREAM");
     return textError("Server này không có luồng phát trực tiếp tương thích.", 404, "STREAM_NOT_AVAILABLE");
