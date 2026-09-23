@@ -3026,21 +3026,51 @@ function prewarmBackupStreams(data, slug, executionContext) {
   })().catch(() => {}));
 }
 
-function mergeMovieSources(primary, backup) {
-  if (!primary && !backup) return null;
-  if (!primary) return backup;
-  if (!backup?.episodes?.length) return primary;
+function mergeResolvedMovieSources(entries) {
+  const available = (Array.isArray(entries) ? entries : []).filter((entry) => entry?.data?.movie);
+  if (!available.length) return null;
+  const primary = available[0].data;
   const seen = new Set();
   const episodes = [];
-  for (const server of [...(primary.episodes || []), ...(backup.episodes || [])]) {
-    const links = (server?.server_data || []).map((episode) =>
-      directStreamTarget(episode)?.target?.href || streamCEmbedTarget(episode?.link_embed)?.href).filter(Boolean);
-    const key = links.join("|");
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    episodes.push(server);
+  const candidates = [];
+  for (const entry of available) {
+    candidates.push(...(entry.data?.movie?._source_candidates || []));
+    for (const server of (entry.data?.episodes || [])) {
+      const links = (server?.server_data || []).map((episode) =>
+        directStreamTarget(episode)?.target?.href || streamCEmbedTarget(episode?.link_embed)?.href).filter(Boolean);
+      const identity = links.length
+        ? links.join("|")
+        : `${entry.id}|${normalizedMovieIdentity(server?.server_name)}|${(server?.server_data || []).length}`;
+      if (seen.has(identity)) continue;
+      seen.add(identity);
+      const sourceName = cleanProgressText(server?._source_name || entry.name, 40) || "Nguồn";
+      const rawName = cleanProgressText(server?.server_name, 80) || `Server ${episodes.length + 1}`;
+      const decoratedName = rawName.toLowerCase().includes(sourceName.toLowerCase())
+        ? rawName
+        : `[${sourceName}] ${rawName}`;
+      episodes.push({
+        ...server,
+        _source_id: server?._source_id || entry.id,
+        _source_name: sourceName,
+        server_name: decoratedName,
+      });
+    }
   }
-  return { ...primary, episodes };
+  return {
+    ...primary,
+    movie: {
+      ...primary.movie,
+      _source_candidates: mergeSourceCandidateTags(candidates),
+    },
+    episodes,
+  };
+}
+
+function mergeMovieSources(primary, backup) {
+  const entries = [];
+  if (primary) entries.push({ id: "phimapi", name: "PhimAPI", data: tagMovieSource(primary, "phimapi", "PhimAPI", primary?.movie?.slug || "") });
+  if (backup) entries.push({ id: "nguonphim", name: "Nguồn Phim", data: tagMovieSource(backup, "nguonphim", "Nguồn Phim", backup?.movie?.slug || "") });
+  return mergeResolvedMovieSources(entries);
 }
 
 async function protectImageValue(value, request, env, expiresAt, extra = {}) {
