@@ -833,6 +833,8 @@ async function authorizeSessionRecord(session, env) {
     keyHint: maskedValue(record.license_key),
     expiresAt: record.expires_at || null,
     licenseKey: record.license_key,
+    maxDevices: deviceState.maxDevices,
+    deviceCount: deviceState.deviceCount,
   };
 }
 
@@ -1397,6 +1399,8 @@ function sessionClientPayload(identity, tokens = {}) {
     plan: identity.plan || "STANDARD",
     keyHint: identity.keyHint || "",
     expiresAt: identity.expiresAt || null,
+    maxDevices: Number(identity.maxDevices || 0) || undefined,
+    deviceCount: Number(identity.deviceCount || 0) || undefined,
     ...tokens,
   };
 }
