@@ -1,0 +1,26 @@
+name: Test MNHUT activation gate
+
+on:
+  push:
+    branches: [mnhut-modern-key-gate]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Verify modified frontend syntax
+        run: |
+          node --check public/js/auth.js
+          node --check public/js/app.js
+      - name: Run full regression suite
+        run: npm test
