@@ -651,21 +651,21 @@ async function ensureMultiDeviceSchema(db) {
   if (!db || typeof db !== "object" || multiDeviceSchemaReady.has(db)) return;
   await db.prepare(
     "CREATE TABLE IF NOT EXISTS license_limits (license_key TEXT PRIMARY KEY, max_devices INTEGER NOT NULL DEFAULT 1 CHECK(max_devices BETWEEN 1 AND 20), updated_at TEXT NOT NULL, FOREIGN KEY (license_key) REFERENCES license_keys(license_key) ON DELETE CASCADE)",
-  ).bind().bind().run();
+  ).bind().run();
   await db.prepare(
     "CREATE TABLE IF NOT EXISTS license_devices (license_key TEXT NOT NULL, device_id TEXT NOT NULL, slot INTEGER NOT NULL, created_at TEXT NOT NULL, last_seen_at TEXT NOT NULL, approved_by TEXT, PRIMARY KEY (license_key, device_id), UNIQUE (license_key, slot), FOREIGN KEY (license_key) REFERENCES license_keys(license_key) ON DELETE CASCADE)",
-  ).bind().bind().run();
-  await db.prepare("CREATE INDEX IF NOT EXISTS idx_license_devices_device ON license_devices(device_id)").bind().bind().run();
+  ).bind().run();
+  await db.prepare("CREATE INDEX IF NOT EXISTS idx_license_devices_device ON license_devices(device_id)").bind().run();
   await db.prepare(
     "INSERT OR IGNORE INTO license_limits (license_key, max_devices, updated_at) SELECT license_key, 1, updated_at FROM license_keys",
-  ).bind().bind().run();
+  ).bind().run();
   await db.prepare(
     "INSERT OR IGNORE INTO license_devices (license_key, device_id, slot, created_at, last_seen_at, approved_by) SELECT license_key, device_id, 1, created_at, updated_at, 'legacy' FROM license_keys WHERE device_id IS NOT NULL AND TRIM(device_id) <> ''",
-  ).bind().bind().run();
-  await db.prepare("DROP INDEX IF EXISTS idx_auth_sessions_active_user").bind().bind().run();
+  ).bind().run();
+  await db.prepare("DROP INDEX IF EXISTS idx_auth_sessions_active_user").bind().run();
   await db.prepare(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_sessions_active_user_device ON auth_sessions(license_key, device_id) WHERE role = 'user' AND revoked_at IS NULL",
-  ).bind().bind().run();
+  ).bind().run();
   multiDeviceSchemaReady.add(db);
 }
 
@@ -727,7 +727,7 @@ async function removeLicenseDevice(db, key, deviceId) {
   const cleanDeviceId = normalizeDeviceId(deviceId);
   if (!cleanDeviceId) return;
   const timestamp = now();
-  await db.prepare("DELETE FROM license_devices WHERE license_key = ? AND device_id = ?").bind(key, cleanDeviceId).bind().run();
+  await db.prepare("DELETE FROM license_devices WHERE license_key = ? AND device_id = ?").bind(key, cleanDeviceId).run();
   await db.prepare("UPDATE auth_sessions SET revoked_at = ?, updated_at = ? WHERE license_key = ? AND device_id = ? AND revoked_at IS NULL")
     .bind(timestamp, timestamp, key, cleanDeviceId).run();
   const replacement = await queryOne(db, "SELECT device_id FROM license_devices WHERE license_key = ? ORDER BY slot ASC LIMIT 1", key);
