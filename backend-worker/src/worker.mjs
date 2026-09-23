@@ -1682,26 +1682,40 @@ async function createKey(request, env) {
   if (missing) return missing;
   const body = await parseBody(request);
   const key = normalizeKey(body.key);
-  const durationDays = numericDays(body.durationDays);
+  const requestedDurationDays = Number.parseInt(String(body.durationDays ?? ""), 10);
+  const isLifetime = requestedDurationDays === 0;
+  const durationDays = isLifetime ? 0 : numericDays(requestedDurationDays);
   const assignedTelegramId = normalizeId(body.assignedTelegramId);
+  const maxDevices = Number.parseInt(String(body.maxDevices || "1"), 10);
   if (!validKey(key)) return textError("Key phải gồm chữ in hoa, số hoặc dấu gạch ngang.", 400, "INVALID_KEY_FORMAT");
-  if (!durationDays) return textError("Thời hạn key phải từ 1 đến 3650 ngày.", 400, "INVALID_DURATION");
+  if (!isLifetime && !durationDays) return textError("Thời hạn key phải từ 1 đến 3650 ngày hoặc 0 để dùng vĩnh viễn.", 400, "INVALID_DURATION");
+  if (!Number.isInteger(maxDevices) || maxDevices < 1 || maxDevices > 20) return textError("Giới hạn thiết bị phải từ 1 đến 20.", 400, "INVALID_DEVICE_LIMIT");
   if (assignedTelegramId && !validTelegramId(assignedTelegramId)) return textError("Telegram ID is invalid.", 400, "INVALID_TELEGRAM_ID");
   const createdAt = now();
   try {
     await ensureMultiDeviceSchema(env.DB);
-    const maxDevices = Math.min(20, Math.max(1, Number.parseInt(String(body.maxDevices || "1"), 10) || 1));
     await env.DB.prepare(
       "INSERT INTO license_keys (license_key, plan, expires_at, active, assigned_telegram_id, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?, ?)",
-    ).bind(key, String(body.plan || "STANDARD").trim().slice(0, 64) || "STANDARD", plusDays(null, durationDays), assignedTelegramId, createdAt, createdAt).run();
+    ).bind(
+      key,
+      String(body.plan || "STANDARD").trim().slice(0, 64) || "STANDARD",
+      isLifetime ? null : plusDays(null, durationDays),
+      assignedTelegramId,
+      createdAt,
+      createdAt,
+    ).run();
     await env.DB.prepare(
       "INSERT OR REPLACE INTO license_limits (license_key, max_devices, updated_at) VALUES (?, ?, ?)",
     ).bind(key, maxDevices, createdAt).run();
   } catch (_error) {
     return textError("Key đã tồn tại.", 409, "KEY_ALREADY_EXISTS");
   }
-  await logEvent(env.DB, "key_created", { actorTelegramId: requestTelegram(request), targetKey: key, detail: `days=${durationDays}` });
-  return json({ success: true, message: "Đã tạo key mới.", key }, 201);
+  await logEvent(env.DB, "key_created", {
+    actorTelegramId: requestTelegram(request),
+    targetKey: key,
+    detail: `days=${isLifetime ? "lifetime" : durationDays} maxDevices=${maxDevices}`,
+  });
+  return json({ success: true, message: `Đã tạo key · tối đa ${maxDevices} thiết bị.`, key, maxDevices }, 201);
 }
 
 async function updateKey(request, env, operation) {
