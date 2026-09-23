@@ -3313,9 +3313,56 @@ async function handleMoviePlayback(request, env) {
   const entries = await resolveEnsMovieStyleSources(slug, env);
   const data = mergeResolvedMovieSources(entries);
   if (!data) return textError("Chưa kết nối được các nguồn phim. Vui lòng thử lại.", 503, "MOVIE_UPSTREAM_UNAVAILABLE");
-  const episode = data?.episodes?.[serverIndex]?.server_data?.[episodeIndex];
+
+  // Mirror EnsMovie's resolveEpisodePlayback contract: source gateway, source
+  // movie slug, server name and episode identity are authoritative. Numeric
+  // indexes remain only as a backwards-compatible fallback.
+  const requestedSource = String(body?.source || "").trim().toLowerCase();
+  const requestedSourceMovieSlug = catalogSlug(body?.sourceMovieSlug);
+  const requestedServerName = normalizedMovieIdentity(body?.serverName);
+  const requestedEpisode = {
+    slug: cleanProgressText(body?.episodeSlug, 160),
+    name: cleanProgressText(body?.episodeName, 120),
+    filename: cleanProgressText(body?.episodeFilename, 160),
+  };
+  const requestedEpisodeNumber = Number.isInteger(Number(body?.episodeNumber))
+    ? Number(body.episodeNumber)
+    : episodeOrdinalHint(requestedEpisode);
+
+  let resolvedServerIndex = serverIndex;
+  if (requestedSource) {
+    const sourceMatches = (data.episodes || []).map((server, index) => ({ server, index }))
+      .filter(({ server }) => String(server?._source_id || "").toLowerCase() === requestedSource);
+    if (sourceMatches.length) {
+      const ranked = sourceMatches.map((candidate) => {
+        let score = 0;
+        if (requestedSourceMovieSlug && catalogSlug(candidate.server?._source_movie_slug) === requestedSourceMovieSlug) score += 12;
+        const candidateServerName = normalizedMovieIdentity(candidate.server?._source_server_name || candidate.server?.server_name);
+        if (requestedServerName && candidateServerName === requestedServerName) score += 10;
+        else if (requestedServerName && candidateServerName && (candidateServerName.includes(requestedServerName) || requestedServerName.includes(candidateServerName))) score += 4;
+        return { ...candidate, score };
+      }).sort((left, right) => right.score - left.score || left.index - right.index);
+      resolvedServerIndex = ranked[0].index;
+    }
+  }
+
+  const resolvedServer = data?.episodes?.[resolvedServerIndex];
+  const serverEpisodes = Array.isArray(resolvedServer?.server_data) ? resolvedServer.server_data : [];
+  let resolvedEpisodeIndex = episodeIndex;
+  if (serverEpisodes.length) {
+    const equivalent = equivalentProviderEpisode(serverEpisodes, requestedEpisode, episodeIndex);
+    const equivalentIndex = equivalent ? serverEpisodes.indexOf(equivalent) : -1;
+    if (equivalentIndex >= 0) resolvedEpisodeIndex = equivalentIndex;
+    if (requestedEpisodeNumber !== null && requestedEpisodeNumber !== undefined) {
+      const numberedIndex = serverEpisodes.findIndex((item) => episodeOrdinalHint(item) === requestedEpisodeNumber);
+      if (numberedIndex >= 0) resolvedEpisodeIndex = numberedIndex;
+    }
+  }
+
+  const episode = serverEpisodes[resolvedEpisodeIndex] || data?.episodes?.[serverIndex]?.server_data?.[episodeIndex];
+  if (!episode) return textError("Không tìm thấy đúng tập phim trên các nguồn hiện tại.", 404, "EPISODE_NOT_FOUND");
   const selected = directStreamTarget(episode);
-  const candidates = equivalentStreamTargets(data, episode, episodeIndex);
+  const candidates = equivalentStreamTargets(data, episode, resolvedEpisodeIndex);
   if (!candidates.length) {
     await recordMovieAvailability(env, slug, "offline", "NO_DIRECT_STREAM");
     return textError("Server này không có luồng phát trực tiếp tương thích.", 404, "STREAM_NOT_AVAILABLE");
