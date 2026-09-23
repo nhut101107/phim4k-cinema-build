@@ -3,7 +3,7 @@
   "productName": "4K Cinema",
   "extraMetadata": { "main": "desktop/main.cjs", "version": "3.56.0", "dependencies": {} },
   "directories": { "output": "builds/windows-3.56" },
-  "compression": "normal",
+  "compression": "maximum",
   "files": [
     "desktop/**",
     { "from": "dist-ios", "to": "public", "filter": ["**/*"] },
