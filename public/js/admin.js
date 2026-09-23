@@ -355,10 +355,17 @@ const Admin = {
         statusBadge = '<span class="badge-status status-expired">Hết hạn</span>';
       }
 
-      let deviceBadge = '<span class="badge-device-unbound">Chưa gán</span>';
-      if (k.boundDeviceId) {
-        const shortId = k.boundDeviceId.substring(0, 8);
-        deviceBadge = `<span class="badge-device-bound" title="Device: ${k.boundDeviceId}">🔒 ${shortId}...</span>`;
+      const devices = Array.isArray(k.devices) ? k.devices : [];
+      const maxDevices = Math.max(1, Number(k.maxDevices || 1));
+      const deviceCount = Number(k.deviceCount ?? devices.length);
+      let deviceBadge = `<div class="device-capacity"><strong>${deviceCount}/${maxDevices} máy</strong><small>Chưa có thiết bị</small></div>`;
+      if (devices.length) {
+        const chips = devices.slice(0, 6).map((device) => {
+          const id = String(device.deviceId || '');
+          const shortId = id.length > 12 ? `${id.slice(0, 7)}…${id.slice(-4)}` : id;
+          return `<span class="device-chip" title="${id}"><span>${shortId}</span><button type="button" class="device-chip-remove" onclick="Admin.removeDevice('${k.key}','${id}')" title="Gỡ thiết bị này">×</button></span>`;
+        }).join('');
+        deviceBadge = `<div class="device-capacity"><strong>${deviceCount}/${maxDevices} máy</strong><div class="device-chip-list">${chips}</div></div>`;
       }
 
       let teleBadge = '<span class="badge-tele-unbound">Chưa kích hoạt</span>';
@@ -386,7 +393,8 @@ const Admin = {
             ${!isMasterKey ? `
               <button class="btn-action-mini btn-time" onclick="Admin.openEditExpiryModal('${k.key}', '${k.expiresAt || ''}')" title="Chỉnh sửa ngày giờ hết hạn hoặc chuyển VIP vĩnh viễn">🕒 Sửa Hạn</button>
               <button class="btn-action-mini btn-renew" onclick="Admin.promptRenew('${k.key}')" title="Gia hạn thêm ngày">➕ Hạn</button>
-              ${k.boundDeviceId ? `<button class="btn-action-mini btn-reset" onclick="Admin.resetDevice('${k.key}')" title="Gỡ thiết bị để khách đổi máy mới">🔓 Đổi Máy</button>` : ''}
+              <button class="btn-action-mini btn-time" onclick="Admin.promptSetMaxDevices('${k.key}', ${maxDevices}, ${deviceCount})" title="Đặt số thiết bị được phép dùng key">👥 ${maxDevices} máy</button>
+              ${deviceCount > 0 ? `<button class="btn-action-mini btn-reset" onclick="Admin.resetDevice('${k.key}')" title="Gỡ toàn bộ thiết bị khỏi key">🔓 Gỡ Máy</button>` : ''}
               <button class="btn-action-mini btn-reset-tele" onclick="Admin.promptResetTelegram('${k.key}')" title="Đổi / Gỡ Telegram ID">✈️ Tele</button>
               <button class="btn-action-mini ${k.active ? 'btn-lock' : 'btn-unlock'}" onclick="Admin.toggleKey('${k.key}')">
                 ${k.active ? '🔒 Khóa' : '✔ Mở'}
@@ -407,12 +415,14 @@ const Admin = {
     const teleInput = document.getElementById('newKeyTelegram');
     const durationInput = document.getElementById('newKeyDuration');
     const planInput = document.getElementById('newKeyPlan');
+    const maxDevicesInput = document.getElementById('newKeyMaxDevices');
     const alertEl = document.getElementById('adminFormAlert');
 
     const key = keyInput.value.trim();
     const assignedTelegramId = teleInput ? teleInput.value.trim() : '';
     const durationDays = parseInt(durationInput.value, 10);
     const plan = planInput.value.trim();
+    const maxDevices = Math.min(20, Math.max(1, parseInt(maxDevicesInput?.value || '1', 10) || 1));
 
     if (!key) return;
 
@@ -420,7 +430,7 @@ const Admin = {
       const res = await fetch('/api/admin/create-key', {
         method: 'POST',
         headers: this.getAdminHeaders(),
-        body: JSON.stringify({ key, plan, durationDays, assignedTelegramId })
+        body: JSON.stringify({ key, plan, durationDays, assignedTelegramId, maxDevices })
       });
 
       const data = await res.json();
@@ -480,6 +490,45 @@ const Admin = {
       if (!res.ok) throw new Error(data.error || 'Lỗi reset');
       alert(`✔ ${data.message}`);
       this.loadKeys();
+    } catch (err) {
+      alert(`❌ ${err.message}`);
+    }
+  },
+
+  async promptSetMaxDevices(key, current = 1, deviceCount = 0) {
+    const value = prompt(`Key [${key}] hiện có ${deviceCount} thiết bị. Cho phép tối đa bao nhiêu máy? (1–20)`, String(current || 1));
+    if (value === null) return;
+    const maxDevices = parseInt(value, 10);
+    if (!Number.isInteger(maxDevices) || maxDevices < 1 || maxDevices > 20) {
+      alert('Giới hạn thiết bị phải từ 1 đến 20.');
+      return;
+    }
+    try {
+      const res = await fetch('/api/admin/set-max-devices', {
+        method: 'POST',
+        headers: this.getAdminHeaders(),
+        body: JSON.stringify({ key, maxDevices })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || data.error || 'Không cập nhật được giới hạn thiết bị');
+      alert(`✔ ${data.message}`);
+      await this.loadKeys();
+    } catch (err) {
+      alert(`❌ ${err.message}`);
+    }
+  },
+
+  async removeDevice(key, deviceId) {
+    if (!confirm(`Gỡ thiết bị [${deviceId}] khỏi key [${key}]?\nPhiên trên máy đó sẽ bị đăng xuất ngay.`)) return;
+    try {
+      const res = await fetch('/api/admin/remove-device', {
+        method: 'POST',
+        headers: this.getAdminHeaders(),
+        body: JSON.stringify({ key, deviceId })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || data.error || 'Không gỡ được thiết bị');
+      await Promise.all([this.loadKeys(), this.loadDeviceRequests()]);
     } catch (err) {
       alert(`❌ ${err.message}`);
     }
