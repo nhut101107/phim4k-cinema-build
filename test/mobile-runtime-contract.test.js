@@ -12,7 +12,7 @@ test('native runtime has an HTTPS API base and a bundled catalog fallback', () =
   assert.match(config, /apiBaseUrl:\s*"https:\/\//);
   assert.ok(index.indexOf('/js/catalog-fallback.js') < index.indexOf('/js/api.js'));
   assert.match(fallback, /PHIM4K_CATALOG_FALLBACK/);
-  assert.match(index, /<title>4K Cinema<\/title>/);
+  assert.match(index, /<title>MNHUT Cinema<\/title>/);
   assert.match(index, /Content-Security-Policy/);
 });
 
