@@ -23,5 +23,5 @@ jobs:
           node --check public/js/player.js
           node --check public/js/player-core.js
           node --check backend-worker/src/worker.mjs
-      - name: Run player and Worker regression tests
-        run: node --test test/player-core.test.js test/player-contract.test.js backend-worker/test/worker.test.mjs
+      - name: Run full application and Worker regression suite
+        run: npm test
