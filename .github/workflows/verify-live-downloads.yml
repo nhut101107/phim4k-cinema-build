@@ -19,10 +19,10 @@ jobs:
           import json, time, urllib.parse, urllib.request, urllib.error
           origin='https://phim4k-license-api.phim4k-pwdbhdz.workers.dev'
           releases={
-            'android':('1cIKz4nVb1ODD5TFqRx_yxc6bn02QB8pS',3963712,'a3ddcdc054405ce0316fdde84e6db968d71326bf278327587d4146dd165b1143'),
-            'android_tv':('132cxRcOetx_AsOm6m9vgDFoVJCZOwWhs',3963712,'b448a995be8e6c94cdb984621f233f743f086fc224d5992f77a18c671f77ee09'),
-            'ios':('14AOZdrCewKFU2Rn52oySmgXNqQiWzNW_',4418972,'dd70c5f01555825b795926fbc52f96c308856b7ca5e5536537ce3d7c2821a21f'),
-            'windows':('1Dc4UbCSsNl1gnOrqvWjWSB0ZpUN1CFrC',120965208,'3d1ce8e2f5a85e6680bb2850752049448c102345a6046d38f2fff5b7ff384557'),
+            'android':('1cIKz4nVb1ODD5TFqRx_yxc6bn02QB8pS',3967808,'78e0a673bf61f61bb78d5971e3a3c6986bd199fedacc89a5f24c5aded5f56325'),
+            'android_tv':('132cxRcOetx_AsOm6m9vgDFoVJCZOwWhs',3967808,'5d8335f77144aebbaf882992351b7a059857a932e781c335d0375769dcf148a8'),
+            'ios':('14AOZdrCewKFU2Rn52oySmgXNqQiWzNW_',4424082,'94959219094d568eb8722db148fceac88f66d1c297a1f6d562f579ca51ab99c0'),
+            'windows':('github-release',120969742,'ec1fc094ca880b412b175db973187cb37af4f71100a15e3c1463b8fc159c0e84'),
           }
           def get(path):
             for attempt in range(4):
@@ -44,8 +44,12 @@ jobs:
           for platform,(file_id,size,sha) in releases.items():
             entry=manifest[platform]
             url=urllib.parse.urlsplit(entry['url'])
-            assert url.hostname=='drive.usercontent.google.com',(platform,url.hostname)
-            assert urllib.parse.parse_qs(url.query).get('id')==[file_id],platform
+            if platform == 'windows':
+              assert url.hostname=='github.com',(platform,url.hostname)
+              assert url.path.endswith('/4K-Cinema-Windows-3.56-x64.exe'),url.path
+            else:
+              assert url.hostname=='drive.usercontent.google.com',(platform,url.hostname)
+              assert urllib.parse.parse_qs(url.query).get('id')==[file_id],platform
             assert entry['version']=='3.56',platform
             assert entry['sha256']==sha,platform
             assert entry['sizeBytes']==size,platform
