@@ -169,6 +169,20 @@ function configuredBackupCatalogOrigin(env) {
   }
 }
 
+function configuredOphimOrigin(env) {
+  // EnsMovie keeps OPhim and PhimAPI as separate gateway candidates. Mirror
+  // that behaviour without depending on EnsMovie's private signed gateway.
+  const raw = String(env?.MOVIE_OPHIM_ORIGIN || "https://ophim1.com").trim();
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:" || url.username || url.password || url.port || url.search || url.hash) return null;
+    url.pathname = url.pathname === "/" ? "" : url.pathname.replace(/\/+$/, "");
+    return url;
+  } catch (_error) {
+    return null;
+  }
+}
+
 function configuredImageHosts(env) {
   const configured = String(env?.MOVIE_IMAGE_HOSTS || "")
     .split(",")
@@ -176,7 +190,7 @@ function configuredImageHosts(env) {
     .filter((value) => /^[a-z0-9.-]+$/.test(value) && !value.startsWith(".") && !value.endsWith("."));
   // Keep the current CDN plus the legacy hostname during provider migration.
   // Without phimimg.com the catalog succeeds but every protected poster is blank.
-  return new Set([...configured, "phimimg.com", "img.ophim.live"]);
+  return new Set([...configured, "phimimg.com", "img.ophim.live", "phim.nguonc.com"]);
 }
 
 function configuredRelayOrigin(env) {
