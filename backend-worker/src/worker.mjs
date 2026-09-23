@@ -1822,7 +1822,7 @@ async function listUsers(request, env) {
   const [rows, deviceRows, limitRows] = await Promise.all([
     env.DB.prepare(
       "SELECT license_keys.*, bans.telegram_id AS banned_telegram_id, bans.reason AS ban_reason FROM license_keys LEFT JOIN bans ON bans.telegram_id = COALESCE(license_keys.activated_telegram_id, license_keys.assigned_telegram_id) ORDER BY license_keys.updated_at DESC",
-    ).all(),
+    ).bind().all(),
     env.DB.prepare("SELECT license_key, device_id, slot, last_seen_at FROM license_devices ORDER BY license_key, slot").bind().all(),
     env.DB.prepare("SELECT license_key, max_devices FROM license_limits").bind().all(),
   ]);
