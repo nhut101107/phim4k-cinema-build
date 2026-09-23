@@ -181,7 +181,7 @@ const Admin = {
     let p1 = '', p2 = '';
     for (let i = 0; i < 4; i++) p1 += chars.charAt(Math.floor(Math.random() * chars.length));
     for (let i = 0; i < 4; i++) p2 += chars.charAt(Math.floor(Math.random() * chars.length));
-    const generated = `P4K-${p1}-${p2}`;
+    const generated = `MNHUT-${p1}-${p2}`;
     document.getElementById('newKeyInput').value = generated;
   },
 
@@ -478,7 +478,7 @@ const Admin = {
   },
 
   async resetDevice(key) {
-    if (!confirm(`Bạn có muốn xóa thiết bị đã khóa cho key [${key}] không?\nKhách hàng sẽ có thể đăng nhập trên máy mới.`)) return;
+    if (!confirm(`Gỡ toàn bộ thiết bị khỏi key [${key}]?\nTất cả phiên đang dùng key này sẽ bị đăng xuất.`)) return;
 
     try {
       const res = await fetch('/api/admin/reset-device', {
