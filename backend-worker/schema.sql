@@ -16,6 +16,27 @@ CREATE TABLE IF NOT EXISTS license_keys (
 CREATE INDEX IF NOT EXISTS idx_license_telegram ON license_keys(activated_telegram_id);
 CREATE INDEX IF NOT EXISTS idx_license_device ON license_keys(device_id);
 
+CREATE TABLE IF NOT EXISTS license_limits (
+  license_key TEXT PRIMARY KEY,
+  max_devices INTEGER NOT NULL DEFAULT 1 CHECK(max_devices BETWEEN 1 AND 20),
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (license_key) REFERENCES license_keys(license_key) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS license_devices (
+  license_key TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  slot INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL,
+  approved_by TEXT,
+  PRIMARY KEY (license_key, device_id),
+  UNIQUE (license_key, slot),
+  FOREIGN KEY (license_key) REFERENCES license_keys(license_key) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_license_devices_device ON license_devices(device_id);
+
 CREATE TABLE IF NOT EXISTS auth_sessions (
   session_id TEXT PRIMARY KEY,
   family_id TEXT NOT NULL,
@@ -39,8 +60,9 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_family ON auth_sessions(family_id);
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_license ON auth_sessions(license_key, revoked_at);
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_device ON auth_sessions(device_id, revoked_at);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_sessions_active_user
-  ON auth_sessions(license_key) WHERE role = 'user' AND revoked_at IS NULL;
+DROP INDEX IF EXISTS idx_auth_sessions_active_user;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_sessions_active_user_device
+  ON auth_sessions(license_key, device_id) WHERE role = 'user' AND revoked_at IS NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_sessions_active_role_device
   ON auth_sessions(role, device_id) WHERE role IN ('admin', 'guest') AND revoked_at IS NULL;
 
