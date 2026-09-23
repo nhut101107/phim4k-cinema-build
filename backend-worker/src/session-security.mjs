@@ -1,5 +1,7 @@
 const ACCESS_TTL_SECONDS = 15 * 60;
-const REFRESH_TTL_SECONDS = 30 * 24 * 60 * 60;
+// Device-bound refresh sessions persist while the license remains valid.
+// Every refresh is still tied to the non-extractable device key and server-side license state.
+const REFRESH_TTL_SECONDS = 10 * 365 * 24 * 60 * 60;
 const PROOF_CLOCK_SKEW_SECONDS = 90;
 
 const encoder = new TextEncoder();
@@ -125,8 +127,10 @@ export async function issueSession({ db, role, licenseKey = "", telegramId = "",
   const accessExpiresAt = iso(timestampMs + ACCESS_TTL_SECONDS * 1000);
   const refreshExpiresAt = iso(timestampMs + REFRESH_TTL_SECONDS * 1000);
 
-  const selector = role === "user" ? "license_key = ?" : "role = ? AND device_id = ?";
-  const selectorValues = role === "user" ? [licenseKey] : [role, deviceId];
+  // Viewer sessions are unique per license + device. Activating a second
+  // permitted device must not kick the first permitted device offline.
+  const selector = role === "user" ? "license_key = ? AND device_id = ?" : "role = ? AND device_id = ?";
+  const selectorValues = role === "user" ? [licenseKey, deviceId] : [role, deviceId];
   const revokePrevious = () => db.prepare(
     `UPDATE auth_sessions SET revoked_at = ?, updated_at = ? WHERE revoked_at IS NULL AND ${selector}`,
   ).bind(createdAt, createdAt, ...selectorValues).run();
