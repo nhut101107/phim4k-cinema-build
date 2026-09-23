@@ -111,8 +111,8 @@ test('web, iOS and Windows release versions stay aligned', () => {
   assert.equal(desktop.nsis.createStartMenuShortcut, true);
   assert.equal(desktop.nsis.deleteAppDataOnUninstall, false);
   assert.match(read('../desktop/main.cjs'), /setPath\('userData',[\s\S]*?'Phim4K Cinema'/);
-  assert.match(read('../ios/App/App/Info.plist'), /<key>CFBundleDisplayName<\/key>\s*<string>4K Cinema<\/string>/);
-  assert.match(read('../android/app/src/main/res/values/strings.xml'), /<string name="app_name">4K Cinema<\/string>/);
+  assert.match(read('../ios/App/App/Info.plist'), /<key>CFBundleDisplayName<\/key>\s*<string>MNHUT Cinema<\/string>/);
+  assert.match(read('../android/app/src/main/res/values/strings.xml'), /<string name="app_name">MNHUT Cinema<\/string>/);
 });
 
 test('Android phone and TV are separate optimized release flavors', () => {
@@ -161,14 +161,14 @@ test('Android CI builds, signs and device-tests the correct flavor', () => {
   assert.match(phoneWorkflow, /connectedPhoneDebugAndroidTest/);
   assert.match(phoneWorkflow, /package: name='com\.phim4k\.cinema'/);
   assert.match(phoneWorkflow, /4K-Cinema-Android-3\.56\.apk/);
-  assert.match(phoneWorkflow, /application-label:'4K Cinema'/);
+  assert.match(phoneWorkflow, /application-label:'MNHUT Cinema'/);
   assert.match(phoneWorkflow, /apksigner" verify/);
   assert.match(phoneWorkflow, /ABAFDA2EAD9478B2540328C98774B4B0A9432014F7B31CBF40FB3EF1F6FECBC8/);
   assert.match(tvWorkflow, /assembleTvRelease/);
   assert.match(tvWorkflow, /connectedTvDebugAndroidTest/);
   assert.match(tvWorkflow, /package: name='com\.phim4k\.cinema\.tv'/);
   assert.match(tvWorkflow, /4K-Cinema-Android-TV-3\.56\.apk/);
-  assert.match(tvWorkflow, /application-label:'4K Cinema'/);
+  assert.match(tvWorkflow, /application-label:'MNHUT Cinema'/);
   assert.match(tvWorkflow, /ABAFDA2EAD9478B2540328C98774B4B0A9432014F7B31CBF40FB3EF1F6FECBC8/);
 });
 
