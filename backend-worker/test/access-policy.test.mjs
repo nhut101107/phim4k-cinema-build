@@ -98,6 +98,34 @@ test('key-only activation atomically binds one device and rejects concurrent sec
   } finally {f.sqlite.close();}
 });
 
+test('admin can choose how many devices a key may use and remove one device independently',async()=>{
+  const f=fixture(); f.seed('MNHUT-MULTI-DEVICE');
+  try {
+    const limit=await f.request('/api/admin/set-max-devices',{key:'MNHUT-MULTI-DEVICE',maxDevices:2},f.admin);
+    assert.equal(limit.status,200);
+
+    assert.equal((await f.request('/api/auth/activate',{key:'MNHUT-MULTI-DEVICE',deviceId:'phone-a'})).status,200);
+    assert.equal((await f.request('/api/auth/activate',{key:'MNHUT-MULTI-DEVICE',deviceId:'phone-b'})).status,200);
+
+    const blocked=await f.request('/api/auth/activate',{key:'MNHUT-MULTI-DEVICE',deviceId:'phone-c'});
+    assert.equal(blocked.status,403);
+    assert.equal((await blocked.json()).code,'DEVICE_LIMIT_REACHED');
+
+    const keys=await (await f.request('/api/admin/keys',undefined,f.admin)).json();
+    const key=keys.keys.find(item=>item.key==='MNHUT-MULTI-DEVICE');
+    assert.equal(key.maxDevices,2);
+    assert.equal(key.deviceCount,2);
+    assert.deepEqual(key.devices.map(item=>item.deviceId).sort(),['phone-a','phone-b']);
+
+    const removed=await f.request('/api/admin/remove-device',{key:'MNHUT-MULTI-DEVICE',deviceId:'phone-a'},f.admin);
+    assert.equal(removed.status,200);
+    assert.equal((await f.request('/api/auth/status',undefined,{'x-license-key':'MNHUT-MULTI-DEVICE','x-device-id':'phone-a'})).status,403);
+    assert.equal((await f.request('/api/auth/status',undefined,{'x-license-key':'MNHUT-MULTI-DEVICE','x-device-id':'phone-b'})).status,200);
+
+    assert.equal((await f.request('/api/auth/activate',{key:'MNHUT-MULTI-DEVICE',deviceId:'phone-c'})).status,200);
+  } finally {f.sqlite.close();}
+});
+
 test('admin lists, bans and unbans a key-only user without Telegram ID',async()=>{
   const f=fixture(); f.seed('P4K-KEY-ONLY-USER');
   try {
