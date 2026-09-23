@@ -69,7 +69,17 @@ test('catalog detail strips raw media links and playback uses encrypted Worker c
     const serializedDetail = JSON.stringify(detailJson);
     assert.doesNotMatch(serializedDetail, /video\.example|embed\.example|link_m3u8|link_embed/i);
     assert.match(detailJson.movie.poster_url, /^https:\/\/example\.workers\.dev\/api\/media\/image\?t=/);
-    assert.deepEqual(detailJson.episodes[0].server_data[0].stream_ref, { movie: 'phim-kiem-thu', server: 0, episode: 0 });
+    assert.deepEqual(detailJson.episodes[0].server_data[0].stream_ref, {
+      movie: 'phim-kiem-thu',
+      server: 0,
+      episode: 0,
+      source: 'phimapi',
+      sourceMovieSlug: 'phim-kiem-thu',
+      serverName: 'Server A',
+      episodeSlug: 'tap-1',
+      episodeName: 'Tập 1',
+      episodeNumber: 1,
+    });
 
     const playback = await worker.fetch(viewerRequest('/api/movies/play', {
       method: 'POST',
