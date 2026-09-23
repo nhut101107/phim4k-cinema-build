@@ -138,6 +138,10 @@ const Auth = {
     if (adminBtn) adminBtn.classList.add('hidden');
 
     const msgEl = document.getElementById('gateMessage');
+    const keyInput = document.getElementById('keyInput');
+    if (keyInput && !errorMessage) {
+      window.setTimeout(() => keyInput.focus(), 80);
+    }
     if (errorMessage) {
       msgEl.textContent = errorMessage;
       msgEl.className = 'gate-message error';
@@ -210,7 +214,7 @@ const Auth = {
     const deviceRequestButton = document.getElementById('btnRequestDeviceAccess');
     if (deviceRequestButton) {
       deviceRequestButton.disabled = false;
-      deviceRequestButton.textContent = 'Báo Admin duyệt thiết bị này';
+      deviceRequestButton.textContent = 'Gửi yêu cầu Admin';
     }
     
     // License/admin keys are deliberately absent after activation. Only the
@@ -226,7 +230,7 @@ const Auth = {
     gate.classList.add('hidden');
     document.getElementById('maintenanceNotice')?.classList.add('hidden');
     const buttonText = document.querySelector('#btnActivate .btn-text');
-    if (buttonText) buttonText.textContent = 'XÁC THỰC VÀ VÀO XEM PHIM';
+    if (buttonText) buttonText.textContent = 'Kích hoạt';
     document.getElementById('appContainer').classList.remove('hidden');
 
     // VIP Plan display
@@ -349,8 +353,12 @@ async function handleActivation(e) {
   }
 
   btn.disabled = true;
+  btn.classList.add('is-loading');
+  const buttonText = btn.querySelector('.btn-text');
+  if (buttonText) buttonText.textContent = 'Đang xác thực…';
   spinner.classList.remove('hidden');
   msgEl.classList.add('hidden');
+  document.getElementById('btnRequestDeviceAccess')?.classList.add('hidden');
 
   try {
     const deviceId = Auth.getDeviceId();
@@ -361,7 +369,7 @@ async function handleActivation(e) {
     }
     if (res.success && res.active && res.accessToken && res.refreshToken) {
       await SessionVault.save(res);
-      msgEl.textContent = `✔ Xác thực thành công! ${Auth.formatExpiry(res.expiresAt)}. Đang vào ứng dụng...`;
+      msgEl.textContent = `Đã xác thực và lưu phiên trên thiết bị này. ${Auth.formatExpiry(res.expiresAt)}.`;
       msgEl.className = 'gate-message success';
       msgEl.classList.remove('hidden');
       
@@ -377,11 +385,20 @@ async function handleActivation(e) {
         return;
       }
       const adminIdentityRequired = String(res.code || '').includes('TELEGRAM');
+      const deviceNeedsAdmin = ['DEVICE_LIMIT_REACHED', 'DEVICE_MISMATCH'].includes(String(res.code || ''));
       if (adminIdentityRequired) {
         const adminFields = document.getElementById('adminLoginFields');
         if (adminFields) adminFields.open = true;
         msgEl.textContent = activationFailureMessage(res);
         teleInput?.focus();
+      } else if (deviceNeedsAdmin) {
+        const requestButton = document.getElementById('btnRequestDeviceAccess');
+        if (requestButton) {
+          requestButton.classList.remove('hidden');
+          requestButton.disabled = false;
+          requestButton.textContent = 'Gửi yêu cầu Admin';
+        }
+        msgEl.textContent = res.message || 'Thiết bị này chưa nằm trong danh sách được phép của key.';
       } else {
         msgEl.textContent = activationFailureMessage(res);
       }
@@ -394,6 +411,9 @@ async function handleActivation(e) {
     msgEl.classList.remove('hidden');
   } finally {
     btn.disabled = false;
+    btn.classList.remove('is-loading');
+    const buttonText = btn.querySelector('.btn-text');
+    if (buttonText) buttonText.textContent = 'Kích hoạt';
     spinner.classList.add('hidden');
   }
 }
@@ -425,7 +445,7 @@ async function requestDeviceOnlyAccess() {
     msgEl.className = 'gate-message error';
     msgEl.classList.remove('hidden');
     button.disabled = false;
-    button.textContent = 'Báo Admin duyệt thiết bị này';
+    button.textContent = 'Gửi yêu cầu Admin';
   }
 }
 
@@ -478,7 +498,7 @@ async function beginDeviceApprovalPolling(key) {
         }
         if (button) {
           button.disabled = false;
-          button.textContent = 'Báo Admin duyệt thiết bị này';
+          button.textContent = 'Gửi yêu cầu Admin';
         }
         return;
       }
