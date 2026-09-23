@@ -1033,6 +1033,156 @@ body.activation-locked {
   }
 }
 
+
+/* Compact MNHUT signature: visible, but never louder than the key form. */
+.license-brand {
+  gap: 10px;
+}
+
+.mnhut-mark {
+  width: 42px;
+  height: 42px;
+  padding: 0 7px;
+  border-radius: 13px;
+}
+
+.mnhut-mark span {
+  font-size: 16px;
+}
+
+.license-wordmark {
+  font-size: 14px;
+  letter-spacing: .14em;
+}
+
+.license-edition {
+  font-size: 8px;
+  letter-spacing: .11em;
+}
+
+.license-hero-copy {
+  padding: 42px 0 28px;
+}
+
+.license-hero-copy h1 {
+  max-width: 430px;
+  margin: 11px 0 12px;
+  font-size: clamp(30px, 4.1vw, 46px);
+  letter-spacing: -.045em;
+}
+
+.license-hero-copy p {
+  max-width: 430px;
+  font-size: 13px;
+  line-height: 1.62;
+}
+
+.license-mini-status {
+  width: fit-content;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin: 0 0 30px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255,255,255,.065);
+  border-radius: 999px;
+  background: rgba(255,255,255,.028);
+  color: #788295;
+  font-size: 9px;
+  font-weight: 720;
+  letter-spacing: .035em;
+}
+
+.license-mini-status .signal-dot {
+  width: 7px;
+  height: 7px;
+  box-shadow: 0 0 0 4px rgba(102,227,180,.07), 0 0 18px rgba(102,227,180,.24);
+}
+
+.license-mini-status i {
+  width: 1px;
+  height: 12px;
+  background: rgba(255,255,255,.09);
+}
+
+.license-entry-head {
+  margin-bottom: 27px;
+}
+
+.license-entry h2 {
+  margin-top: 8px;
+  font-size: clamp(26px, 3vw, 34px);
+}
+
+.gate-card .license-activate-btn {
+  min-height: 54px;
+  border-radius: 14px;
+}
+
+@media (max-width: 860px) {
+  .license-visual {
+    min-height: 220px;
+  }
+
+  .license-hero-copy {
+    padding: 30px 0 20px;
+  }
+
+  .license-mini-status {
+    margin-bottom: 0;
+  }
+}
+
+@media (max-width: 520px) {
+  .license-visual {
+    min-height: 178px;
+    padding: max(20px, env(safe-area-inset-top)) 20px 20px;
+  }
+
+  .license-hero-copy {
+    padding: 22px 0 0;
+  }
+
+  .license-hero-copy h1 {
+    margin: 8px 0;
+    font-size: 27px;
+  }
+
+  .license-hero-copy p {
+    max-width: 320px;
+    font-size: 11.5px;
+  }
+
+  .license-mini-status,
+  .license-visual-footer {
+    display: none;
+  }
+
+  .license-entry {
+    padding: 25px 20px max(25px, env(safe-area-inset-bottom));
+  }
+
+  .license-entry-head {
+    margin-bottom: 22px;
+  }
+
+  .mnhut-mark {
+    width: 36px;
+    height: 36px;
+    border-radius: 11px;
+  }
+
+  .mnhut-mark span {
+    font-size: 13px;
+  }
+
+  .license-wordmark {
+    font-size: 12px;
+  }
+}
+
 /* ================================================= */
 /* 2. NAVBAR                                         */
 /* ================================================= */
