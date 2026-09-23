@@ -30,7 +30,7 @@ test('activation gate does not prefill a cached Telegram identity', () => {
   assert.doesNotMatch(api, /Không thể xác thực key hoặc Telegram ID/);
   assert.match(index, /media\/phim4k-avatar\.png/);
   assert.match(index, /class="account-avatar"[^>]*phim4k-avatar\.png/);
-  assert.match(index, /class="account-default-name">4K Cinema</);
+  assert.match(index, /class="account-default-name">MNHUT Cinema</);
   assert.doesNotMatch(auth, /function setPersistentCookie/);
 });
 
@@ -103,8 +103,8 @@ test('web, iOS and Windows release versions stay aligned', () => {
   assert.equal(desktop.extraMetadata.version, `${webVersion}.0`);
   assert.deepEqual([...iosProject.matchAll(/MARKETING_VERSION = ([^;]+);/g)].map((match) => match[1]), [webVersion, webVersion]);
   assert.deepEqual([...iosProject.matchAll(/CURRENT_PROJECT_VERSION = ([^;]+);/g)].map((match) => match[1]), ['56', '56']);
-  assert.equal(JSON.parse(read('../capacitor.config.json')).appName, '4K Cinema');
-  assert.equal(desktop.productName, '4K Cinema');
+  assert.equal(JSON.parse(read('../capacitor.config.json')).appName, 'MNHUT Cinema');
+  assert.equal(desktop.productName, 'MNHUT Cinema');
   assert.equal(desktop.win.artifactName, '4K-Cinema-Windows-3.56-x64.exe');
   assert.equal(desktop.win.target[0].target, 'nsis');
   assert.equal(desktop.nsis.createDesktopShortcut, true);
@@ -177,7 +177,7 @@ test('iOS entry point cache-busts every bundled script and stylesheet', () => {
   const localAssets = [...html.matchAll(/(?:src|href)="\/(?:js|css|vendor)\/[^"?]+(?:\?[^" ]+)?"/g)].map(match => match[0]);
   assert.ok(localAssets.length >= 20);
   assert.ok(localAssets.every(asset => asset.includes('?v=3.56')), localAssets.join('\n'));
-  assert.match(html, /4K Cinema 3\.56[^<]*BẢN ĐỒNG BỘ ĐA THIẾT BỊ/);
+  assert.match(html, /MNHUT Cinema 3\.56[^<]*BẢN ĐỒNG BỘ ĐA THIẾT BỊ/);
 });
 
 test('movie modal is scrollable and sized for a phone viewport', () => {
@@ -381,7 +381,7 @@ test('iOS workflow audits the completed IPA before uploading it', () => {
   const audit = workflow.indexOf('package_ios_web_update.py --audit-only');
   const upload = workflow.indexOf('actions/upload-artifact@');
   assert.ok(audit >= 0 && upload > audit);
-  assert.match(workflow, /CFBundleDisplayName[^\n]*"4K Cinema"/);
+  assert.match(workflow, /CFBundleDisplayName[^\n]*"MNHUT Cinema"/);
   assert.match(workflow, /4K-Cinema-iOS-3\.56-unsigned\.ipa/);
 });
 
