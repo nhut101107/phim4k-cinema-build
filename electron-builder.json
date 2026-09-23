@@ -1,6 +1,6 @@
 {
   "appId": "com.phim4k.cinema.desktop",
-  "productName": "4K Cinema",
+  "productName": "MNHUT Cinema",
   "extraMetadata": { "main": "desktop/main.cjs", "version": "3.56.0", "dependencies": {} },
   "directories": { "output": "builds/windows-3.56" },
   "compression": "normal",
@@ -25,7 +25,7 @@
     "allowToChangeInstallationDirectory": true,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "4K Cinema",
+    "shortcutName": "MNHUT Cinema",
     "deleteAppDataOnUninstall": false
   }
 }
