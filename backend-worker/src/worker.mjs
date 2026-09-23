@@ -2683,6 +2683,225 @@ async function fetchProtectedCatalogJson(path, env, { force = false, ttl = 15 } 
   return payload;
 }
 
+async function fetchJsonFromOrigin(origin, path, { ttl = 30, timeoutMs = 12000 } = {}) {
+  if (!origin || !path.startsWith("/") || path.startsWith("//") || path.includes("\\") || path.includes("#")) return null;
+  try {
+    const response = await fetch(`${origin.href.replace(/\/$/, "")}${path}`, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(timeoutMs),
+      redirect: "manual",
+      cf: { cacheEverything: true, cacheTtl: ttl },
+    });
+    if (!response.ok || !String(response.headers.get("content-type") || "").includes("application/json")) return null;
+    return await response.json();
+  } catch (_error) {
+    return null;
+  }
+}
+
+function normalizeNguonCListItem(item) {
+  if (!item || typeof item !== "object") return null;
+  const slug = catalogSlug(item.slug);
+  if (!slug) return null;
+  return {
+    _id: String(item.id || item._id || slug),
+    name: cleanProgressText(item.name, 200),
+    slug,
+    origin_name: cleanProgressText(item.original_name || item.origin_name, 200),
+    thumb_url: String(item.thumb_url || ""),
+    poster_url: String(item.poster_url || item.thumb_url || ""),
+    year: Number(item.year || 0) || undefined,
+    quality: cleanProgressText(item.quality, 40),
+    lang: cleanProgressText(item.language || item.lang, 80),
+    time: cleanProgressText(item.time, 80),
+    episode_current: cleanProgressText(item.current_episode || item.episode_current, 80),
+    episode_total: cleanProgressText(item.total_episodes || item.episode_total, 80),
+    modified: typeof item.modified === "object" ? item.modified : { time: item.modified || item.updated_at || "" },
+    _source_candidates: [{ id: "nguonphim", slug, name: "Nguồn Phim" }],
+  };
+}
+
+function sourceCandidateTag(id, name, slug) {
+  const safeSlug = catalogSlug(slug);
+  return safeSlug ? { id, name, slug: safeSlug } : null;
+}
+
+function mergeSourceCandidateTags(...values) {
+  const output = [];
+  const seen = new Set();
+  for (const value of values.flat()) {
+    if (!value || typeof value !== "object") continue;
+    const id = String(value.id || "").trim().toLowerCase();
+    const slug = catalogSlug(value.slug);
+    if (!id || !slug) continue;
+    const key = `${id}|${slug}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    output.push({ id, slug, name: cleanProgressText(value.name, 80) || id });
+  }
+  return output;
+}
+
+function movieListIdentity(item) {
+  const tmdbId = Number(item?.tmdb?.id || item?.tmdb_id || 0);
+  const tmdbType = String(item?.tmdb?.type || item?.type || "").toLowerCase();
+  if (tmdbId > 0) return `tmdb|${tmdbType}|${tmdbId}|${Number(item?.tmdb?.season || 0)}`;
+  const original = normalizedMovieIdentity(item?.origin_name || item?.original_name);
+  const name = normalizedMovieIdentity(item?.name);
+  const year = Number(item?.year || 0) || 0;
+  return `name|${original || name}|${year}`;
+}
+
+function mergeCatalogMovieItems(sourceLists) {
+  const output = [];
+  const byIdentity = new Map();
+  for (const entry of sourceLists) {
+    const sourceId = String(entry?.id || "").trim();
+    const sourceName = String(entry?.name || sourceId).trim();
+    for (const raw of (Array.isArray(entry?.items) ? entry.items : [])) {
+      if (!raw || typeof raw !== "object" || !catalogSlug(raw.slug)) continue;
+      const tagged = {
+        ...raw,
+        _source_candidates: mergeSourceCandidateTags(
+          raw._source_candidates || [],
+          sourceCandidateTag(sourceId, sourceName, raw.slug),
+        ),
+      };
+      const identity = movieListIdentity(tagged);
+      const existingIndex = byIdentity.get(identity);
+      if (existingIndex === undefined) {
+        byIdentity.set(identity, output.length);
+        output.push(tagged);
+        continue;
+      }
+      const existing = output[existingIndex];
+      output[existingIndex] = {
+        ...existing,
+        thumb_url: existing.thumb_url || tagged.thumb_url,
+        poster_url: existing.poster_url || tagged.poster_url,
+        origin_name: existing.origin_name || tagged.origin_name,
+        _source_candidates: mergeSourceCandidateTags(existing._source_candidates || [], tagged._source_candidates || []),
+      };
+    }
+  }
+  return output;
+}
+
+async function fetchOphimMovieBySlug(slug, env) {
+  const origin = configuredOphimOrigin(env);
+  if (!origin || !slug) return null;
+  for (const path of [`/phim/${encodeURIComponent(slug)}`, `/v1/api/phim/${encodeURIComponent(slug)}`]) {
+    const payload = await fetchJsonFromOrigin(origin, path, { ttl: 120, timeoutMs: 12000 });
+    const movie = payload?.movie || payload?.data?.item;
+    if (!movie || typeof movie !== "object") continue;
+    const episodes = Array.isArray(payload?.episodes) ? payload.episodes : (Array.isArray(payload?.data?.episodes) ? payload.data.episodes : []);
+    return {
+      ...payload,
+      movie: {
+        ...movie,
+        _source_candidates: mergeSourceCandidateTags(movie._source_candidates || [], sourceCandidateTag("ophim", "OPhim", movie.slug || slug)),
+      },
+      episodes,
+    };
+  }
+  return null;
+}
+
+async function fetchOphimMovieDetail(slug, env, primaryMovie = null) {
+  const exact = await fetchOphimMovieBySlug(slug, env);
+  if (exact) return exact;
+  const origin = configuredOphimOrigin(env);
+  if (!origin || !primaryMovie) return null;
+  const query = String(primaryMovie.origin_name || primaryMovie.name || slug).trim().slice(0, 100);
+  const payload = await fetchJsonFromOrigin(origin, `/v1/api/tim-kiem?keyword=${encodeURIComponent(query)}&page=1&limit=12`, { ttl: 60 });
+  const items = catalogItems(payload);
+  const primarySeason = Number(primaryMovie?.tmdb?.season || 0)
+    || movieSeason(primaryMovie?.slug)
+    || movieSeason(primaryMovie?.origin_name)
+    || movieSeason(primaryMovie?.name);
+  const primaryOriginal = normalizedMovieIdentity(primaryMovie?.origin_name);
+  const primaryName = normalizedMovieIdentity(primaryMovie?.name);
+  const ranked = items.map((item) => {
+    const candidateSeason = movieSeason(item?.slug) || movieSeason(item?.origin_name) || movieSeason(item?.name);
+    if (primarySeason && candidateSeason && primarySeason !== candidateSeason) return { item, score: -1 };
+    const candidateOriginal = normalizedMovieIdentity(item?.origin_name);
+    const candidateName = normalizedMovieIdentity(item?.name);
+    let score = 0;
+    if (primarySeason && candidateSeason === primarySeason) score += 12;
+    if (primaryOriginal && candidateOriginal === primaryOriginal) score += 10;
+    if (primaryName && candidateName === primaryName) score += 8;
+    if (primaryOriginal && candidateOriginal && (primaryOriginal.includes(candidateOriginal) || candidateOriginal.includes(primaryOriginal))) score += 4;
+    if (primaryName && candidateName && (primaryName.includes(candidateName) || candidateName.includes(primaryName))) score += 3;
+    return { item, score };
+  }).filter((candidate) => candidate.score >= 4 && candidate.item?.slug)
+    .sort((left, right) => right.score - left.score);
+  return ranked[0] ? fetchOphimMovieBySlug(ranked[0].item.slug, env) : null;
+}
+
+function countPlayableEpisodes(data) {
+  return (Array.isArray(data?.episodes) ? data.episodes : []).reduce((total, server) => total + (Array.isArray(server?.server_data) ? server.server_data.length : 0), 0);
+}
+
+function sourceDetailScore(entry) {
+  if (!entry?.data?.movie) return -1;
+  const movie = entry.data.movie;
+  const sourceBonus = entry.id === "phimapi" ? 6 : entry.id === "ophim" ? 4 : 2;
+  const metadata = ["name", "origin_name", "poster_url", "thumb_url", "content", "year"].reduce((score, key) => score + (movie[key] ? 1 : 0), 0);
+  return sourceBonus + metadata + Math.min(40, countPlayableEpisodes(entry.data));
+}
+
+function tagMovieSource(data, id, name, requestedSlug) {
+  if (!data?.movie) return null;
+  const movieSlug = catalogSlug(data.movie.slug || requestedSlug) || requestedSlug;
+  return {
+    ...data,
+    movie: {
+      ...data.movie,
+      slug: movieSlug,
+      _source_candidates: mergeSourceCandidateTags(
+        data.movie._source_candidates || [],
+        sourceCandidateTag(id, name, movieSlug),
+      ),
+    },
+    episodes: (Array.isArray(data.episodes) ? data.episodes : []).map((server, index) => ({
+      ...server,
+      _source_id: id,
+      _source_name: name,
+      server_name: cleanProgressText(server?.server_name, 90) || `Server ${index + 1}`,
+    })),
+  };
+}
+
+async function resolveEnsMovieStyleSources(slug, env) {
+  const primaryPromise = fetchProtectedCatalogJson(`/phim/${slug}`, env, { ttl: 120 })
+    .then((data) => tagMovieSource(data, "phimapi", "PhimAPI", slug))
+    .catch(() => null);
+  const ophimPromise = fetchOphimMovieDetail(slug, env).then((data) => tagMovieSource(data, "ophim", "OPhim", slug)).catch(() => null);
+  const nguonExactPromise = fetchBackupMovieDetail(slug, env).then((data) => tagMovieSource(data, "nguonphim", "Nguồn Phim", slug)).catch(() => null);
+
+  let [primary, ophim, nguon] = await Promise.all([primaryPromise, ophimPromise, nguonExactPromise]);
+  const seedMovie = primary?.movie || ophim?.movie || nguon?.movie || null;
+  const fallbacks = [];
+  if (!ophim && seedMovie) fallbacks.push(fetchOphimMovieDetail(slug, env, seedMovie).then((data) => tagMovieSource(data, "ophim", "OPhim", slug)).catch(() => null));
+  if (!nguon && seedMovie) fallbacks.push(fetchBackupMovieDetail(slug, env, seedMovie, { skipExact: true }).then((data) => tagMovieSource(data, "nguonphim", "Nguồn Phim", slug)).catch(() => null));
+  if (fallbacks.length) {
+    const resolved = await Promise.all(fallbacks);
+    for (const item of resolved) {
+      if (!item) continue;
+      const sourceId = item.episodes?.[0]?._source_id;
+      if (sourceId === "ophim") ophim = item;
+      if (sourceId === "nguonphim") nguon = item;
+    }
+  }
+  const entries = [
+    { id: "phimapi", name: "PhimAPI", data: primary },
+    { id: "ophim", name: "OPhim", data: ophim },
+    { id: "nguonphim", name: "Nguồn Phim", data: nguon },
+  ].filter((entry) => entry.data?.movie);
+  entries.sort((left, right) => sourceDetailScore(right) - sourceDetailScore(left));
+  return entries;
+}
+
 function normalizeBackupMovieDetail(payload) {
   const movie = payload?.movie && typeof payload.movie === "object" ? payload.movie : null;
   if (!movie) return null;
