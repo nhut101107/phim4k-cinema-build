@@ -678,6 +678,11 @@ body.activation-locked {
   margin-bottom: 12px;
 }
 
+.license-key-field {
+  position: relative;
+  isolation: isolate;
+}
+
 .gate-card .input-group input {
   min-height: 58px;
   padding: 0 64px 0 48px;
