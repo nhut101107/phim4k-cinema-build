@@ -1546,6 +1546,9 @@ async function requestDeviceAccess(request, env) {
     if (state.devices.some((item) => item.deviceId === deviceId)) {
       return json({ success: true, status: "approved", message: "Thiết bị đã được Admin cấp phép.", maxDevices: state.maxDevices, deviceCount: state.deviceCount });
     }
+    await env.DB.prepare(
+      "UPDATE device_access_requests SET status = 'pending', requested_at = ?, decided_at = NULL, decided_by = NULL WHERE license_key = ? AND device_id = ?",
+    ).bind(now(), key, deviceId).run();
   }
   const notified = await notifyDeviceRequest(env, key, deviceId);
   await logEvent(env.DB, "device_access_requested", { targetKey: key, detail: `device=${maskedValue(deviceId, 6)} notified=${notified}` });
