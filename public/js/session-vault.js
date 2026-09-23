@@ -72,6 +72,8 @@
       plan: String(value.plan || 'STANDARD').slice(0, 64),
       keyHint: String(value.keyHint || '').slice(0, 32),
       expiresAt: value.expiresAt || null,
+      maxDevices: Math.max(0, Number(value.maxDevices || 0)),
+      deviceCount: Math.max(0, Number(value.deviceCount || 0)),
     };
   };
 
