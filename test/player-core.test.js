@@ -13,6 +13,17 @@ test('keeps the same episode when a server has a different episode order', () =>
   assert.equal(target.episode.slug, 'tap-03');
 });
 
+test('matches the same episode number when providers label episodes differently', () => {
+  const target = Core.findEquivalentEpisode([
+    { slug: 'episode-4', name: 'Episode 4' },
+    { slug: 'episode-3', name: 'EP03' },
+    { slug: 'episode-2', name: 'Episode 2' }
+  ], { slug: 'tap-03', name: 'Tập 03' }, 0);
+  assert.equal(target.index, 1);
+  assert.equal(target.episode.slug, 'episode-3');
+  assert.equal(Core.episodeOrdinal({ filename: 'Episode 0007' }), 7);
+});
+
 test('falls back to the matching position only when no episode identity exists', () => {
   const target = Core.findEquivalentEpisode([{ name: 'Một' }, { name: 'Hai' }], { name: '' }, 1);
   assert.equal(target.index, 1);
