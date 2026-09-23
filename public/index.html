@@ -25,85 +25,146 @@
   <!-- 1. ACTIVATION GATE (KEY-ONLY OR ADMIN FREE MODE) -->
   <!-- ================================================= -->
   <div id="activationGate" class="gate-overlay">
-    <div class="gate-card">
-      <div class="gate-logo">
-        <img src="/media/phim4k-avatar.png?v=3.56" class="app-avatar" alt="Biểu tượng 4K Cinema" width="88" height="88">
-        <div class="gate-brand-copy">
-          <div class="logo-badge">4K Cinema</div>
-          <span class="pro-tag">CINEMA 4K PRO</span>
+    <div class="gate-card license-shell">
+      <section class="license-visual" aria-label="MNHUT Cinema">
+        <div class="license-brand">
+          <div class="mnhut-mark" aria-hidden="true">
+            <span class="mnhut-mark-m">M</span><span class="mnhut-mark-n">N</span>
+          </div>
+          <div class="license-brand-copy">
+            <div class="license-wordmark">MNHUT</div>
+            <span class="license-edition">CINEMA ACCESS</span>
+          </div>
         </div>
-      </div>
-      <h2>Kích Hoạt Bản Quyền</h2>
-      <p class="gate-desc">
-        Hệ thống streaming <strong>4K Ultra HD Chuẩn Rạp</strong>, âm thanh vòm sống động và tốc độ cao.
-        Chỉ cần nhập key. Mỗi key gắn với <strong>1 thiết bị</strong>; đổi máy cần Admin reset.
-      </p>
 
-      <section id="maintenanceNotice" class="maintenance-notice hidden" role="status" aria-live="assertive">
-        <span class="maintenance-pulse" aria-hidden="true"></span>
-        <div class="maintenance-copy">
-          <span class="maintenance-kicker">PHÒNG CHIẾU ĐANG TẠM ĐÓNG</span>
-          <h3>Hệ thống đang bảo trì</h3>
-          <p id="maintenanceMessage">Hệ thống đang được nâng cấp. Vui lòng quay lại sau.</p>
-          <small id="maintenanceUntil"></small>
+        <div class="license-hero-copy">
+          <span class="license-eyebrow">PRIVATE CINEMA • SECURE ACCESS</span>
+          <h1>Không gian xem phim của riêng bạn.</h1>
+          <p>Một key cho một thiết bị. Nguồn phim, phiên xem và quyền truy cập được quản lý tập trung.</p>
         </div>
-        <button id="maintenanceRetryBtn" type="button" onclick="Auth.retryAfterMaintenance()">Kiểm tra lại</button>
+
+        <div class="license-signal-grid" aria-label="Trạng thái hệ thống">
+          <div class="license-signal">
+            <span class="signal-dot"></span>
+            <div><strong>Secure session</strong><small>Phiên truy cập riêng</small></div>
+          </div>
+          <div class="license-signal">
+            <span class="signal-index">04</span>
+            <div><strong>4 nền tảng</strong><small>iOS • Android • TV • Windows</small></div>
+          </div>
+          <div class="license-signal">
+            <span class="signal-index">01</span>
+            <div><strong>1 key / thiết bị</strong><small>Admin có thể reset</small></div>
+          </div>
+        </div>
+
+        <div class="license-visual-footer">
+          <span>MNHUT SYSTEM</span>
+          <span class="license-status"><i></i> READY</span>
+        </div>
       </section>
 
-      <form id="activationForm" onsubmit="handleActivation(event)">
-        <p class="gate-desc">Ứng dụng ghi hoạt động xem, phiên bản, loại thiết bị và lỗi kỹ thuật để admin hỗ trợ. Không đọc cookie, mật khẩu hay dữ liệu ngoài ứng dụng.</p>
-        <details id="adminLoginFields"><summary>Đăng nhập quản trị (chỉ dành cho Admin)</summary>
-        <div class="input-group">
-          <svg class="key-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21.198 2.433a2.242 2.242 0 0 0-1.022.215l-16.7 6.452a2.235 2.235 0 0 0-.154 4.148l4.47 1.674 1.77 5.568a1.5 1.5 0 0 0 2.484.544l2.842-2.617 4.67 3.44a2.25 2.25 0 0 0 3.538-1.428l3.1-15.5a2.25 2.25 0 0 0-2.988-2.496z"></path>
-          </svg>
-          <input 
-            type="text" 
-            id="telegramInput" 
-            placeholder="Telegram ID quản trị"
-            autocomplete="off"
-            spellcheck="false"
-          />
-        </div>
-        </details>
-
-        <!-- License Key Input -->
-        <div class="input-group">
-          <svg class="key-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
-          </svg>
-          <input 
-            type="password" 
-            id="keyInput" 
-            placeholder="Nhập License Key được cấp" 
-            autocomplete="off"
-            spellcheck="false"
-            required
-          />
+      <section class="license-entry">
+        <div class="license-entry-head">
+          <div>
+            <span class="license-step">ACCESS // 01</span>
+            <h2>Kích hoạt thiết bị</h2>
+            <p>Nhập key được cấp để mở MNHUT Cinema trên thiết bị này.</p>
+          </div>
+          <span class="license-lock-badge" aria-label="Kết nối bảo mật">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+              <rect x="5" y="10" width="14" height="10" rx="3"></rect>
+              <path d="M8.5 10V7.5a3.5 3.5 0 0 1 7 0V10"></path>
+            </svg>
+          </span>
         </div>
 
-        <p class="viewer-key-hint">Key người xem không cần Telegram ID.</p>
-        <button type="submit" id="btnActivate" class="btn-primary">
-          <span class="btn-text">XÁC THỰC VÀ VÀO XEM PHIM</span>
-          <div class="spinner hidden" id="activateSpinner"></div>
-        </button>
-        <button type="button" id="btnRequestDeviceAccess" class="btn-device-request hidden" onclick="requestDeviceOnlyAccess()">
-          Báo Admin duyệt thiết bị này
-        </button>
-      </form>
+        <section id="maintenanceNotice" class="maintenance-notice hidden" role="status" aria-live="assertive">
+          <span class="maintenance-pulse" aria-hidden="true"></span>
+          <div class="maintenance-copy">
+            <span class="maintenance-kicker">HỆ THỐNG TẠM KHÓA TRUY CẬP</span>
+            <h3>Đang bảo trì</h3>
+            <p id="maintenanceMessage">Hệ thống đang được nâng cấp. Vui lòng quay lại sau.</p>
+            <small id="maintenanceUntil"></small>
+          </div>
+          <button id="maintenanceRetryBtn" type="button" onclick="Auth.retryAfterMaintenance()">Kiểm tra lại</button>
+        </section>
 
-      <div id="gateMessage" class="gate-message hidden"></div>
-      <button type="button" id="gateDownloadBtn" class="btn-secondary app-download-entry" onclick="openDownloadModal()">📥 Tải phiên bản mới / Chọn thiết bị</button>
-      <button type="button" class="btn-secondary app-download-entry" onclick="refreshAppFromServer(this)">🔄 Làm mới ứng dụng</button>
+        <form id="activationForm" class="license-form" onsubmit="handleActivation(event)">
+          <label class="license-field-label" for="keyInput">
+            <span>LICENSE KEY</span>
+            <small>Key người xem không cần Telegram ID</small>
+          </label>
 
-      <!-- Support / Contact Admin Box -->
-      <div class="support-contact-box">
-        <div class="support-title">💬 Chưa có License Key hoặc cần gia hạn?</div>
-        <p class="support-desc">
-          Vui lòng liên hệ trực tiếp Admin qua Telegram: 
-          <a href="https://t.me/mnhutdznecon" target="_blank" class="tele-link">@mnhutdznecon</a>
-        </p>
-      </div>
+          <div class="input-group license-key-field">
+            <svg class="key-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+              <circle cx="8.5" cy="15.5" r="4.5"></circle>
+              <path d="m12 12 8-8m-2 2 2 2m-5 1 2 2"></path>
+            </svg>
+            <input
+              type="password"
+              id="keyInput"
+              placeholder="MNHUT-XXXX-XXXX-XXXX"
+              autocomplete="off"
+              spellcheck="false"
+              required
+            />
+            <span class="field-corner" aria-hidden="true">KEY</span>
+          </div>
+
+          <details id="adminLoginFields" class="admin-access-details">
+            <summary>
+              <span>Đăng nhập quản trị</span>
+              <small>Chỉ dành cho Admin</small>
+            </summary>
+            <div class="input-group admin-id-field">
+              <svg class="key-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                <path d="M21.2 2.4 3.5 9.2a2.2 2.2 0 0 0-.2 4.1l4.5 1.7 1.8 5.5a1.5 1.5 0 0 0 2.5.5l2.8-2.6 4.7 3.4a2.25 2.25 0 0 0 3.5-1.4l3.1-15.5a2.25 2.25 0 0 0-3-2.5Z"></path>
+              </svg>
+              <input
+                type="text"
+                id="telegramInput"
+                placeholder="Telegram ID quản trị"
+                autocomplete="off"
+                spellcheck="false"
+              />
+            </div>
+          </details>
+
+          <button type="submit" id="btnActivate" class="btn-primary license-activate-btn">
+            <span class="btn-text">Kích hoạt &amp; tiếp tục</span>
+            <svg class="activate-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M5 12h14M13 6l6 6-6 6"></path>
+            </svg>
+            <div class="spinner hidden" id="activateSpinner"></div>
+          </button>
+
+          <button type="button" id="btnRequestDeviceAccess" class="btn-device-request hidden" onclick="requestDeviceOnlyAccess()">
+            Gửi yêu cầu duyệt thiết bị
+          </button>
+        </form>
+
+        <div id="gateMessage" class="gate-message hidden"></div>
+
+        <div class="license-secondary-actions">
+          <button type="button" id="gateDownloadBtn" class="license-text-action app-download-entry" onclick="openDownloadModal()">
+            <span>Phiên bản ứng dụng</span><b>↗</b>
+          </button>
+          <button type="button" class="license-text-action app-download-entry" onclick="refreshAppFromServer(this)">
+            <span>Làm mới dữ liệu</span><b>↻</b>
+          </button>
+        </div>
+
+        <div class="license-support">
+          <span class="support-beacon" aria-hidden="true"></span>
+          <div>
+            <small>CHƯA CÓ KEY / CẦN GIA HẠN</small>
+            <a href="https://t.me/mnhutdznecon" target="_blank" class="tele-link">@mnhutdznecon</a>
+          </div>
+        </div>
+
+        <p class="license-privacy">Chỉ ghi nhận thông tin cần thiết cho phiên xem, thiết bị và hỗ trợ kỹ thuật.</p>
+      </section>
     </div>
   </div>
 
