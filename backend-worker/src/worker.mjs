@@ -1528,7 +1528,7 @@ async function notifyDeviceRequest(env, key, deviceId) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         chat_id: chatId,
-        text: `Phim4K: Có yêu cầu đăng nhập không Telegram.\nKey: ${maskedValue(key)}\nThiết bị: ${maskedValue(deviceId, 6)}\nMở Panel Admin > Yêu cầu thiết bị để duyệt.`,
+        text: `MNHUT: Có yêu cầu duyệt thiết bị.\nKey: ${maskedValue(key)}\nThiết bị: ${maskedValue(deviceId, 6)}\nMở Panel Admin > Yêu cầu thiết bị để xử lý.`,
       }),
     });
     return response.ok;
@@ -3385,7 +3385,6 @@ export default {
       return textError("Không tìm thấy endpoint.", 404, "NOT_FOUND");
     } catch (error) {
       if (error.message === 'REQUEST_TOO_LARGE') return textError('Request body is too large.', 413, 'REQUEST_TOO_LARGE');
-      console.error("worker-internal-error", error);
       return textError("Backend gặp lỗi nội bộ.", 500, "INTERNAL_ERROR");
     }
   },
