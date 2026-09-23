@@ -332,6 +332,703 @@ body.activation-locked {
 }
 
 /* ================================================= */
+/* MNHUT ACCESS — PREMIUM ACTIVATION EXPERIENCE      */
+/* ================================================= */
+.gate-overlay {
+  overflow: auto;
+  align-items: center;
+  padding: max(18px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  background:
+    radial-gradient(circle at 15% 14%, rgba(70, 104, 255, .22), transparent 32%),
+    radial-gradient(circle at 88% 82%, rgba(255, 54, 107, .14), transparent 30%),
+    linear-gradient(145deg, #05070b 0%, #090d15 48%, #06070b 100%);
+  backdrop-filter: none;
+}
+
+.gate-overlay::before,
+.gate-overlay::after {
+  content: "";
+  position: fixed;
+  pointer-events: none;
+  border-radius: 999px;
+  filter: blur(18px);
+  opacity: .75;
+}
+
+.gate-overlay::before {
+  width: min(48vw, 620px);
+  height: min(48vw, 620px);
+  left: -18vw;
+  top: -24vw;
+  border: 1px solid rgba(111, 132, 255, .12);
+  box-shadow: inset 0 0 90px rgba(64, 91, 255, .06);
+}
+
+.gate-overlay::after {
+  width: min(30vw, 420px);
+  height: min(30vw, 420px);
+  right: -12vw;
+  bottom: -16vw;
+  border: 1px solid rgba(255, 69, 120, .10);
+}
+
+.gate-card.license-shell {
+  width: min(1080px, 100%);
+  max-width: 1080px;
+  min-height: min(690px, calc(100dvh - 40px));
+  padding: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.02fr) minmax(390px, .98fr);
+  overflow: hidden;
+  text-align: left;
+  border-radius: 30px;
+  border: 1px solid rgba(255, 255, 255, .09);
+  background: rgba(8, 11, 18, .88);
+  box-shadow:
+    0 36px 90px rgba(0, 0, 0, .58),
+    0 1px 0 rgba(255, 255, 255, .05) inset;
+  animation: mnhutGateIn .42s cubic-bezier(.22, 1, .36, 1);
+}
+
+@keyframes mnhutGateIn {
+  from { opacity: 0; transform: translateY(18px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.license-visual {
+  position: relative;
+  min-width: 0;
+  padding: clamp(34px, 5vw, 62px);
+  display: flex;
+  flex-direction: column;
+  isolation: isolate;
+  overflow: hidden;
+  background:
+    linear-gradient(165deg, rgba(15, 20, 34, .96), rgba(8, 10, 16, .96)),
+    #0a0e17;
+}
+
+.license-visual::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background:
+    linear-gradient(rgba(255,255,255,.027) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.027) 1px, transparent 1px);
+  background-size: 46px 46px;
+  mask-image: linear-gradient(to bottom, #000, transparent 92%);
+}
+
+.license-visual::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  width: 440px;
+  height: 440px;
+  right: -185px;
+  top: 105px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 35% 35%, rgba(105, 126, 255, .35), transparent 36%),
+    radial-gradient(circle at 60% 62%, rgba(255, 54, 107, .18), transparent 42%);
+  filter: blur(6px);
+}
+
+.license-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.mnhut-mark {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  grid-template-columns: 1fr 1fr;
+  padding: 0 9px;
+  border-radius: 17px;
+  border: 1px solid rgba(255,255,255,.13);
+  background:
+    linear-gradient(145deg, rgba(255,255,255,.12), rgba(255,255,255,.035)),
+    #111622;
+  box-shadow: 0 12px 34px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.10);
+  font-weight: 950;
+  letter-spacing: -.14em;
+  color: #fff;
+}
+
+.mnhut-mark span { font-size: 21px; }
+.mnhut-mark-n {
+  transform: translateY(3px);
+  color: #8798ff;
+}
+
+.license-brand-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.license-wordmark {
+  color: #fff;
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: .18em;
+}
+
+.license-edition {
+  color: #7d8799;
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: .24em;
+}
+
+.license-hero-copy {
+  margin: auto 0;
+  max-width: 560px;
+  padding: 56px 0 44px;
+}
+
+.license-eyebrow,
+.license-step {
+  display: inline-flex;
+  align-items: center;
+  color: #8798ff;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: .18em;
+}
+
+.license-hero-copy h1 {
+  max-width: 520px;
+  margin: 17px 0 18px;
+  color: #fff;
+  font-size: clamp(38px, 5vw, 64px);
+  line-height: .98;
+  letter-spacing: -.055em;
+  font-weight: 880;
+}
+
+.license-hero-copy p {
+  max-width: 500px;
+  color: #99a2b2;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.license-signal-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+  margin-bottom: 36px;
+}
+
+.license-signal {
+  min-width: 0;
+  min-height: 74px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(255,255,255,.075);
+  border-radius: 17px;
+  background: rgba(255,255,255,.035);
+}
+
+.license-signal:first-child {
+  grid-column: 1 / -1;
+}
+
+.license-signal strong,
+.license-signal small {
+  display: block;
+}
+
+.license-signal strong {
+  color: #e9edf6;
+  font-size: 12px;
+  font-weight: 770;
+}
+
+.license-signal small {
+  margin-top: 3px;
+  color: #6f798c;
+  font-size: 10px;
+}
+
+.signal-dot {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #66e3b4;
+  box-shadow: 0 0 0 6px rgba(102,227,180,.08), 0 0 24px rgba(102,227,180,.38);
+}
+
+.signal-index {
+  min-width: 33px;
+  color: #8798ff;
+  font: 800 19px/1 var(--font);
+  letter-spacing: -.04em;
+}
+
+.license-visual-footer {
+  display: flex;
+  justify-content: space-between;
+  color: #596274;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .18em;
+}
+
+.license-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #758093;
+}
+
+.license-status i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #66e3b4;
+}
+
+.license-entry {
+  min-width: 0;
+  padding: clamp(30px, 4.2vw, 58px);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background: linear-gradient(180deg, rgba(14,18,28,.98), rgba(9,12,19,.99));
+}
+
+.license-entry-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 34px;
+}
+
+.license-entry h2 {
+  margin: 10px 0 7px;
+  color: #fff;
+  font-size: clamp(28px, 3vw, 38px);
+  line-height: 1.05;
+  font-weight: 840;
+  letter-spacing: -.035em;
+}
+
+.license-entry-head p {
+  max-width: 410px;
+  margin: 0;
+  color: #818a9a;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.license-lock-badge {
+  width: 43px;
+  height: 43px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  color: #93a2ff;
+  border: 1px solid rgba(135,152,255,.19);
+  background: rgba(135,152,255,.065);
+}
+
+.license-lock-badge svg {
+  width: 19px;
+  height: 19px;
+}
+
+.license-form {
+  display: block;
+}
+
+.license-field-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 18px;
+  margin-bottom: 9px;
+}
+
+.license-field-label > span {
+  color: #cfd5e0;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: .16em;
+}
+
+.license-field-label > small {
+  color: #646e7f;
+  font-size: 10px;
+}
+
+.gate-card .input-group {
+  margin-bottom: 12px;
+}
+
+.gate-card .input-group input {
+  min-height: 58px;
+  padding: 0 64px 0 48px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 16px;
+  background: rgba(255,255,255,.037);
+  color: #f6f8fc;
+  font-size: 15px;
+  font-weight: 720;
+  letter-spacing: .06em;
+  caret-color: #9aa8ff;
+}
+
+.gate-card .input-group input::placeholder {
+  color: #4f596a;
+  opacity: 1;
+}
+
+.gate-card .input-group input:focus {
+  border-color: rgba(135,152,255,.72);
+  background: rgba(135,152,255,.045);
+  box-shadow: 0 0 0 4px rgba(135,152,255,.08), inset 0 1px 0 rgba(255,255,255,.035);
+}
+
+.gate-card .key-icon {
+  left: 17px;
+  width: 18px;
+  height: 18px;
+  color: #7d899f;
+}
+
+.field-corner {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #535d6e;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .16em;
+  pointer-events: none;
+}
+
+.admin-access-details {
+  margin: 13px 0 16px;
+  padding: 0 14px;
+  border: 1px solid rgba(255,255,255,.065);
+  border-radius: 14px;
+  background: rgba(255,255,255,.024);
+}
+
+.admin-access-details summary {
+  min-height: 45px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  cursor: pointer;
+  list-style: none;
+  color: #8993a4;
+  font-size: 11px;
+  font-weight: 720;
+  user-select: none;
+}
+
+.admin-access-details summary::-webkit-details-marker { display: none; }
+.admin-access-details summary small {
+  color: #515b6c;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.admin-access-details[open] {
+  padding-bottom: 13px;
+  border-color: rgba(135,152,255,.16);
+}
+
+.admin-access-details .input-group {
+  margin-bottom: 0;
+}
+
+.admin-access-details .input-group input {
+  min-height: 50px;
+  border-radius: 12px;
+  font-size: 13px;
+}
+
+.gate-card .license-activate-btn {
+  min-height: 57px;
+  padding: 0 18px;
+  justify-content: space-between;
+  border-radius: 16px;
+  background: linear-gradient(110deg, #f3f5f9 0%, #dfe5f1 100%);
+  color: #080b11;
+  box-shadow: 0 12px 34px rgba(0,0,0,.22);
+  font-size: 13px;
+  font-weight: 850;
+  letter-spacing: -.01em;
+}
+
+.gate-card .license-activate-btn:hover {
+  background: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 16px 42px rgba(0,0,0,.3);
+}
+
+.activate-arrow {
+  width: 18px;
+  height: 18px;
+  transition: transform .2s ease;
+}
+
+.license-activate-btn:hover .activate-arrow {
+  transform: translateX(4px);
+}
+
+.gate-card .btn-device-request {
+  min-height: 48px;
+  margin-top: 10px;
+  border-radius: 14px;
+  border-color: rgba(255,197,93,.18);
+  background: rgba(255,197,93,.05);
+  color: #e4bd72;
+}
+
+.gate-message {
+  border-radius: 14px;
+  margin-top: 13px;
+}
+
+.license-secondary-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+  margin-top: 15px;
+}
+
+.license-text-action {
+  min-height: 43px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid rgba(255,255,255,.065);
+  border-radius: 13px;
+  background: transparent;
+  color: #768094;
+  font: 700 10px/1 var(--font);
+  cursor: pointer;
+  transition: .2s ease;
+}
+
+.license-text-action:hover {
+  color: #cdd4e2;
+  border-color: rgba(255,255,255,.13);
+  background: rgba(255,255,255,.025);
+}
+
+.license-text-action b {
+  color: #8798ff;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.license-support {
+  margin-top: 20px;
+  padding-top: 18px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  border-top: 1px solid rgba(255,255,255,.055);
+}
+
+.support-beacon {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #8798ff;
+  box-shadow: 0 0 0 5px rgba(135,152,255,.07);
+}
+
+.license-support small,
+.license-support a {
+  display: block;
+}
+
+.license-support small {
+  color: #566071;
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: .12em;
+}
+
+.license-support .tele-link {
+  margin-top: 3px;
+  color: #b7c1d6;
+  font-size: 12px;
+  font-weight: 760;
+  text-decoration: none;
+}
+
+.license-support .tele-link:hover {
+  color: #fff;
+}
+
+.license-privacy {
+  margin-top: 14px;
+  color: #444d5d;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.license-entry .maintenance-notice {
+  margin: 0 0 18px;
+  text-align: left;
+}
+
+@media (max-width: 860px) {
+  .gate-overlay {
+    align-items: flex-start;
+    padding-top: max(16px, env(safe-area-inset-top));
+  }
+
+  .gate-card.license-shell {
+    min-height: auto;
+    grid-template-columns: 1fr;
+    border-radius: 24px;
+  }
+
+  .license-visual {
+    min-height: 265px;
+    padding: 26px;
+  }
+
+  .license-hero-copy {
+    padding: 40px 0 28px;
+  }
+
+  .license-hero-copy h1 {
+    max-width: 430px;
+    font-size: clamp(34px, 10vw, 52px);
+  }
+
+  .license-signal-grid {
+    display: none;
+  }
+
+  .license-entry {
+    padding: 30px 26px 32px;
+  }
+}
+
+@media (max-width: 520px) {
+  .gate-overlay {
+    padding: 0;
+    background: #080b11;
+  }
+
+  .gate-card.license-shell {
+    width: 100%;
+    min-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .license-visual {
+    min-height: 220px;
+    padding: max(22px, env(safe-area-inset-top)) 22px 24px;
+  }
+
+  .license-visual::after {
+    width: 300px;
+    height: 300px;
+    right: -150px;
+    top: 20px;
+  }
+
+  .mnhut-mark {
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+  }
+
+  .mnhut-mark span { font-size: 18px; }
+  .license-wordmark { font-size: 17px; }
+  .license-edition { font-size: 8px; }
+
+  .license-hero-copy {
+    margin: 0;
+    padding: 30px 0 0;
+  }
+
+  .license-hero-copy h1 {
+    max-width: 340px;
+    margin: 12px 0 10px;
+    font-size: clamp(31px, 10vw, 42px);
+  }
+
+  .license-hero-copy p {
+    max-width: 340px;
+    font-size: 12px;
+    line-height: 1.55;
+  }
+
+  .license-visual-footer {
+    display: none;
+  }
+
+  .license-entry {
+    padding: 29px 22px max(28px, env(safe-area-inset-bottom));
+  }
+
+  .license-entry-head {
+    margin-bottom: 26px;
+  }
+
+  .license-entry h2 {
+    font-size: 28px;
+  }
+
+  .license-lock-badge {
+    width: 39px;
+    height: 39px;
+    border-radius: 12px;
+  }
+
+  .license-field-label {
+    align-items: center;
+  }
+
+  .license-field-label > small {
+    max-width: 155px;
+    text-align: right;
+    line-height: 1.3;
+  }
+
+  .gate-card .input-group input {
+    min-height: 56px;
+    font-size: 14px;
+  }
+
+  .license-secondary-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ================================================= */
 /* 2. NAVBAR                                         */
 /* ================================================= */
 .navbar {
