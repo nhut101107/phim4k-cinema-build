@@ -2893,13 +2893,15 @@ async function resolveEnsMovieStyleSources(slug, env) {
       if (sourceId === "nguonphim") nguon = item;
     }
   }
-  const entries = [
+  // Keep server groups in a stable provider order so a stream_ref created by
+  // the detail response still resolves to the same source if another provider
+  // is temporarily slower on the next request. Metadata selection is scored
+  // independently inside mergeResolvedMovieSources.
+  return [
     { id: "phimapi", name: "PhimAPI", data: primary },
     { id: "ophim", name: "OPhim", data: ophim },
     { id: "nguonphim", name: "Nguồn Phim", data: nguon },
   ].filter((entry) => entry.data?.movie);
-  entries.sort((left, right) => sourceDetailScore(right) - sourceDetailScore(left));
-  return entries;
 }
 
 function normalizeBackupMovieDetail(payload) {
@@ -3029,7 +3031,8 @@ function prewarmBackupStreams(data, slug, executionContext) {
 function mergeResolvedMovieSources(entries) {
   const available = (Array.isArray(entries) ? entries : []).filter((entry) => entry?.data?.movie);
   if (!available.length) return null;
-  const primary = available[0].data;
+  const primaryEntry = [...available].sort((left, right) => sourceDetailScore(right) - sourceDetailScore(left))[0];
+  const primary = primaryEntry.data;
   const seen = new Set();
   const episodes = [];
   const candidates = [];
@@ -3052,6 +3055,8 @@ function mergeResolvedMovieSources(entries) {
         ...server,
         _source_id: server?._source_id || entry.id,
         _source_name: sourceName,
+        _source_movie_slug: catalogSlug(entry.data?.movie?.slug) || "",
+        _source_server_name: rawName,
         server_name: decoratedName,
       });
     }
@@ -3105,15 +3110,32 @@ async function protectMovieDetail(data, request, env, slug) {
   const output = await protectCatalogImages(resolved, request, env);
   if (output?.movie && typeof output.movie === "object") delete output.movie.trailer_url;
   const servers = Array.isArray(output?.episodes) ? output.episodes : [];
-  output.episodes = servers.map((server, serverIndex) => ({
-    server_name: cleanProgressText(server?.server_name, 100) || `Server ${serverIndex + 1}`,
-    server_data: (Array.isArray(server?.server_data) ? server.server_data : []).map((episode, episodeIndex) => ({
-      name: cleanProgressText(episode?.name, 120) || `Tập ${episodeIndex + 1}`,
-      slug: cleanProgressText(episode?.slug, 160),
-      filename: cleanProgressText(episode?.filename, 160),
-      stream_ref: { movie: slug, server: serverIndex, episode: episodeIndex },
-    })),
-  }));
+  output.episodes = servers.map((server, serverIndex) => {
+    const sourceId = cleanProgressText(server?._source_id, 40).toLowerCase();
+    const sourceMovieSlug = catalogSlug(server?._source_movie_slug) || slug;
+    const sourceServerName = cleanProgressText(server?._source_server_name || server?.server_name, 100) || `Server ${serverIndex + 1}`;
+    return {
+      server_name: cleanProgressText(server?.server_name, 100) || `Server ${serverIndex + 1}`,
+      source_id: sourceId,
+      source_name: cleanProgressText(server?._source_name, 80),
+      server_data: (Array.isArray(server?.server_data) ? server.server_data : []).map((episode, episodeIndex) => ({
+        name: cleanProgressText(episode?.name, 120) || `Tập ${episodeIndex + 1}`,
+        slug: cleanProgressText(episode?.slug, 160),
+        filename: cleanProgressText(episode?.filename, 160),
+        stream_ref: {
+          movie: slug,
+          server: serverIndex,
+          episode: episodeIndex,
+          source: sourceId,
+          sourceMovieSlug,
+          serverName: sourceServerName,
+          episodeSlug: cleanProgressText(episode?.slug, 160),
+          episodeName: cleanProgressText(episode?.name, 120),
+          episodeNumber: episodeOrdinalHint(episode),
+        },
+      })),
+    };
+  });
   return output;
 }
 
