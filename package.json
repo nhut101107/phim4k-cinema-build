@@ -1,7 +1,7 @@
 {
   "name": "phim4k-app",
   "version": "3.56.0",
-  "description": "4K Cinema Streaming App with License Key Gate and Ad-Free HLS Player",
+  "description": "MNHUT Cinema streaming app with secure license access and HLS playback",
   "main": "server.js",
   "overrides": {
     "qs": "6.16.0"
