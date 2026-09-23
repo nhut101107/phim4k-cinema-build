@@ -683,6 +683,21 @@ async function licenseDeviceState(db, key) {
     lastSeenAt: item.last_seen_at || "",
     approvedBy: item.approved_by || "",
   }));
+  // Compatibility fallback for databases/tests upgrading from the original
+  // one-device column before license_devices has been populated.
+  if (!devices.length) {
+    const legacy = await queryOne(db, "SELECT device_id, created_at, updated_at FROM license_keys WHERE license_key = ?", key);
+    const legacyDeviceId = normalizeDeviceId(legacy?.device_id);
+    if (legacyDeviceId) {
+      devices.push({
+        deviceId: legacyDeviceId,
+        slot: 1,
+        createdAt: legacy?.created_at || "",
+        lastSeenAt: legacy?.updated_at || "",
+        approvedBy: "legacy",
+      });
+    }
+  }
   return { maxDevices, deviceCount: devices.length, devices };
 }
 
@@ -1597,7 +1612,7 @@ async function listDeviceAccessRequests(request, env) {
   await ensureDeviceAccessTable(env.DB);
   const rows = await env.DB.prepare(
     "SELECT r.license_key, r.device_id, r.status, r.requested_at, r.decided_at, k.plan, k.expires_at, k.active FROM device_access_requests r JOIN license_keys k ON k.license_key = r.license_key ORDER BY CASE r.status WHEN 'pending' THEN 0 ELSE 1 END, r.requested_at DESC LIMIT 100",
-  ).all();
+  ).bind().all();
   return json({ requests: rows.results || [] });
 }
 
@@ -1638,9 +1653,9 @@ async function listKeys(request, env) {
   const missing = dbUnavailable(env);
   if (missing) return missing;
   await ensureMultiDeviceSchema(env.DB);
-  const rows = await env.DB.prepare("SELECT * FROM license_keys ORDER BY created_at DESC").all();
-  const deviceRows = await env.DB.prepare("SELECT license_key, device_id, slot, created_at, last_seen_at FROM license_devices ORDER BY license_key, slot").all();
-  const limitRows = await env.DB.prepare("SELECT license_key, max_devices FROM license_limits").all();
+  const rows = await env.DB.prepare("SELECT * FROM license_keys ORDER BY created_at DESC").bind().all();
+  const deviceRows = await env.DB.prepare("SELECT license_key, device_id, slot, created_at, last_seen_at FROM license_devices ORDER BY license_key, slot").bind().all();
+  const limitRows = await env.DB.prepare("SELECT license_key, max_devices FROM license_limits").bind().all();
   const devicesByKey = new Map();
   for (const item of (deviceRows.results || [])) {
     if (!devicesByKey.has(item.license_key)) devicesByKey.set(item.license_key, []);
@@ -1808,8 +1823,8 @@ async function listUsers(request, env) {
     env.DB.prepare(
       "SELECT license_keys.*, bans.telegram_id AS banned_telegram_id, bans.reason AS ban_reason FROM license_keys LEFT JOIN bans ON bans.telegram_id = COALESCE(license_keys.activated_telegram_id, license_keys.assigned_telegram_id) ORDER BY license_keys.updated_at DESC",
     ).all(),
-    env.DB.prepare("SELECT license_key, device_id, slot, last_seen_at FROM license_devices ORDER BY license_key, slot").all(),
-    env.DB.prepare("SELECT license_key, max_devices FROM license_limits").all(),
+    env.DB.prepare("SELECT license_key, device_id, slot, last_seen_at FROM license_devices ORDER BY license_key, slot").bind().all(),
+    env.DB.prepare("SELECT license_key, max_devices FROM license_limits").bind().all(),
   ]);
   const devicesByKey = new Map();
   for (const item of (deviceRows.results || [])) {
@@ -2130,7 +2145,7 @@ async function handleDownloads(request, env) {
   const missing = dbUnavailable(env);
   if (missing) return missing;
   if (request.method === "GET") {
-    const rows = await env.DB.prepare("SELECT * FROM downloads").all();
+    const rows = await env.DB.prepare("SELECT * FROM downloads").bind().all();
     const stored = new Map((rows.results || []).map((row) => [row.platform, row]));
     const output = {};
     for (const platform of ['android', 'android_tv', 'ios', 'windows']) {
