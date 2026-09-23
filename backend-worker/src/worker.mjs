@@ -3117,6 +3117,70 @@ async function protectMovieDetail(data, request, env, slug) {
   return output;
 }
 
+async function fetchEnsMovieStyleCatalog(mode, env, { page = 1, query = "", category = "" } = {}) {
+  const sourceRequests = [];
+  const primaryPath = mode === "search"
+    ? `/v1/api/tim-kiem?keyword=${encodeURIComponent(query)}&page=${page}&limit=48`
+    : mode === "category"
+      ? `/v1/api/danh-sach/${category}?page=${page}&limit=48&sort_field=modified.time&sort_type=desc`
+      : `/v1/api/danh-sach/phim-moi-cap-nhat?page=${page}&limit=48&sort_field=modified.time&sort_type=desc`;
+
+  sourceRequests.push(fetchProtectedCatalogJson(primaryPath, env, { ttl: page === 1 ? 15 : 120 })
+    .then((data) => ({ id: "phimapi", name: "PhimAPI", items: normalizedCatalogItems(data, env), raw: data }))
+    .catch(() => null));
+
+  const ophimOrigin = configuredOphimOrigin(env);
+  if (ophimOrigin) {
+    sourceRequests.push(fetchJsonFromOrigin(ophimOrigin, primaryPath, { ttl: page === 1 ? 15 : 120 })
+      .then((data) => data ? ({ id: "ophim", name: "OPhim", items: normalizedCatalogItems(data, env), raw: data }) : null)
+      .catch(() => null));
+  }
+
+  const nguonOrigin = configuredBackupCatalogOrigin(env);
+  if (nguonOrigin) {
+    const nguonPath = mode === "search"
+      ? `/api/films/search?keyword=${encodeURIComponent(query)}&page=${page}`
+      : mode === "category"
+        ? `/api/films/danh-sach/${category}?page=${page}`
+        : `/api/films/phim-moi-cap-nhat?page=${page}`;
+    sourceRequests.push(fetchJsonFromOrigin(nguonOrigin, nguonPath, { ttl: page === 1 ? 15 : 120 })
+      .then((data) => data ? ({
+        id: "nguonphim",
+        name: "Nguồn Phim",
+        items: (Array.isArray(data?.items) ? data.items : []).map(normalizeNguonCListItem).filter(Boolean),
+        raw: data,
+      }) : null)
+      .catch(() => null));
+  }
+
+  const settled = (await Promise.all(sourceRequests)).filter(Boolean);
+  return {
+    sources: settled.map((entry) => ({ id: entry.id, name: entry.name, count: entry.items.length })),
+    items: mergeCatalogMovieItems(settled),
+    primaryRaw: settled.find((entry) => entry.id === "phimapi")?.raw || settled[0]?.raw || null,
+  };
+}
+
+async function fetchEnsMovieStyleHomeCatalog(env) {
+  const primaryPaths = homeCatalogPaths(new Date().getUTCFullYear());
+  const primaryResults = await Promise.allSettled(
+    primaryPaths.map((path, index) => fetchProtectedCatalogJson(path, env, { ttl: index ? 60 : 15 })),
+  );
+  const primaryItems = primaryResults.flatMap((result) => result.status === "fulfilled" ? normalizedCatalogItems(result.value, env) : []);
+  const latest = await fetchEnsMovieStyleCatalog("latest", env, { page: 1 });
+  return {
+    sources: latest.sources,
+    items: mergeCatalogMovieItems([
+      { id: "phimapi", name: "PhimAPI", items: primaryItems },
+      ...latest.sources.filter((source) => source.id !== "phimapi").map((source) => ({
+        id: source.id,
+        name: source.name,
+        items: latest.items.filter((item) => (item._source_candidates || []).some((candidate) => candidate.id === source.id)),
+      })),
+    ]),
+  };
+}
+
 async function handleProtectedMovieCatalog(request, env, executionContext) {
   const identity = await verifyTelemetryViewer(request, env);
   if (identity.error) return identity.error;
