@@ -1803,20 +1803,44 @@ async function listUsers(request, env) {
   if (denied) return denied;
   const missing = dbUnavailable(env);
   if (missing) return missing;
-  const rows = await env.DB.prepare(
-    "SELECT license_keys.*, bans.telegram_id AS banned_telegram_id, bans.reason AS ban_reason FROM license_keys LEFT JOIN bans ON bans.telegram_id = COALESCE(license_keys.activated_telegram_id, license_keys.assigned_telegram_id) WHERE license_keys.device_id IS NOT NULL OR license_keys.activated_telegram_id IS NOT NULL OR license_keys.assigned_telegram_id IS NOT NULL ORDER BY license_keys.updated_at DESC",
-  ).bind().all();
-  return json({ users: (rows.results || []).map((record) => ({
-    telegramId: record.activated_telegram_id || record.assigned_telegram_id || "",
-    key: record.license_key,
-    plan: record.plan,
-    isBanned: !Boolean(record.active) || Boolean(record.banned_telegram_id),
-    banReason: record.ban_reason || "",
-    active: Boolean(record.active) && !isExpired(record.expires_at),
-    status: !record.active ? "Đã bị ban" : (isExpired(record.expires_at) ? "Hết hạn" : "Bình thường"),
-    expiresAt: record.expires_at || null,
-    boundDeviceId: record.device_id || "",
-  })) });
+  await ensureMultiDeviceSchema(env.DB);
+  const [rows, deviceRows, limitRows] = await Promise.all([
+    env.DB.prepare(
+      "SELECT license_keys.*, bans.telegram_id AS banned_telegram_id, bans.reason AS ban_reason FROM license_keys LEFT JOIN bans ON bans.telegram_id = COALESCE(license_keys.activated_telegram_id, license_keys.assigned_telegram_id) ORDER BY license_keys.updated_at DESC",
+    ).all(),
+    env.DB.prepare("SELECT license_key, device_id, slot, last_seen_at FROM license_devices ORDER BY license_key, slot").all(),
+    env.DB.prepare("SELECT license_key, max_devices FROM license_limits").all(),
+  ]);
+  const devicesByKey = new Map();
+  for (const item of (deviceRows.results || [])) {
+    if (!devicesByKey.has(item.license_key)) devicesByKey.set(item.license_key, []);
+    devicesByKey.get(item.license_key).push({
+      deviceId: item.device_id,
+      slot: Number(item.slot || 0),
+      lastSeenAt: item.last_seen_at || "",
+    });
+  }
+  const limits = new Map((limitRows.results || []).map((item) => [item.license_key, Number(item.max_devices || 1)]));
+  const users = (rows.results || []).flatMap((record) => {
+    const devices = devicesByKey.get(record.license_key) || [];
+    const telegramId = record.activated_telegram_id || record.assigned_telegram_id || "";
+    if (!telegramId && !devices.length) return [];
+    return [{
+      telegramId,
+      key: record.license_key,
+      plan: record.plan,
+      isBanned: !Boolean(record.active) || Boolean(record.banned_telegram_id),
+      banReason: record.ban_reason || "",
+      active: Boolean(record.active) && !isExpired(record.expires_at),
+      status: !record.active ? "Đã bị ban" : (isExpired(record.expires_at) ? "Hết hạn" : "Bình thường"),
+      expiresAt: record.expires_at || null,
+      boundDeviceId: devices[0]?.deviceId || record.device_id || "",
+      devices,
+      deviceCount: devices.length,
+      maxDevices: Math.min(20, Math.max(1, limits.get(record.license_key) || 1)),
+    }];
+  });
+  return json({ users });
 }
 
 async function setBan(request, env, banned) {
@@ -1837,7 +1861,13 @@ async function setBan(request, env, banned) {
   // older imported key does not match today's key format instead of rejecting
   // a real user before the device lookup can run.
   if (!license && deviceId) {
-    license = await queryOne(env.DB, "SELECT * FROM license_keys WHERE device_id = ?", deviceId);
+    await ensureMultiDeviceSchema(env.DB);
+    const linked = await queryOne(env.DB, "SELECT license_key FROM license_devices WHERE device_id = ? LIMIT 1", deviceId);
+    if (linked?.license_key) {
+      license = await queryOne(env.DB, "SELECT * FROM license_keys WHERE license_key = ?", linked.license_key);
+    } else {
+      license = await queryOne(env.DB, "SELECT * FROM license_keys WHERE device_id = ?", deviceId);
+    }
   }
 
   // Current viewer accounts are identified by their license and bound device.
