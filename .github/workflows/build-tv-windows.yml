@@ -25,7 +25,7 @@ jobs:
       - run: npm run desktop:verify
       - shell: pwsh
         run: |
-          $p = Start-Process -FilePath '.\builds\windows-3.56\win-unpacked\4K Cinema.exe' -ArgumentList '--smoke-test' -WindowStyle Hidden -PassThru
+          $p = Start-Process -FilePath '.\builds\windows-3.56\win-unpacked\MNHUT Cinema.exe' -ArgumentList '--smoke-test' -WindowStyle Hidden -PassThru
           if (!$p.WaitForExit(60000)) { $p.Kill(); throw 'Desktop smoke timed out' }
           if ($p.ExitCode -ne 0) { throw 'Desktop smoke failed' }
       - uses: actions/upload-artifact@v4
@@ -86,7 +86,7 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs 4K-Cinema-Android-TV-3.56.apk | tee "$RUNNER_TEMP/tv-cert.txt"
           grep -qi 'ABAFDA2EAD9478B2540328C98774B4B0A9432014F7B31CBF40FB3EF1F6FECBC8' "$RUNNER_TEMP/tv-cert.txt"
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging 4K-Cinema-Android-TV-3.56.apk | grep "package: name='com.phim4k.cinema.tv'.*versionCode='56'.*versionName='3.56'"
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging 4K-Cinema-Android-TV-3.56.apk | grep "application-label:'4K Cinema'"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging 4K-Cinema-Android-TV-3.56.apk | grep "application-label:'MNHUT Cinema'"
           python3 scripts/package_ios_web_update.py --audit-only 4K-Cinema-Android-TV-3.56.apk
       - name: Enable emulator acceleration
         run: |
