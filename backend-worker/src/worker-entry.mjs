@@ -11,8 +11,8 @@ const RETRYABLE_RELAY_STATUSES = new Set([502, 503, 504]);
 let relayHealth = { origin: '', checkedAt: 0, healthy: true };
 let relayHealthCheck = null;
 
-// Do not merge or deploy this 3.56 manifest until all four Drive files permit
-// anonymous reader access. The previous 3.55 production links remain active.
+// Final 3.56 public release manifest. Mobile builds use public Drive files;
+// Windows uses the public GitHub release asset because the installer exceeds the Drive connector transfer limit.
 const PUBLIC_RELEASES = Object.freeze({
   android: Object.freeze({
     url: 'https://drive.usercontent.google.com/download?id=1cIKz4nVb1ODD5TFqRx_yxc6bn02QB8pS&export=download&confirm=t',
@@ -25,7 +25,7 @@ const PUBLIC_RELEASES = Object.freeze({
     url: 'https://drive.usercontent.google.com/download?id=132cxRcOetx_AsOm6m9vgDFoVJCZOwWhs&export=download&confirm=t',
     version: '3.56',
     sha256: '5d8335f77144aebbaf882992351b7a059857a932e781c335d0375769dcf148a8',
-    sizeBytes: 3963712,
+    sizeBytes: 3967808,
     signer: 'github-actions[bot]',
   }),
   ios: Object.freeze({
