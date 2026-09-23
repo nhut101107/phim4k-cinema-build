@@ -50,9 +50,6 @@ jobs:
       - name: Run Worker regression tests
         run: node --test backend-worker/test/*.test.mjs
 
-      - name: Apply pending D1 migrations
-        run: npx wrangler d1 migrations apply phim4k-license --remote --config backend-worker/wrangler.toml
-
       - name: Deploy Worker
         run: npx wrangler deploy --config backend-worker/wrangler.toml
 
