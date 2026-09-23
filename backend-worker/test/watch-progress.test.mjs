@@ -66,7 +66,23 @@ test('watch progress follows an authenticated license after an approved device r
     const otherRead = await (await f.request('/api/watch-progress', { headers: { 'x-license-key': 'P4K-WATCH-TWO', 'x-device-id': 'other-phone' } })).json();
     assert.deepEqual(otherRead.items, []);
 
-    f.sqlite.prepare('UPDATE license_keys SET device_id=? WHERE license_key=?').run('new-phone', 'P4K-WATCH-ONE');
+    const adminHeaders = {
+      'x-license-key': f.env.ADMIN_LICENSE_KEY,
+      'x-telegram-id': f.env.ADMIN_TELEGRAM_ID,
+    };
+    const reset = await f.request('/api/admin/reset-device', {
+      method: 'POST',
+      headers: adminHeaders,
+      body: { key: 'P4K-WATCH-ONE' },
+    });
+    assert.equal(reset.status, 200);
+
+    const reactivated = await f.request('/api/auth/activate', {
+      method: 'POST',
+      body: { key: 'P4K-WATCH-ONE', deviceId: 'new-phone' },
+    });
+    assert.equal(reactivated.status, 200);
+
     const restored = await (await f.request('/api/watch-progress', { headers: { 'x-license-key': 'P4K-WATCH-ONE', 'x-device-id': 'new-phone' } })).json();
     assert.equal(restored.items[0].epName, 'Tập 12');
     assert.equal(restored.items[0].currentTime, progress.currentTime);
