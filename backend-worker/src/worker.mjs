@@ -3323,6 +3323,7 @@ export default {
       return textError("Không tìm thấy endpoint.", 404, "NOT_FOUND");
     } catch (error) {
       if (error.message === 'REQUEST_TOO_LARGE') return textError('Request body is too large.', 413, 'REQUEST_TOO_LARGE');
+      console.error("worker-internal-error", error);
       return textError("Backend gặp lỗi nội bộ.", 500, "INTERNAL_ERROR");
     }
   },
