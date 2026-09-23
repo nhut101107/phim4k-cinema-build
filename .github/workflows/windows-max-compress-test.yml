@@ -1,0 +1,31 @@
+name: Test compact Windows build
+on:
+  push:
+    branches: [windows-max-compress]
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run security:audit
+      - run: npm run desktop:build
+      - run: npm run desktop:verify
+      - shell: pwsh
+        run: |
+          $p = Start-Process -FilePath '.\builds\windows-3.56\win-unpacked\4K Cinema.exe' -ArgumentList '--smoke-test' -WindowStyle Hidden -PassThru
+          if (!$p.WaitForExit(60000)) { $p.Kill(); throw 'Desktop smoke timed out' }
+          if ($p.ExitCode -ne 0) { throw 'Desktop smoke failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MNHUT-Windows-max-compress
+          path: builds/windows-3.56/4K-Cinema-Windows-3.56-x64.exe
+          if-no-files-found: error
