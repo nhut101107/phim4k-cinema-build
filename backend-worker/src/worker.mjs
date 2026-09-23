@@ -651,21 +651,21 @@ async function ensureMultiDeviceSchema(db) {
   if (!db || typeof db !== "object" || multiDeviceSchemaReady.has(db)) return;
   await db.prepare(
     "CREATE TABLE IF NOT EXISTS license_limits (license_key TEXT PRIMARY KEY, max_devices INTEGER NOT NULL DEFAULT 1 CHECK(max_devices BETWEEN 1 AND 20), updated_at TEXT NOT NULL, FOREIGN KEY (license_key) REFERENCES license_keys(license_key) ON DELETE CASCADE)",
-  ).run();
+  ).bind().bind().run();
   await db.prepare(
     "CREATE TABLE IF NOT EXISTS license_devices (license_key TEXT NOT NULL, device_id TEXT NOT NULL, slot INTEGER NOT NULL, created_at TEXT NOT NULL, last_seen_at TEXT NOT NULL, approved_by TEXT, PRIMARY KEY (license_key, device_id), UNIQUE (license_key, slot), FOREIGN KEY (license_key) REFERENCES license_keys(license_key) ON DELETE CASCADE)",
-  ).run();
-  await db.prepare("CREATE INDEX IF NOT EXISTS idx_license_devices_device ON license_devices(device_id)").run();
+  ).bind().bind().run();
+  await db.prepare("CREATE INDEX IF NOT EXISTS idx_license_devices_device ON license_devices(device_id)").bind().bind().run();
   await db.prepare(
     "INSERT OR IGNORE INTO license_limits (license_key, max_devices, updated_at) SELECT license_key, 1, updated_at FROM license_keys",
-  ).run();
+  ).bind().bind().run();
   await db.prepare(
     "INSERT OR IGNORE INTO license_devices (license_key, device_id, slot, created_at, last_seen_at, approved_by) SELECT license_key, device_id, 1, created_at, updated_at, 'legacy' FROM license_keys WHERE device_id IS NOT NULL AND TRIM(device_id) <> ''",
-  ).run();
-  await db.prepare("DROP INDEX IF EXISTS idx_auth_sessions_active_user").run();
+  ).bind().bind().run();
+  await db.prepare("DROP INDEX IF EXISTS idx_auth_sessions_active_user").bind().bind().run();
   await db.prepare(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_sessions_active_user_device ON auth_sessions(license_key, device_id) WHERE role = 'user' AND revoked_at IS NULL",
-  ).run();
+  ).bind().bind().run();
   multiDeviceSchemaReady.add(db);
 }
 
@@ -727,7 +727,7 @@ async function removeLicenseDevice(db, key, deviceId) {
   const cleanDeviceId = normalizeDeviceId(deviceId);
   if (!cleanDeviceId) return;
   const timestamp = now();
-  await db.prepare("DELETE FROM license_devices WHERE license_key = ? AND device_id = ?").bind(key, cleanDeviceId).run();
+  await db.prepare("DELETE FROM license_devices WHERE license_key = ? AND device_id = ?").bind(key, cleanDeviceId).bind().run();
   await db.prepare("UPDATE auth_sessions SET revoked_at = ?, updated_at = ? WHERE license_key = ? AND device_id = ? AND revoked_at IS NULL")
     .bind(timestamp, timestamp, key, cleanDeviceId).run();
   const replacement = await queryOne(db, "SELECT device_id FROM license_devices WHERE license_key = ? ORDER BY slot ASC LIMIT 1", key);
@@ -925,7 +925,7 @@ async function handleTelemetry(request, env) {
 async function ensureWatchProgressTable(db) {
   await db.prepare(
     "CREATE TABLE IF NOT EXISTS watch_progress (owner_id TEXT NOT NULL, movie_slug TEXT NOT NULL, episode_id TEXT NOT NULL, movie_name TEXT NOT NULL, episode_name TEXT NOT NULL, thumb_url TEXT NOT NULL DEFAULT '', current_seconds REAL NOT NULL, duration_seconds REAL NOT NULL, progress_percent INTEGER NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (owner_id, movie_slug, episode_id))",
-  ).run();
+  ).bind().run();
   await db.prepare(
     "CREATE INDEX IF NOT EXISTS idx_watch_progress_owner_updated ON watch_progress(owner_id, updated_at DESC)",
   ).run();
@@ -1493,7 +1493,7 @@ async function logoutSession(request, env) {
 async function ensureDeviceAccessTable(db) {
   await db.prepare(
     "CREATE TABLE IF NOT EXISTS device_access_requests (license_key TEXT NOT NULL, device_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')), requested_at TEXT NOT NULL, decided_at TEXT, decided_by TEXT, PRIMARY KEY (license_key, device_id), FOREIGN KEY (license_key) REFERENCES license_keys(license_key) ON DELETE CASCADE)",
-  ).run();
+  ).bind().run();
   await db.prepare("CREATE INDEX IF NOT EXISTS idx_device_access_status ON device_access_requests(status, requested_at)").run();
 }
 
