@@ -28,8 +28,8 @@ test('activation gate does not prefill a cached Telegram identity', () => {
   assert.match(auth, /localStorage\.removeItem\('phim4k_key'\)/);
   assert.match(index, /Key người xem không cần Telegram ID/);
   assert.doesNotMatch(api, /Không thể xác thực key hoặc Telegram ID/);
-  assert.match(index, /media\/phim4k-avatar\.png/);
-  assert.match(index, /class="account-avatar"[^>]*phim4k-avatar\.png/);
+  assert.match(index, /class="brand-avatar mnhut-brand-chip"[^>]*>MN<\/span>/);
+  assert.match(index, /class="account-avatar account-mnhut-chip"[^>]*>MN<\/span>/);
   assert.match(index, /class="account-default-name">MNHUT Cinema</);
   assert.doesNotMatch(auth, /function setPersistentCookie/);
 });
