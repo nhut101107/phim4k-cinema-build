@@ -2101,16 +2101,52 @@ function streamCEmbedTarget(value) {
   return target;
 }
 
-function equivalentStreamTargets(data, episode, episodeIndex) {
+function normalizedEpisodeIdentity(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/gi, "d")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function episodeOrdinalHint(episode) {
+  for (const value of [episode?.slug, episode?.filename, episode?.name]) {
+    const text = normalizedEpisodeIdentity(value);
+    if (!text) continue;
+    const prefixed = text.match(/(?:^|\s)(?:tap|episode|ep|e)\s*0*(\d{1,4})(?:\s|$)/);
+    if (prefixed) return Number(prefixed[1]);
+    const standalone = text.match(/^0*(\d{1,4})$/);
+    if (standalone) return Number(standalone[1]);
+  }
+  return null;
+}
+
+function equivalentProviderEpisode(serverEpisodes, episode, episodeIndex) {
+  const list = Array.isArray(serverEpisodes) ? serverEpisodes : [];
   const identity = [episode?.slug, episode?.name, episode?.filename]
-    .map((value) => String(value || "").trim().toLocaleLowerCase())
+    .map(normalizedEpisodeIdentity)
     .filter(Boolean);
+  let candidate = list.find((item) => identity.some((value) =>
+    [item?.slug, item?.name, item?.filename].some((field) => normalizedEpisodeIdentity(field) === value)));
+  if (candidate) return candidate;
+
+  // Providers use different labels for the same episode. Resolve "Tap 03",
+  // "Episode 3", "EP03", etc. before falling back to array position.
+  const ordinal = episodeOrdinalHint(episode);
+  if (ordinal !== null) {
+    candidate = list.find((item) => episodeOrdinalHint(item) === ordinal);
+    if (candidate) return candidate;
+  }
+  return list[episodeIndex] || null;
+}
+
+function equivalentStreamTargets(data, episode, episodeIndex) {
   const output = new Map();
   for (const [serverIndex, server] of (Array.isArray(data?.episodes) ? data.episodes : []).entries()) {
     const serverEpisodes = Array.isArray(server?.server_data) ? server.server_data : [];
-    let candidate = serverEpisodes.find((item) => identity.some((value) =>
-      [item?.slug, item?.name, item?.filename].some((field) => String(field || "").trim().toLocaleLowerCase() === value)));
-    if (!candidate) candidate = serverEpisodes[episodeIndex];
+    const candidate = equivalentProviderEpisode(serverEpisodes, episode, episodeIndex);
     const resolved = directStreamTarget(candidate);
     const embed = streamCEmbedTarget(candidate?.link_embed);
     const key = resolved?.target?.href || embed?.href;
