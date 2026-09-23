@@ -9,7 +9,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://phim4k-license-api.phim4k-pwdbhdz.workers.dev; media-src 'self' blob: https://phim4k-license-api.phim4k-pwdbhdz.workers.dev; connect-src 'self' https://phim4k-license-api.phim4k-pwdbhdz.workers.dev; worker-src 'self' blob:">
-  <title>4K Cinema</title>
+  <title>MNHUT Cinema</title>
   
   <!-- HLS.js for streaming m3u8 -->
   <script src="/vendor/hls.min.js?v=3.56"></script>
@@ -33,33 +33,25 @@
           </div>
           <div class="license-brand-copy">
             <div class="license-wordmark">MNHUT</div>
-            <span class="license-edition">CINEMA ACCESS</span>
+            <span class="license-edition">CINEMA</span>
           </div>
         </div>
 
         <div class="license-hero-copy">
-          <span class="license-eyebrow">PRIVATE CINEMA • SECURE ACCESS</span>
-          <h1>Không gian xem phim của riêng bạn.</h1>
-          <p>Một key cho một thiết bị. Nguồn phim, phiên xem và quyền truy cập được quản lý tập trung.</p>
+          <span class="license-eyebrow">SECURE ACCESS</span>
+          <h1>Xác thực thiết bị.</h1>
+          <p>Nhập key một lần. Phiên đăng nhập được giữ an toàn trên máy này cho tới khi key hết hạn hoặc Admin thu hồi.</p>
         </div>
 
-        <div class="license-signal-grid" aria-label="Trạng thái hệ thống">
-          <div class="license-signal">
-            <span class="signal-dot"></span>
-            <div><strong>Secure session</strong><small>Phiên truy cập riêng</small></div>
-          </div>
-          <div class="license-signal">
-            <span class="signal-index">04</span>
-            <div><strong>4 nền tảng</strong><small>iOS • Android • TV • Windows</small></div>
-          </div>
-          <div class="license-signal">
-            <span class="signal-index">01</span>
-            <div><strong>1 key / thiết bị</strong><small>Admin có thể reset</small></div>
-          </div>
+        <div class="license-mini-status">
+          <span class="signal-dot"></span>
+          <span>Phiên bảo mật</span>
+          <i></i>
+          <span>Giới hạn thiết bị do Admin đặt</span>
         </div>
 
         <div class="license-visual-footer">
-          <span>MNHUT SYSTEM</span>
+          <span>MNHUT</span>
           <span class="license-status"><i></i> READY</span>
         </div>
       </section>
@@ -67,9 +59,9 @@
       <section class="license-entry">
         <div class="license-entry-head">
           <div>
-            <span class="license-step">ACCESS // 01</span>
-            <h2>Kích hoạt thiết bị</h2>
-            <p>Nhập key được cấp để mở MNHUT Cinema trên thiết bị này.</p>
+            <span class="license-step">ACCESS</span>
+            <h2>Nhập key</h2>
+            <p>Key sẽ tự nhận diện và ghi nhớ thiết bị sau khi xác thực.</p>
           </div>
           <span class="license-lock-badge" aria-label="Kết nối bảo mật">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
@@ -104,7 +96,7 @@
             <input
               type="password"
               id="keyInput"
-              placeholder="MNHUT-XXXX-XXXX-XXXX"
+              placeholder="XXXX-XXXX-XXXX"
               autocomplete="off"
               spellcheck="false"
               required
@@ -156,7 +148,7 @@
         <div class="license-support">
           <span class="support-beacon" aria-hidden="true"></span>
           <div>
-            <small>CHƯA CÓ KEY / CẦN GIA HẠN</small>
+            <small>HỖ TRỢ KEY</small>
             <a href="https://t.me/mnhutdznecon" target="_blank" class="tele-link">@mnhutdznecon</a>
           </div>
         </div>
@@ -799,6 +791,10 @@
                 <label>Tên Gói:</label>
                 <input type="text" id="newKeyPlan" placeholder="VD: VIP 1 Tháng" />
               </div>
+              <div class="form-group flex-1">
+                <label>Số thiết bị tối đa:</label>
+                <input type="number" id="newKeyMaxDevices" min="1" max="20" value="1" inputmode="numeric" />
+              </div>
             </div>
             <button type="submit" id="btnSubmitNewKey" class="btn-primary" style="margin-top: 10px;">
               TẠO LICENSE KEY NGAY
@@ -836,7 +832,7 @@
                   <th>Telegram ID Khách</th>
                   <th>Gói VIP</th>
                   <th>Hạn Dùng</th>
-                  <th>Thiết Bị (Device)</th>
+                  <th>Thiết Bị</th>
                   <th>Trạng Thái</th>
                   <th>Thao Tác</th>
                 </tr>
