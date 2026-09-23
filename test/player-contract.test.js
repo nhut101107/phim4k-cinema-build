@@ -65,6 +65,16 @@ test('prefers native HLS before hls.js inside the iPhone WebView', () => {
   assert.match(player, /this\.usingNativeHls = true/);
 });
 
+test('stalled playback refreshes the current stream before abandoning the server', () => {
+  assert.match(player, /onVideo\('stalled'/);
+  assert.match(player, /armStallWatchdog\('waiting'\)/);
+  assert.match(player, /armStallWatchdog\('stalled'\)/);
+  assert.match(player, /streamRefreshAttempts < 1/);
+  assert.match(player, /await this\.loadEpisode\(this\.currentEpisode, \{ resumeTime, autoplay: true \}\)/);
+  assert.match(player, /recoverPlayback\('native_video_error'\)/);
+  assert.match(player, /recoverPlayback\('hls_fatal'\)/);
+});
+
 test('Android WebView keeps adaptive hls.js playback with a native fallback', () => {
   assert.match(player, /nativePlatform\(\)/);
   assert.match(player, /this\.nativePlatform\(\) === 'ios'/);

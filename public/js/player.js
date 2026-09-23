@@ -25,6 +25,11 @@ const Player = {
   usingNativeHls: false,
   failedServerIndexes: new Set(),
   mediaRecoveryCount: 0,
+  stallWatchdogTimer: null,
+  streamRefreshAttempts: 0,
+  recoveryInFlight: false,
+  stablePlaybackSince: 0,
+  lastProgressTime: 0,
   playbackStartLogged: false,
   watchedSeconds: 0,
   activePlayStartedAt: 0,
@@ -53,11 +58,26 @@ const Player = {
       this.captureWatchedTime();
       this.saveProgressNow({ flush: true });
       this.updatePlayBtn(false);
+      this.clearStallWatchdog();
     });
-    onVideo('timeupdate', () => this.onTimeUpdate());
+    onVideo('timeupdate', () => {
+      this.onTimeUpdate();
+      this.notePlaybackProgress();
+    });
     onVideo('progress', () => this.onProgress());
-    onVideo('waiting', () => this.showBuffering(true, 'Đang đệm dữ liệu…'));
-    onVideo('playing', () => this.showBuffering(false));
+    onVideo('waiting', () => {
+      this.showBuffering(true, 'Đang đệm dữ liệu…');
+      this.armStallWatchdog('waiting');
+    });
+    onVideo('stalled', () => {
+      this.showBuffering(true, 'Luồng phim đang bị nghẽn…');
+      this.armStallWatchdog('stalled');
+    });
+    onVideo('playing', () => {
+      this.showBuffering(false);
+      this.clearStallWatchdog();
+      if (!this.stablePlaybackSince) this.stablePlaybackSince = Date.now();
+    });
     onVideo('ended', () => this.onEnded());
     onVideo('error', () => this.onNativeVideoError());
     onVideo('resize', () => this.updateCurrentResolution());
@@ -120,6 +140,11 @@ const Player = {
     this.watchedSeconds = 0;
     this.activePlayStartedAt = 0;
     this.skippedAdMarkers.clear();
+    this.streamRefreshAttempts = 0;
+    this.recoveryInFlight = false;
+    this.stablePlaybackSince = 0;
+    this.lastProgressTime = 0;
+    this.clearStallWatchdog();
     this.loadAutoSkipPreference();
     API.trackUsage('episode_open', this.usageContext(movie, episode));
 
@@ -153,6 +178,8 @@ const Player = {
     this.playbackTicketRequest += 1;
     this.activeStreamUrl = '';
     this.closeDropdowns();
+    this.clearStallWatchdog();
+    this.recoveryInFlight = false;
     this.destroyHls();
     this.releaseAudioVideo();
     if (this.video) {
@@ -213,6 +240,7 @@ const Player = {
   },
 
   loadStream(streamUrl, options = {}) {
+    this.clearStallWatchdog();
     this.releaseAudioVideo();
     const session = ++this.streamSession;
     const resumeTime = Number(options.resumeTime) || 0;
@@ -312,7 +340,7 @@ const Player = {
           return;
         }
         this.showBuffering(false);
-        this.fallbackToNextServer();
+        void this.recoverPlayback('hls_fatal');
       });
       return;
     }
@@ -337,6 +365,61 @@ const Player = {
       quality: this.usingNativeHls ? `Tự động ${this.nativePlatform()}` : this.qualityMode
     });
     if (autoplay) this.video.play().catch(() => this.showAlert('Chạm nút Phát để bắt đầu xem.'));
+  },
+
+  clearStallWatchdog() {
+    if (this.stallWatchdogTimer) clearTimeout(this.stallWatchdogTimer);
+    this.stallWatchdogTimer = null;
+  },
+
+  notePlaybackProgress() {
+    const current = Number(this.video?.currentTime) || 0;
+    if (current <= this.lastProgressTime + 0.2) return;
+    this.lastProgressTime = current;
+    this.clearStallWatchdog();
+    if (!this.stablePlaybackSince) this.stablePlaybackSince = Date.now();
+    if (this.streamRefreshAttempts > 0 && Date.now() - this.stablePlaybackSince >= 45000) {
+      // After sustained healthy playback, allow one fresh-ticket recovery again.
+      this.streamRefreshAttempts = 0;
+      this.stablePlaybackSince = Date.now();
+    }
+  },
+
+  armStallWatchdog(reason = 'waiting') {
+    if (this.stallWatchdogTimer || !this.activeStreamUrl || this.video?.ended || this.modal?.classList.contains('hidden')) return;
+    const session = this.streamSession;
+    const baseline = Number(this.video?.currentTime) || 0;
+    this.stallWatchdogTimer = window.setTimeout(() => {
+      this.stallWatchdogTimer = null;
+      if (session !== this.streamSession || !this.activeStreamUrl || this.video?.ended || this.modal?.classList.contains('hidden')) return;
+      const current = Number(this.video?.currentTime) || 0;
+      if (current > baseline + 0.75) return;
+      void this.recoverPlayback(reason);
+    }, 16000);
+  },
+
+  async recoverPlayback(reason = 'playback_stall') {
+    if (this.recoveryInFlight || this.modal?.classList.contains('hidden')) return;
+    this.recoveryInFlight = true;
+    this.clearStallWatchdog();
+    const resumeTime = Number(this.video?.currentTime) || 0;
+    try {
+      // EnsMovie-style recovery: refresh the current source once before
+      // abandoning it. This mints a fresh signed/proxied HLS URL and preserves
+      // the exact playback position in our own player UI.
+      if (this.streamRefreshAttempts < 1 && this.currentEpisode?.stream_ref) {
+        this.streamRefreshAttempts += 1;
+        this.stablePlaybackSince = 0;
+        this.showBuffering(true, 'Đang làm mới nguồn phát…');
+        API.trackUsage('playback_recover', { ...this.usageContext(), error: reason });
+        await this.loadEpisode(this.currentEpisode, { resumeTime, autoplay: true });
+        return;
+      }
+      this.showBuffering(false);
+      this.fallbackToNextServer();
+    } finally {
+      this.recoveryInFlight = false;
+    }
   },
 
   usageContext(movie = this.currentMovie, episode = this.currentEpisode) {
@@ -447,6 +530,10 @@ const Player = {
     const autoplay = Boolean(this.video && !this.video.paused);
     this.saveProgressNow();
     this.currentServerIndex = newServerIndex;
+    this.streamRefreshAttempts = 0;
+    this.stablePlaybackSince = 0;
+    this.lastProgressTime = 0;
+    this.clearStallWatchdog();
     this.currentEpisode = match.episode;
     this.currentEpIndex = match.index;
     this.episodesList = targetEpisodes;
@@ -793,7 +880,7 @@ const Player = {
     const currentSource = this.video?.currentSrc || this.video?.src || '';
     if (!currentSource || !this.isActiveStreamSource(currentSource)) return;
     this.showBuffering(false);
-    this.fallbackToNextServer();
+    void this.recoverPlayback('native_video_error');
   },
 
   isActiveStreamSource(source) {

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import worker, { auditTypeForAction, compareAppVersions, createRateLimiter, json, normalizeAnnouncementSetting, normalizeMaintenanceSetting, normalizeTelemetryEvents, sealMediaTicket } from "../src/worker.mjs";
+import worker, { auditTypeForAction, compareAppVersions, createRateLimiter, episodeOrdinalHint, equivalentProviderEpisode, json, normalizeAnnouncementSetting, normalizeMaintenanceSetting, normalizeTelemetryEvents, sealMediaTicket } from "../src/worker.mjs";
 
 const MEDIA_SECRET = "fixture-media-ticket-secret-at-least-32-characters";
 function freeViewerEnv(extra = {}) {
@@ -25,6 +25,17 @@ function viewerRequest(path, init = {}) {
     headers: { "x-device-id": "fixture-device", ...(init.headers || {}) },
   });
 }
+
+test("provider matcher keeps the same episode across different naming conventions", () => {
+  const episodes = [
+    { slug: "episode-4", name: "Episode 4" },
+    { slug: "episode-3", name: "EP03" },
+    { slug: "episode-2", name: "Episode 2" },
+  ];
+  const selected = equivalentProviderEpisode(episodes, { slug: "tap-03", name: "Tập 03" }, 0);
+  assert.equal(selected.slug, "episode-3");
+  assert.equal(episodeOrdinalHint({ filename: "Tập 0012" }), 12);
+});
 
 test("health reports an unconfigured database without exposing settings", async () => {
   const response = await worker.fetch(new Request("https://example.workers.dev/api/health"), {});
