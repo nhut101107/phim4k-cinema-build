@@ -172,7 +172,8 @@ function configuredBackupCatalogOrigin(env) {
 function configuredOphimOrigin(env) {
   // EnsMovie keeps OPhim and PhimAPI as separate gateway candidates. Mirror
   // that behaviour without depending on EnsMovie's private signed gateway.
-  const raw = String(env?.MOVIE_OPHIM_ORIGIN || "https://ophim1.com").trim();
+  const raw = String(env?.MOVIE_OPHIM_ORIGIN || "").trim();
+  if (!raw) return null;
   try {
     const url = new URL(raw);
     if (url.protocol !== "https:" || url.username || url.password || url.port || url.search || url.hash) return null;
@@ -3177,7 +3178,7 @@ async function fetchEnsMovieStyleCatalog(mode, env, { page = 1, query = "", cate
       .catch(() => null));
   }
 
-  const nguonOrigin = configuredBackupCatalogOrigin(env);
+  const nguonOrigin = env?.MOVIE_BACKUP_CATALOG_ORIGIN ? configuredBackupCatalogOrigin(env) : null;
   if (nguonOrigin) {
     const nguonPath = mode === "search"
       ? `/api/films/search?keyword=${encodeURIComponent(query)}&page=${page}`
@@ -3207,18 +3208,31 @@ async function fetchEnsMovieStyleHomeCatalog(env) {
   const primaryResults = await Promise.allSettled(
     primaryPaths.map((path, index) => fetchProtectedCatalogJson(path, env, { ttl: index ? 60 : 15 })),
   );
-  const primaryItems = primaryResults.flatMap((result) => result.status === "fulfilled" ? normalizedCatalogItems(result.value, env) : []);
-  const latest = await fetchEnsMovieStyleCatalog("latest", env, { page: 1 });
+  const sourceEntries = [{
+    id: "phimapi",
+    name: "PhimAPI",
+    items: primaryResults.flatMap((result) => result.status === "fulfilled" ? normalizedCatalogItems(result.value, env) : []),
+  }];
+
+  const ophimOrigin = configuredOphimOrigin(env);
+  if (ophimOrigin) {
+    const data = await fetchJsonFromOrigin(ophimOrigin, "/v1/api/danh-sach/phim-moi-cap-nhat?page=1&limit=48&sort_field=modified.time&sort_type=desc", { ttl: 15 });
+    if (data) sourceEntries.push({ id: "ophim", name: "OPhim", items: normalizedCatalogItems(data, env) });
+  }
+
+  const nguonOrigin = env?.MOVIE_BACKUP_CATALOG_ORIGIN ? configuredBackupCatalogOrigin(env) : null;
+  if (nguonOrigin) {
+    const data = await fetchJsonFromOrigin(nguonOrigin, "/api/films/phim-moi-cap-nhat?page=1", { ttl: 15 });
+    if (data) sourceEntries.push({
+      id: "nguonphim",
+      name: "Nguồn Phim",
+      items: (Array.isArray(data?.items) ? data.items : []).map((item) => normalizeNguonCListItem(item, nguonOrigin)).filter(Boolean),
+    });
+  }
+
   return {
-    sources: latest.sources,
-    items: mergeCatalogMovieItems([
-      { id: "phimapi", name: "PhimAPI", items: primaryItems },
-      ...latest.sources.filter((source) => source.id !== "phimapi").map((source) => ({
-        id: source.id,
-        name: source.name,
-        items: latest.items.filter((item) => (item._source_candidates || []).some((candidate) => candidate.id === source.id)),
-      })),
-    ]),
+    sources: sourceEntries.map((entry) => ({ id: entry.id, name: entry.name, count: entry.items.length })),
+    items: mergeCatalogMovieItems(sourceEntries),
   };
 }
 
