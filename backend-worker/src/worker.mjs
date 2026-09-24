@@ -30,6 +30,8 @@ const LICENSE_PATTERN = /^[A-Z0-9][A-Z0-9-]{3,63}$/;
 const MASTER_KEY_MIN_LENGTH = 12;
 const MAX_JSON_BODY_BYTES = 16 * 1024;
 const ADMIN_KEY_HASH_SETTING = "admin_key_hmac_v1";
+const ADMIN_BOOTSTRAP_CONSUMED_SETTING = "admin_key_bootstrap_vip4_consumed";
+const ADMIN_BOOTSTRAP_SHA256 = "sha256-v2:f14ae9a3586e3d854513a06c8c9f23a86aa51a88ff1ff35a21307ef8b7d5e3c6";
 const ANNOUNCEMENT_SETTING = "global_announcement_v1";
 const MAINTENANCE_SETTING = "maintenance_mode_v1";
 const MAX_ANNOUNCEMENT_MINUTES = 30 * 24 * 60;
@@ -590,6 +592,38 @@ async function legacyAdminKeyDigest(key, env) {
   return toHex(await crypto.subtle.digest("SHA-256", encoded));
 }
 
+async function sha256AdminKeyDigest(key) {
+  const encoded = new TextEncoder().encode(normalizeKey(key));
+  return `sha256-v2:${toHex(await crypto.subtle.digest("SHA-256", encoded))}`;
+}
+
+async function bootstrapAdminKeyConsumed(db) {
+  const row = await queryOne(db, "SELECT setting_value FROM app_settings WHERE setting_key = ?", ADMIN_BOOTSTRAP_CONSUMED_SETTING);
+  return String(row?.setting_value || "").toLowerCase() === "true";
+}
+
+async function matchesBootstrapAdminKey(key, db) {
+  if (!key || await bootstrapAdminKeyConsumed(db)) return false;
+  return equalString(await sha256AdminKeyDigest(key), ADMIN_BOOTSTRAP_SHA256);
+}
+
+async function finalizeBootstrapAdminKey(key, env, db) {
+  if (!await matchesBootstrapAdminKey(key, db)) return false;
+  const timestamp = now();
+  const digest = env.ADMIN_KEY_PEPPER
+    ? await adminKeyDigest(key, env)
+    : await sha256AdminKeyDigest(key);
+  await db.prepare(
+    "INSERT INTO app_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?) ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = excluded.updated_at",
+  ).bind(ADMIN_KEY_HASH_SETTING, digest, timestamp).run();
+  await db.prepare(
+    "INSERT INTO app_settings (setting_key, setting_value, updated_at) VALUES (?, 'true', ?) ON CONFLICT(setting_key) DO UPDATE SET setting_value = 'true', updated_at = excluded.updated_at",
+  ).bind(ADMIN_BOOTSTRAP_CONSUMED_SETTING, timestamp).run();
+  await db.prepare("UPDATE auth_sessions SET revoked_at = ?, updated_at = ? WHERE role = 'admin' AND revoked_at IS NULL")
+    .bind(timestamp, timestamp).run();
+  return true;
+}
+
 async function configuredAdminKeyHash(db) {
   const row = await queryOne(db, "SELECT setting_value FROM app_settings WHERE setting_key = ?", ADMIN_KEY_HASH_SETTING);
   return row ? String(row.setting_value || "") : "";
@@ -597,11 +631,19 @@ async function configuredAdminKeyHash(db) {
 
 async function verifyMasterKey(key, env, db) {
   if (!key) return false;
+
+  // One-time secure bootstrap for the VIP 4.0 admin key. Only its SHA-256 is
+  // committed; the plaintext key never appears in the repository. The first
+  // successful admin activation promotes it into the normal server-side key
+  // store and invalidates the previous stored admin key.
+  if (await matchesBootstrapAdminKey(key, db)) return true;
+
   const storedHash = await configuredAdminKeyHash(db);
   if (storedHash) {
-    const candidateHash = storedHash.startsWith("hmac-sha256:")
-      ? await adminKeyDigest(key, env)
-      : await legacyAdminKeyDigest(key, env);
+    let candidateHash = "";
+    if (storedHash.startsWith("hmac-sha256:")) candidateHash = await adminKeyDigest(key, env);
+    else if (storedHash.startsWith("sha256-v2:")) candidateHash = await sha256AdminKeyDigest(key);
+    else candidateHash = await legacyAdminKeyDigest(key, env);
     return Boolean(candidateHash) && equalString(candidateHash, storedHash);
   }
   return Boolean(env.ADMIN_LICENSE_KEY) && equalString(normalizeKey(key), normalizeKey(env.ADMIN_LICENSE_KEY));
@@ -1352,6 +1394,7 @@ async function activationStatus({ db, key, telegramId, deviceId, request, env, a
     if (!await verifyAdminIdentity(key, telegramId, env, db)) {
       return textError("Master key is restricted to the configured administrator Telegram ID.", 403, "ADMIN_TELEGRAM_REQUIRED");
     }
+    await finalizeBootstrapAdminKey(key, env, db);
     const force = await getVerifiedAdminUpdate(db, request, await getForceUpdate(db, appVersion(request)));
     // The client already supplied these credentials. Never echo the raw master
     // key or administrator identity back in an API response.
