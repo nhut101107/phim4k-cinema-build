@@ -73,14 +73,31 @@ jobs:
           fi
 
       - name: Deploy preview
-        run: npx wrangler pages deploy public --project-name="$PAGES_PROJECT" --branch=ensmovie-web-preview-vip4 --commit-dirty=true
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler pages deploy public --project-name="$PAGES_PROJECT" --branch=ensmovie-web-preview-vip4 --commit-dirty=true | tee /tmp/pages-deploy.log
+          deploy_url="$(grep -Eo 'https://[a-z0-9]+\.[a-z0-9-]+\.pages\.dev' /tmp/pages-deploy.log | tail -n1)"
+          test -n "$deploy_url"
+          echo "DEPLOY_URL=$deploy_url" >> "$GITHUB_ENV"
 
       - name: Verify live preview
         shell: bash
         run: |
           set -euo pipefail
-          base="https://$PAGES_PROJECT.pages.dev"
-          curl --fail --silent --show-error --retry 8 --retry-delay 5 --max-time 20 "$base/__web/health" \
-            | node -e 'let b="";process.stdin.on("data",c=>b+=c);process.stdin.on("end",()=>{const j=JSON.parse(b);if(j.ok!==true||j.app!=="Phim 4K VIP 4.0 Web Preview")process.exit(1)})'
-          curl --fail --silent --show-error --retry 8 --retry-delay 5 --max-time 20 "$base/" \
-            | grep -F 'web-premium.css?v=4.0'
+          sleep 8
+          for base in "$DEPLOY_URL" "https://$PAGES_PROJECT.pages.dev"; do
+            echo "Checking $base"
+            health=""
+            for attempt in 1 2 3 4 5 6 7 8; do
+              if health="$(curl --fail --silent --show-error --max-time 20 "$base/__web/health" 2>/tmp/health.err)"; then
+                break
+              fi
+              cat /tmp/health.err || true
+              sleep 5
+            done
+            test -n "$health"
+            printf '%s' "$health" | node -e 'let b="";process.stdin.on("data",c=>b+=c);process.stdin.on("end",()=>{const j=JSON.parse(b);if(j.ok!==true||j.app!=="Phim 4K VIP 4.0 Web Preview")process.exit(1)})'
+            html="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --max-time 20 "$base/")"
+            printf '%s' "$html" | grep -F 'web-premium.css?v=4.0'
+          done
