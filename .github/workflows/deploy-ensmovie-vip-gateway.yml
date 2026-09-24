@@ -1,0 +1,66 @@
+name: Deploy EnsMovie VIP Gateway
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-ensmovie-vip-gateway.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-ensmovie-vip-gateway
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PAGES_PROJECT: p4kvip
+
+    steps:
+      - name: Check credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+
+      - name: Check out EnsMovie gateway source
+        uses: actions/checkout@v4
+        with:
+          ref: ensmovie-native-vip4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci --ignore-scripts
+      - run: node --check public/_worker.js
+
+      - name: Ensure Pages project exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl -sS -o /tmp/project.json -w '%{http_code}'             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             -H "Content-Type: application/json"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$PAGES_PROJECT")"
+          if [ "$code" != "200" ]; then
+            curl --fail --silent --show-error               -X POST               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data "{\"name\":\"$PAGES_PROJECT\",\"production_branch\":\"ensmovie-native-vip4\"}"               "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects"               > /tmp/create.json
+            node -e "const r=require('/tmp/create.json');if(!r.success){console.error(r.errors);process.exit(1)}"
+          fi
+
+      - name: Deploy gateway
+        run: npx wrangler pages deploy public --project-name="$PAGES_PROJECT" --branch=ensmovie-native-vip4 --commit-dirty=true
+
+      - name: Verify gateway
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="https://$PAGES_PROJECT.pages.dev"
+          curl --fail --silent --show-error --retry 8 --retry-delay 5 --max-time 20 "$base/__ens/health"             | node -e 'let b="";process.stdin.on("data",c=>b+=c);process.stdin.on("end",()=>{const j=JSON.parse(b);if(j.ok!==true)process.exit(1)})'
+          curl --fail --silent --show-error --retry 8 --retry-delay 5 --max-time 20 "$base/native-gate.html"             | grep -F '<title>Kích hoạt</title>'
