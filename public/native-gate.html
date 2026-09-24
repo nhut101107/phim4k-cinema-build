@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#090b11">
+  <title>Kích hoạt</title>
+  <style>
+    :root{color-scheme:dark;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Inter",sans-serif}
+    *{box-sizing:border-box}
+    html,body{margin:0;min-height:100%;background:#07090e;color:#f6f7fb}
+    body{min-height:100dvh;display:grid;place-items:center;padding:24px;background:
+      radial-gradient(circle at 15% 10%,rgba(102,124,255,.18),transparent 34%),
+      radial-gradient(circle at 85% 90%,rgba(184,61,255,.12),transparent 32%),#07090e}
+    .card{width:min(430px,100%);padding:28px;border:1px solid rgba(255,255,255,.09);border-radius:24px;
+      background:rgba(14,17,25,.92);box-shadow:0 28px 80px rgba(0,0,0,.45)}
+    .brand{display:flex;align-items:center;gap:10px;margin-bottom:28px;color:#9da6b8;font-size:11px;font-weight:800;letter-spacing:.12em}
+    .mark{width:34px;height:34px;display:grid;place-items:center;border-radius:11px;border:1px solid rgba(255,255,255,.1);
+      background:rgba(255,255,255,.04);color:#eef0ff;font-size:11px;letter-spacing:-.05em}
+    h1{margin:0 0 8px;font-size:30px;letter-spacing:-.04em}
+    p{margin:0 0 24px;color:#8993a5;font-size:13px;line-height:1.6}
+    label{display:block;margin-bottom:8px;color:#8f98aa;font-size:10px;font-weight:800;letter-spacing:.12em}
+    .field{position:relative}
+    input{width:100%;height:56px;border:1px solid rgba(255,255,255,.09);border-radius:15px;background:rgba(255,255,255,.035);
+      color:#fff;padding:0 16px;font-size:15px;outline:none}
+    input:focus{border-color:rgba(124,143,255,.7);box-shadow:0 0 0 4px rgba(124,143,255,.08)}
+    button{width:100%;height:54px;margin-top:14px;border:0;border-radius:15px;background:#f4f6fb;color:#090b10;font-size:13px;font-weight:850;cursor:pointer}
+    button:disabled{opacity:.55;cursor:default}
+    .msg{min-height:20px;margin-top:13px;font-size:12px;line-height:1.5;color:#8f98aa}
+    .msg.error{color:#ff8c9b}.msg.ok{color:#82e6ba}
+    .foot{margin-top:22px;padding-top:16px;border-top:1px solid rgba(255,255,255,.06);display:flex;justify-content:space-between;
+      color:#535c6d;font-size:9px;letter-spacing:.08em}
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="brand"><span class="mark">MN</span><span>MNHUT</span></div>
+    <h1>Nhập key</h1>
+    <p>Key sẽ được ghi nhớ trên máy này. Nếu Admin cho phép nhiều thiết bị, cùng key có thể dùng trên số máy đã đặt.</p>
+    <form id="form">
+      <label for="key">LICENSE KEY</label>
+      <div class="field"><input id="key" type="password" autocomplete="off" placeholder="XXXX-XXXX-XXXX" required></div>
+      <button id="submit" type="submit">Kích hoạt</button>
+    </form>
+    <div id="msg" class="msg"></div>
+    <div class="foot"><span>SECURE ACCESS</span><span>ENS PLAYER</span></div>
+  </main>
+<script>
+(() => {
+  const KEY = 'mnhut_ensmovie_key_v1';
+  const DEVICE = 'mnhut_ensmovie_device_v1';
+  const input = document.getElementById('key');
+  const form = document.getElementById('form');
+  const submit = document.getElementById('submit');
+  const msg = document.getElementById('msg');
+
+  function deviceId() {
+    let value = localStorage.getItem(DEVICE);
+    if (!value) {
+      value = (crypto.randomUUID ? crypto.randomUUID() : 'ios-' + Date.now() + '-' + Math.random().toString(16).slice(2)).replace(/[^a-zA-Z0-9_-]/g,'').slice(0,120);
+      localStorage.setItem(DEVICE, value);
+    }
+    return value;
+  }
+
+  function say(text, type='') {
+    msg.textContent = text || '';
+    msg.className = 'msg' + (type ? ' ' + type : '');
+  }
+
+  async function activate(raw, automatic=false) {
+    const key = String(raw || '').trim().toUpperCase();
+    if (!key) return false;
+    submit.disabled = true;
+    submit.textContent = automatic ? 'Đang kiểm tra…' : 'Đang xác thực…';
+    say('');
+    try {
+      const res = await fetch('/api/auth/activate', {
+        method:'POST',
+        headers:{'content-type':'application/json','x-app-version':'4.0','x-app-runtime':'ios'},
+        body:JSON.stringify({key,deviceId:deviceId()})
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.success === false || data.active === false) {
+        if (automatic) localStorage.removeItem(KEY);
+        say(data.message || data.error || 'Key không hợp lệ hoặc thiết bị chưa được phép.', 'error');
+        return false;
+      }
+      localStorage.setItem(KEY, key);
+      say('Đã xác thực. Đang mở phim…','ok');
+      setTimeout(() => location.href='mnhut://unlock', 120);
+      return true;
+    } catch (e) {
+      say('Không kết nối được máy chủ key. Thử lại sau.', 'error');
+      return false;
+    } finally {
+      submit.disabled = false;
+      submit.textContent = 'Kích hoạt';
+    }
+  }
+
+  form.addEventListener('submit', e => { e.preventDefault(); activate(input.value); });
+  const saved = localStorage.getItem(KEY);
+  if (saved) { input.value = saved; activate(saved, true); }
+  else setTimeout(() => input.focus(), 100);
+})();
+</script>
+</body>
+</html>
