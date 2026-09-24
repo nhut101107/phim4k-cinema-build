@@ -1,0 +1,19 @@
+{
+  "name": "Phim 4K VIP 4.0",
+  "short_name": "4K VIP",
+  "description": "Phim 4K VIP 4.0",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#080b11",
+  "theme_color": "#080b11",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/media/phim4k-avatar.png?v=3.56",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
