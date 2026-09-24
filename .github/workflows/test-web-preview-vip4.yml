@@ -1,0 +1,28 @@
+name: Validate VIP4 web preview
+
+on:
+  push:
+    branches: [ensmovie-web-preview-vip4]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node --check public/_worker.js
+      - run: npm test
+      - name: Check web preview contract
+        shell: bash
+        run: |
+          grep -F 'class="activation-locked web-preview"' public/index.html
+          grep -F 'web-premium.css?v=4.0' public/index.html
+          grep -F 'grid-template-columns: minmax(540px, 1.18fr) minmax(360px, .82fr);' public/css/web-premium.css
