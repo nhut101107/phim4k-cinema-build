@@ -3066,18 +3066,17 @@ function mergeResolvedMovieSources(entries) {
         : `${entry.id}|${normalizedMovieIdentity(server?.server_name)}|${(server?.server_data || []).length}`;
       if (seen.has(identity)) continue;
       seen.add(identity);
-      const sourceName = cleanProgressText(server?._source_name || entry.name, 40) || "Nguồn";
       const rawName = cleanProgressText(server?.server_name, 80) || `Server ${episodes.length + 1}`;
-      const decoratedName = rawName.toLowerCase().includes(sourceName.toLowerCase())
-        ? rawName
-        : `[${sourceName}] ${rawName}`;
+      const publicServerName = `Server ${episodes.length + 1}`;
       episodes.push({
         ...server,
         _source_id: server?._source_id || entry.id,
-        _source_name: sourceName,
+        _source_name: "Server",
         _source_movie_slug: catalogSlug(entry.data?.movie?.slug) || "",
+        // Keep the provider's native server name only for internal source-aware
+        // playback resolution. It is never shown in the client server picker.
         _source_server_name: rawName,
-        server_name: decoratedName,
+        server_name: publicServerName,
       });
     }
   }
@@ -3322,9 +3321,9 @@ async function handleProtectedMovieCatalog(request, env, executionContext) {
     if (!data) return textError("Chưa tải được thông tin phim từ các nguồn.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
     prewarmBackupStreams(data, slug, executionContext);
     const output = await protectMovieDetail(data, request, env, slug);
-    output.sources = entries.map((entry) => ({
+    output.sources = entries.map((entry, index) => ({
       id: entry.id,
-      name: entry.name,
+      name: `Server ${index + 1}`,
       servers: Array.isArray(entry.data?.episodes) ? entry.data.episodes.length : 0,
       episodes: countPlayableEpisodes(entry.data),
     }));

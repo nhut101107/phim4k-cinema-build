@@ -69,6 +69,8 @@ test('catalog detail strips raw media links and playback uses encrypted Worker c
     const serializedDetail = JSON.stringify(detailJson);
     assert.doesNotMatch(serializedDetail, /video\.example|embed\.example|link_m3u8|link_embed/i);
     assert.match(detailJson.movie.poster_url, /^https:\/\/example\.workers\.dev\/api\/media\/image\?t=/);
+    assert.equal(detailJson.episodes[0].server_name, 'Server 1');
+    assert.equal(detailJson.episodes[0].source_name, 'Server');
     assert.deepEqual(detailJson.episodes[0].server_data[0].stream_ref, {
       movie: 'phim-kiem-thu',
       server: 0,
