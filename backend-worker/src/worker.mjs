@@ -20,7 +20,7 @@ const JSON_HEADERS = {
 const CORS_HEADERS = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
-  "access-control-allow-headers": "authorization, content-type, range, x-license-key, x-telegram-id, x-device-id, x-app-version, x-device-time, x-device-nonce, x-device-proof, x-refresh-token",
+  "access-control-allow-headers": "authorization, content-type, range, x-license-key, x-telegram-id, x-device-id, x-app-version, x-app-runtime, x-device-time, x-device-nonce, x-device-proof, x-refresh-token",
   "access-control-expose-headers": "accept-ranges, content-length, content-range, retry-after",
   "access-control-max-age": "86400",
 };
@@ -172,13 +172,13 @@ function configuredBackupCatalogOrigin(env) {
 }
 
 function configuredOphimOrigin(env) {
-  // EnsMovie keeps OPhim and PhimAPI as separate gateway candidates. Mirror
-  // that behaviour without depending on EnsMovie's private signed gateway.
+  // Keep a stale OPhim setting from taking an entire server slot offline.
   const raw = String(env?.MOVIE_OPHIM_ORIGIN || "").trim();
   if (!raw) return null;
   try {
     const url = new URL(raw);
     if (url.protocol !== "https:" || url.username || url.password || url.port || url.search || url.hash) return null;
+    if (url.hostname.toLowerCase() === "ophim1.com") url.hostname = "phimapi.com";
     url.pathname = url.pathname === "/" ? "" : url.pathname.replace(/\/+$/, "");
     return url;
   } catch (_error) {
@@ -444,6 +444,20 @@ function requestPlatform(request) {
   if (/iPhone|iPad|iPod/i.test(userAgent)) return "ios";
   if (/Windows/i.test(userAgent)) return "windows";
   return "";
+}
+
+function requestRuntime(request) {
+  const explicit = String(request.headers.get("x-app-runtime") || "").trim().toLowerCase();
+  if (["web", "pwa", "ios", "android", "android_tv", "windows"].includes(explicit)) return explicit;
+  const userAgent = request.headers.get("user-agent") || "";
+  if (/Phim4KTV/i.test(userAgent)) return "android_tv";
+  if (/Phim4KAndroid/i.test(userAgent)) return "android";
+  if (/Phim4KDesktop|MNHUTCinemaDesktop/i.test(userAgent)) return "windows";
+  return "web";
+}
+
+function canUseNativeStreamResolver(request) {
+  return ["ios", "android", "android_tv", "windows"].includes(requestRuntime(request));
 }
 
 export function compareAppVersions(left, right) {
@@ -2514,8 +2528,9 @@ async function resolveStreamCPlaylistUncached(embed, slug) {
       // previous 6.5 second cutoff rejected healthy Rick & Morty episodes.
       signal: AbortSignal.timeout(25000),
     });
-    if (!response.ok || !String(response.headers.get("content-type") || "").includes("application/json")) return null;
-    const payload = await response.json();
+    if (!response.ok) return null;
+    const payload = await response.json().catch(() => null);
+    if (!payload || typeof payload !== "object") return null;
     const playlist = safePublicHttpsUrl(payload?.preissued?.playlist);
     const issuedAt = Number(payload?.preissued?.issuedAt);
     const expiresAt = Number(payload?.preissued?.expiresAt);
@@ -3521,7 +3536,7 @@ async function handleMoviePlayback(request, env) {
     }
   }
   if (!chosen) chosen = await streamChoicePromise;
-  if (!chosen && nativeBootstrapCandidate) {
+  if (!chosen && nativeBootstrapCandidate && canUseNativeStreamResolver(request)) {
     const expiresAt = Math.floor(Date.now() / 1000) + STREAM_TICKET_TTL_SECONDS;
     return json({
       success: true,

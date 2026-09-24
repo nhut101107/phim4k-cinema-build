@@ -238,7 +238,7 @@ test('a StreamC backup is resolved server-side and disguised segments are relaye
       bootstrapPosts += 1;
       assert.equal(new Headers(init.headers).get('origin'), 'https://embed.streamc.xyz');
       const issuedAt = Math.floor(Date.now() / 1000);
-      return new Response(JSON.stringify({ preissued: { playlist, playlistFormat: 'hls', issuedAt, expiresAt: issuedAt + 14400 } }), { headers: { 'content-type': 'application/json' } });
+      return new Response(JSON.stringify({ preissued: { playlist, playlistFormat: 'hls', issuedAt, expiresAt: issuedAt + 14400 } }), { headers: { 'content-type': 'text/plain; charset=utf-8' } });
     }
     if (url.href === embed) {
       embedWarmups += 1;
@@ -309,7 +309,9 @@ test('a native app resolves StreamC on-device when Cloudflare is blocked', async
   };
   try {
     const playback = await worker.fetch(viewerRequest('/api/movies/play', {
-      method: 'POST', body: JSON.stringify({ movie: 'native-backup', server: 0, episode: 0 }),
+      method: 'POST',
+      headers: { 'x-app-runtime': 'android' },
+      body: JSON.stringify({ movie: 'native-backup', server: 0, episode: 0 }),
     }), f.env);
     assert.equal(playback.status, 200);
     const payload = await playback.json();
@@ -321,3 +323,39 @@ test('a native app resolves StreamC on-device when Cloudflare is blocked', async
     f.sqlite.close();
   }
 });
+
+test('web playback never returns a native-only StreamC bootstrap', async () => {
+  const f = fixture();
+  const originalFetch = globalThis.fetch;
+  const embed = 'https://embed12.streamc.xyz/embed.php?hash=d2ba6338e8354a4f95576076958e934d';
+  const primary = {
+    movie: { slug: 'web-backup', name: 'Web backup' },
+    episodes: [{ server_name: 'Primary', server_data: [{ name: 'Full', slug: 'full', link_m3u8: 'https://video.example/dead.m3u8' }] }],
+  };
+  const backup = { movie: { slug: 'web-backup', episodes: [
+    { server_name: 'Vietsub #1', items: [{ name: 'Full', slug: 'full', embed }] },
+  ] } };
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(input);
+    if (url.origin === 'https://catalog.example') return new Response(JSON.stringify(primary), { headers: { 'content-type': 'application/json' } });
+    if (url.origin === 'https://phim.nguonc.com') return new Response(JSON.stringify(backup), { headers: { 'content-type': 'application/json' } });
+    if (url.href === 'https://video.example/dead.m3u8') return new Response('gone', { status: 404 });
+    if (url.href === embed && init.method === 'POST') return new Response('blocked', { status: 403 });
+    throw new Error(`unexpected upstream: ${url.href}`);
+  };
+  try {
+    const playback = await worker.fetch(viewerRequest('/api/movies/play', {
+      method: 'POST',
+      headers: { 'x-app-runtime': 'web' },
+      body: JSON.stringify({ movie: 'web-backup', server: 0, episode: 0 }),
+    }), f.env);
+    assert.equal(playback.status, 404);
+    const payload = await playback.json();
+    assert.equal(payload.code, 'STREAM_SOURCE_OFFLINE');
+    assert.equal(payload.nativeBootstrap, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+    f.sqlite.close();
+  }
+});
+
