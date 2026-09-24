@@ -1,0 +1,86 @@
+name: Deploy VIP4 Web Preview
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-web-preview-vip4.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-vip4-web-preview
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PAGES_PROJECT: phim-4k-vip-preview
+
+    steps:
+      - name: Check Cloudflare credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+
+      - name: Check out web preview
+        uses: actions/checkout@v4
+        with:
+          ref: ensmovie-web-preview-vip4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci --ignore-scripts
+
+      - name: Verify preview source
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check public/_worker.js
+          test -f public/web-index.html
+          test -f public/css/web-premium.css
+          grep -F 'web-premium.css?v=4.0' public/web-index.html
+          grep -F 'class="activation-locked web-preview"' public/web-index.html
+
+      - name: Ensure Pages project exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl -sS -o /tmp/project.json -w '%{http_code}' \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$PAGES_PROJECT")"
+          if [ "$code" != "200" ]; then
+            curl --fail --silent --show-error \
+              -X POST \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              -H "Content-Type: application/json" \
+              --data "{\"name\":\"$PAGES_PROJECT\",\"production_branch\":\"ensmovie-web-preview-vip4\"}" \
+              "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects" \
+              > /tmp/create.json
+            node -e "const r=require('/tmp/create.json');if(!r.success){console.error(r.errors);process.exit(1)}"
+          fi
+
+      - name: Deploy preview
+        run: npx wrangler pages deploy public --project-name="$PAGES_PROJECT" --branch=ensmovie-web-preview-vip4 --commit-dirty=true
+
+      - name: Verify live preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="https://$PAGES_PROJECT.pages.dev"
+          curl --fail --silent --show-error --retry 8 --retry-delay 5 --max-time 20 "$base/__web/health" \
+            | node -e 'let b="";process.stdin.on("data",c=>b+=c);process.stdin.on("end",()=>{const j=JSON.parse(b);if(j.ok!==true||j.app!=="Phim 4K VIP 4.0 Web Preview")process.exit(1)})'
+          curl --fail --silent --show-error --retry 8 --retry-delay 5 --max-time 20 "$base/" \
+            | grep -F 'web-premium.css?v=4.0'
