@@ -23,6 +23,6 @@ jobs:
       - name: Check web preview contract
         shell: bash
         run: |
-          grep -F 'class="activation-locked web-preview"' public/index.html
-          grep -F 'web-premium.css?v=4.0' public/index.html
+          grep -F 'class="activation-locked web-preview"' public/web-index.html
+          grep -F 'web-premium.css?v=4.0' public/web-index.html
           grep -F 'grid-template-columns: minmax(540px, 1.18fr) minmax(360px, .82fr);' public/css/web-premium.css
