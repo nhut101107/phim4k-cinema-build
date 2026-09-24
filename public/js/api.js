@@ -22,6 +22,18 @@ const API = {
     return '3.56';
   },
 
+  getRuntimeTag() {
+    if (/Phim4KTV/.test(navigator.userAgent)) return 'android_tv';
+    if (/Phim4KAndroid/.test(navigator.userAgent)) return 'android';
+    if (/Phim4KDesktop|MNHUTCinemaDesktop/.test(navigator.userAgent)) return 'windows';
+    if (window.Capacitor?.isNativePlatform?.()) {
+      const platform = String(window.Capacitor.getPlatform?.() || '').toLowerCase();
+      if (platform === 'ios') return 'ios';
+      if (platform === 'android') return 'android';
+    }
+    return window.matchMedia?.('(display-mode: standalone)')?.matches ? 'pwa' : 'web';
+  },
+
   getSessionId() {
     let id = sessionStorage.getItem('phim4k_session_id');
     if (!id) {
@@ -144,6 +156,7 @@ const API = {
       'Content-Type': 'application/json',
       'x-device-id': this.getDeviceId(),
       'x-app-version': this.getVersion(),
+      'x-app-runtime': this.getRuntimeTag(),
       ...(options.headers || {})
     };
 
