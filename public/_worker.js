@@ -25,7 +25,13 @@ export default {
       headers.set('x-forwarded-host', url.host);
       headers.set('x-forwarded-proto', 'https');
 
-      const upstream = await fetch(apiTarget(request), new Request(request, { headers }));
+      const init = {
+        method: request.method,
+        headers,
+        redirect: 'manual',
+      };
+      if (!['GET', 'HEAD'].includes(request.method)) init.body = request.body;
+      const upstream = await fetch(apiTarget(request), init);
       const responseHeaders = new Headers(upstream.headers);
       responseHeaders.set('cache-control', upstream.headers.get('cache-control') || 'no-store');
       return new Response(upstream.body, {
