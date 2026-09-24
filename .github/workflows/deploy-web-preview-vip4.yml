@@ -50,7 +50,7 @@ jobs:
           node --check public/_worker.js
           test -f public/web-index.html
           test -f public/css/web-premium.css
-          grep -F 'web-premium.css?v=4.0' public/web-index.html
+          grep -F 'web-premium.css?v=4.1' public/web-index.html
           grep -F 'class="activation-locked web-preview"' public/web-index.html
 
       - name: Ensure Pages project exists
@@ -72,11 +72,18 @@ jobs:
             node -e "const r=require('/tmp/create.json');if(!r.success){console.error(r.errors);process.exit(1)}"
           fi
 
+      - name: Set clean production branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error             -X PATCH             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             -H "Content-Type: application/json"             --data '{"production_branch":"phim-4k-vip-4.0"}'             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$PAGES_PROJECT"             > /tmp/project-update.json
+          node -e "const r=require('/tmp/project-update.json');if(!r.success){console.error(r.errors);process.exit(1)}"
+
       - name: Deploy preview
         shell: bash
         run: |
           set -euo pipefail
-          npx wrangler pages deploy public --project-name="$PAGES_PROJECT" --branch=ensmovie-web-preview-vip4 --commit-dirty=true | tee /tmp/pages-deploy.log
+          npx wrangler pages deploy public --project-name="$PAGES_PROJECT" --branch=phim-4k-vip-4.0 --commit-dirty=true | tee /tmp/pages-deploy.log
           deploy_url="$(grep -Eo 'https://[a-z0-9]+\.[a-z0-9-]+\.pages\.dev' /tmp/pages-deploy.log | tail -n1)"
           test -n "$deploy_url"
           echo "DEPLOY_URL=$deploy_url" >> "$GITHUB_ENV"
@@ -86,4 +93,4 @@ jobs:
         run: |
           set -euo pipefail
           echo "Preview deployed: $DEPLOY_URL"
-          echo "Branch alias: https://ensmovie-web-preview-vip4.$PAGES_PROJECT.pages.dev"
+          echo "Clean address: https://$PAGES_PROJECT.pages.dev"
