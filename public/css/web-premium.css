@@ -598,3 +598,56 @@
     font-size: 40px;
   }
 }
+
+
+/* Mobile web player: keep the 16:9 picture visually centered in the viewport.
+   Native iOS still uses EnsMovie/AVPlayer; this only affects the browser preview. */
+@media (max-width: 1023px) and (orientation: portrait) {
+  body.web-preview .player-modal-overlay {
+    display: grid;
+    place-items: center;
+    width: 100vw;
+    height: 100dvh;
+    min-height: 100dvh;
+    background: #000;
+  }
+
+  body.web-preview .cinema-player-wrapper:not(.cinema-fullscreen) {
+    position: relative;
+    width: 100vw;
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden;
+  }
+
+  body.web-preview .cinema-player-wrapper:not(.cinema-fullscreen) .video-element,
+  body.web-preview .player-modal-overlay .cinema-player-wrapper.aspect-contain:not(.cinema-fullscreen):not(.inactive) .video-element,
+  body.web-preview .cinema-player-wrapper.aspect-contain:not(.inactive) .video-element {
+    position: absolute;
+    top: 50% !important;
+    right: 0;
+    bottom: auto;
+    left: 0;
+    width: 100% !important;
+    height: min(56.25vw, 52dvh) !important;
+    margin: 0 !important;
+    transform: translateY(-50%);
+    object-fit: contain;
+    object-position: center center !important;
+    background: #000;
+  }
+
+  body.web-preview .cinema-player-wrapper:not(.cinema-fullscreen) .player-center-toggle {
+    top: 50% !important;
+  }
+
+  body.web-preview .cinema-player-wrapper:not(.cinema-fullscreen) .movie-copyright-watermark {
+    top: calc(50% - min(28.125vw, 26dvh) + 12px);
+  }
+
+  body.web-preview .cinema-player-wrapper:not(.cinema-fullscreen) .player-buffering {
+    inset: 0;
+    display: grid;
+    place-content: center;
+  }
+}
