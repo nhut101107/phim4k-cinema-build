@@ -37,14 +37,13 @@ export default {
 
     if (url.pathname.startsWith('/api/')) return proxyApi(request);
 
-    let response = await env.ASSETS.fetch(request);
-    if (
-      response.status === 404 &&
-      request.method === 'GET' &&
-      (request.headers.get('accept') || '').includes('text/html')
-    ) {
-      response = await env.ASSETS.fetch(new Request(new URL('/', request.url), request));
+    const wantsHtml = request.method === 'GET' && (request.headers.get('accept') || '').includes('text/html');
+    if (url.pathname === '/' || wantsHtml) {
+      const previewUrl = new URL('/web-index.html', request.url);
+      const preview = await env.ASSETS.fetch(new Request(previewUrl, request));
+      if (preview.ok) return preview;
     }
-    return response;
+
+    return env.ASSETS.fetch(request);
   },
 };
