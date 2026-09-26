@@ -187,6 +187,15 @@ const Player = {
       this.video.removeAttribute('src');
       this.video.load();
     }
+    const iframe = document.getElementById('playerEmbed');
+    if (iframe) {
+      iframe.src = 'about:blank';
+      iframe.classList.add('hidden');
+    }
+    const wrapper = document.getElementById('playerWrapper');
+    if (wrapper) {
+      wrapper.classList.remove('embed-active');
+    }
     if (this.saveInterval) clearInterval(this.saveInterval);
     this.saveInterval = null;
     clearTimeout(this.inactivityTimer);
@@ -206,71 +215,101 @@ const Player = {
     const requestId = ++this.playbackTicketRequest;
     this.currentEpisode = episode;
 
-    // Reset embed iframe if any and restore video
-    const iframe = document.getElementById('playerEmbed');
-    if (iframe) {
-      iframe.src = 'about:blank';
-      iframe.classList.add('hidden');
+    // PRIMARY ENSMOVIE EMBED PLAYBACK:
+    // Resolves provider's embed player (JWPlayer Netflix skin) to eliminate CORS, 404 hangs and buffering stalls.
+    let embedUrl = episode?.link_embed || '';
+    if (!embedUrl && episode?.link_m3u8) {
+      embedUrl = `https://player.phimapi.com/player/?url=${encodeURIComponent(episode.link_m3u8)}`;
     }
-    if (this.video) {
-      this.video.classList.remove('hidden');
-    }
-    const btnToggle = document.getElementById('btnToggleEmbed');
-    if (btnToggle) btnToggle.textContent = '📺 Nguồn Dự Phòng (Embed)';
 
-    // 1. Direct stream URL provided by catalog (OPhim, KKPhim, PhimAPI)
+    if (embedUrl) {
+      this.playEmbedStream(embedUrl);
+      return;
+    }
+
+    // Direct stream fallback only if no embed can be resolved
     const directStreamUrl = episode?.link_m3u8 || episode?.m3u8 || episode?.stream_url || episode?.url || '';
     if (directStreamUrl) {
-      this.showBuffering(true, 'Đang mở luồng phát 4K…');
+      this.showBuffering(true, 'Đang mở luồng phát…');
       this.setResolutionBadge(0, 0, '4K Ultra HD');
       this.loadStream(directStreamUrl, { ...options, isHls: true, nativeDirectHls: false });
       return;
     }
 
-    // 2. Direct embed fallback if no direct m3u8
-    if (episode?.link_embed) {
-      this.playEmbedStream(episode.link_embed);
-      return;
-    }
-
-    // 3. Otherwise fallback to next server
     this.showBuffering(false);
     this.showAlert('Server này hiện không có luồng phát. Đang thử server khác…');
     this.fallbackToNextServer();
   },
 
-  toggleEmbedMode() {
-    if (!this.currentEpisode) return;
-    const embedUrl = this.currentEpisode.link_embed || '';
-    if (!embedUrl) {
-      this.showAlert('Tập phim này không có nguồn phát Embed dự phòng.');
-      return;
-    }
-    const iframe = document.getElementById('playerEmbed');
-    const isCurrentlyEmbed = iframe && !iframe.classList.contains('hidden');
-    if (isCurrentlyEmbed) {
-      this.loadEpisode(this.currentEpisode, { autoplay: true });
-    } else {
-      this.playEmbedStream(embedUrl);
-    }
-  },
-
   playEmbedStream(embedUrl) {
+    if (typeof embedUrl === 'string' && embedUrl.startsWith('http://')) {
+      embedUrl = embedUrl.replace(/^http:\/\//i, 'https://');
+    }
     this.destroyHls();
     this.clearStallWatchdog();
+    if (this.stallWatchdogTimer) {
+      clearTimeout(this.stallWatchdogTimer);
+      this.stallWatchdogTimer = null;
+    }
     if (this.video) {
       this.video.pause();
+      this.video.removeAttribute('src');
       this.video.classList.add('hidden');
     }
+
+    // Hide native custom controls, center play button, and buffering overlay in embed mode
+    const buffering = document.getElementById('playerBuffering');
+    if (buffering) buffering.classList.add('hidden');
+
+    const centerPlay = document.getElementById('btnCenterPlayPause');
+    if (centerPlay) centerPlay.classList.add('hidden');
+
+    const controls = document.getElementById('playerControls');
+    if (controls) controls.classList.add('hidden');
+
+    const wrapper = document.getElementById('playerWrapper');
+    if (wrapper) wrapper.classList.add('embed-active');
+
     const iframe = document.getElementById('playerEmbed');
     if (iframe) {
       iframe.src = embedUrl;
       iframe.classList.remove('hidden');
     }
+
     this.showBuffering(false);
-    this.showAlert('Đã chuyển sang trình phát dự phòng (Embed). Bấm phát để xem!');
-    const btnToggle = document.getElementById('btnToggleEmbed');
-    if (btnToggle) btnToggle.textContent = '⚡ Đổi sang Player Gốc';
+    this.setResolutionBadge(0, 0, 'EnsMovie 4K');
+  },
+
+  toggleEmbedMode() {
+    const iframe = document.getElementById('playerEmbed');
+    const isEmbed = iframe && !iframe.classList.contains('hidden');
+    if (isEmbed) {
+      if (this.currentEpisode?.link_m3u8) {
+        if (iframe) {
+          iframe.src = 'about:blank';
+          iframe.classList.add('hidden');
+        }
+        this.wrapper?.classList.remove('embed-active');
+        this.video?.classList.remove('hidden');
+        document.getElementById('playerControls')?.classList.remove('hidden');
+        document.getElementById('btnCenterPlayPause')?.classList.remove('hidden');
+        this.loadStream(this.currentEpisode.link_m3u8, { resumeTime: 0, autoplay: true, isHls: true });
+        this.showAlert('Đã chuyển sang trình phát trực tiếp.');
+      } else {
+        this.showAlert('Không có luồng phát trực tiếp cho tập này.');
+      }
+    } else {
+      let embedUrl = this.currentEpisode?.link_embed || '';
+      if (!embedUrl && this.currentEpisode?.link_m3u8) {
+        embedUrl = `https://player.phimapi.com/player/?url=${encodeURIComponent(this.currentEpisode.link_m3u8)}`;
+      }
+      if (embedUrl) {
+        this.playEmbedStream(embedUrl);
+        this.showAlert('Đã chuyển sang trình phát EnsMovie.');
+      } else {
+        this.showAlert('Không có luồng nhúng cho tập này.');
+      }
+    }
   },
 
   loadStream(streamUrl, options = {}) {
