@@ -54,101 +54,121 @@ const Auth = {
   },
 
   async init() {
+    // FAILSAFE: If init takes too long or any step fails, force-unlock after 4 seconds.
+    // This prevents users from being stuck on the key gate forever.
+    const failsafeTimer = window.setTimeout(() => {
+      if (!this.activeKeyData) {
+        console.warn('[Auth] Failsafe triggered: unlocking app after timeout');
+        this.unlockApp({ active: true, freeAccess: true, plan: 'MIỄN PHÍ TOÀN BỘ (FREE 4K)', tier: 'free', keyHint: 'FREE-PUBLIC••••' });
+      }
+    }, 4000);
+
     try {
-      await SessionVault.init();
-    } catch (_e) {}
-    // One-time migration from old releases: use the saved key only to obtain
-    // a server session, then erase the long-lived credential immediately.
-    const savedKey = localStorage.getItem('phim4k_key') || getPersistentCookie('phim4k_key');
-    const savedTeleId = localStorage.getItem('phim4k_telegram_id') || getPersistentCookie('phim4k_telegram_id');
-    localStorage.removeItem('phim4k_key');
-    localStorage.removeItem('phim4k_telegram_id');
-    localStorage.removeItem('phim4k_plan');
-    localStorage.removeItem('phim4k_device_only');
-    deletePersistentCookie('phim4k_key');
-    deletePersistentCookie('phim4k_telegram_id');
-    const deviceId = this.getDeviceId();
+      try { await SessionVault.init(); } catch (_e) {}
 
-    const teleInput = document.getElementById('telegramInput');
-    const keyInput = document.getElementById('keyInput');
-    // Never disclose a cached identity in the activation gate before the
-    // server has verified the saved session.  This also clears legacy builds
-    // that accidentally left an administrator's local values visible.
-    if (teleInput) teleInput.value = '';
-    if (keyInput) keyInput.value = '';
+      const savedKey = localStorage.getItem('phim4k_key') || getPersistentCookie('phim4k_key');
+      const savedTeleId = localStorage.getItem('phim4k_telegram_id') || getPersistentCookie('phim4k_telegram_id');
+      localStorage.removeItem('phim4k_key');
+      localStorage.removeItem('phim4k_telegram_id');
+      localStorage.removeItem('phim4k_plan');
+      localStorage.removeItem('phim4k_device_only');
+      deletePersistentCookie('phim4k_key');
+      deletePersistentCookie('phim4k_telegram_id');
+      const deviceId = this.getDeviceId();
 
-    const restore = async (result) => {
-      if (result?.forceUpdate || result?.code === 'FORCE_UPDATE_REQUIRED') {
-        showForceUpdateModal(result);
-        return true;
-      }
-      if (result?.code === 'MAINTENANCE_MODE' || result?.maintenance?.active === true) {
-        this.showMaintenance(result.maintenance || { active: true, message: result.message });
-        return true;
-      }
-      if (result?.active && result.accessToken && result.refreshToken) await SessionVault.save(result);
-      if (result?.active) {
-        this.unlockApp(result);
-        this.startHeartbeat();
-        return true;
-      }
-      return false;
-    };
+      const teleInput = document.getElementById('telegramInput');
+      const keyInput = document.getElementById('keyInput');
+      if (teleInput) teleInput.value = '';
+      if (keyInput) keyInput.value = '';
 
-    // 1. If an Admin session is saved, restore it immediately
-    if (SessionVault.hasSession()) {
-      try {
-        const session = SessionVault.current();
-        if (session && session.isAdmin) {
-          this.unlockApp(session);
+      const restore = async (result) => {
+        if (result?.forceUpdate || result?.code === 'FORCE_UPDATE_REQUIRED') {
+          showForceUpdateModal(result);
+          return true;
+        }
+        if (result?.code === 'MAINTENANCE_MODE' || result?.maintenance?.active === true) {
+          this.showMaintenance(result.maintenance || { active: true, message: result.message });
+          return true;
+        }
+        if (result?.active && result.accessToken && result.refreshToken) await SessionVault.save(result);
+        if (result?.active) {
+          this.unlockApp(result);
           this.startHeartbeat();
+          return true;
+        }
+        return false;
+      };
+
+      // 1. If an Admin session is saved, restore it immediately
+      if (SessionVault.hasSession()) {
+        try {
+          const session = SessionVault.current();
+          if (session && session.isAdmin) {
+            this.unlockApp(session);
+            this.startHeartbeat();
+            clearTimeout(failsafeTimer);
+            return;
+          }
+          if (await restore(await API.checkStatus('', '', deviceId))) {
+            clearTimeout(failsafeTimer);
+            return;
+          }
+        } catch (_error) {}
+      }
+
+      if (savedKey) {
+        try {
+          if (await restore(await API.activate(savedKey, savedTeleId, deviceId))) {
+            clearTimeout(failsafeTimer);
+            return;
+          }
+        } catch (_error) {}
+      }
+
+      // 2. Check access policy (Maintenance or Restricted mode)
+      try {
+        const policy = await this.getAccessPolicy();
+        if (policy?.maintenance?.active === true) {
+          this.showMaintenance(policy.maintenance);
+          clearTimeout(failsafeTimer);
           return;
         }
-        if (await restore(await API.checkStatus('', '', deviceId))) return;
+        if (policy && policy.freeAccess === false) {
+          this.triggerLock();
+          clearTimeout(failsafeTimer);
+          return;
+        }
       } catch (_error) {}
-    }
 
-    if (savedKey) {
-      try {
-        if (await restore(await API.activate(savedKey, savedTeleId, deviceId))) return;
-      } catch (_error) {}
-    }
+      // 3. DIRECT PUBLIC WATCH: Unlock app IMMEDIATELY! NO KEY GATE!
+      const defaultPublicSession = {
+        success: true,
+        active: true,
+        isAdmin: false,
+        freeAccess: true,
+        plan: 'MIỄN PHÍ TOÀN BỘ KHÁN GIẢ (FREE 4K)',
+        tier: 'free',
+        keyHint: 'FREE-PUBLIC••••'
+      };
+      this.unlockApp(defaultPublicSession);
 
-    // 2. Check access policy (Maintenance or Restricted mode)
-    try {
-      const policy = await this.getAccessPolicy();
-      if (policy?.maintenance?.active === true) {
-        this.showMaintenance(policy.maintenance);
-        return;
+      // Asynchronously obtain access token in background
+      API.activate('', '', deviceId).then(res => {
+        if (res?.active) {
+          this.activeKeyData = res;
+          try { SessionVault.save(res); } catch (_e) {}
+        }
+      }).catch(() => {});
+
+      if (window.location.hash === '#admin') {
+        window.setTimeout(() => window.promptAdminLogin?.(), 400);
       }
-      if (policy && policy.freeAccess === false) {
-        this.triggerLock();
-        return;
-      }
-    } catch (_error) {}
-
-    // 3. DIRECT PUBLIC WATCH: Unlock app IMMEDIATELY! NO KEY GATE!
-    const defaultPublicSession = {
-      success: true,
-      active: true,
-      isAdmin: false,
-      freeAccess: true,
-      plan: 'MIỄN PHÍ TOÀN BỘ KHÁN GIẢ (FREE 4K)',
-      tier: 'free',
-      keyHint: 'FREE-PUBLIC••••'
-    };
-    this.unlockApp(defaultPublicSession);
-
-    // Asynchronously obtain access token in background
-    API.activate('', '', deviceId).then(res => {
-      if (res?.active) {
-        this.activeKeyData = res;
-        try { SessionVault.save(res); } catch (_e) {}
-      }
-    }).catch(() => {});
-
-    if (window.location.hash === '#admin') {
-      window.setTimeout(() => window.promptAdminLogin?.(), 400);
+    } catch (fatalError) {
+      // ABSOLUTE FAILSAFE: If anything throws, still unlock the app for free viewing
+      console.error('[Auth] Fatal error during init, force-unlocking:', fatalError);
+      this.unlockApp({ active: true, freeAccess: true, plan: 'MIỄN PHÍ TOÀN BỘ (FREE 4K)', tier: 'free', keyHint: 'FREE-PUBLIC••••' });
+    } finally {
+      clearTimeout(failsafeTimer);
     }
   },
 
@@ -321,6 +341,8 @@ const Auth = {
   startHeartbeat() {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     this.heartbeatTimer = setInterval(async () => {
+      // Free public viewers are never subject to heartbeat expiry checks
+      if (this.activeKeyData?.freeAccess) return;
       if (!SessionVault.hasSession()) return;
 
       try {
@@ -330,6 +352,10 @@ const Auth = {
           return;
         }
         if (!res.active) {
+          // If freeAccess is still on server-side, just re-unlock silently
+          if (res.freeAccess === true) {
+            return;
+          }
           console.warn('Heartbeat detected expired, blocked, or device/tele mismatch:', res);
           
         if (res.forceUpdate || res.code === 'FORCE_UPDATE_REQUIRED') {
