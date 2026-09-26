@@ -122,19 +122,12 @@ const Admin = {
   },
 
   async open(tab = 'keys') {
-    // Server responses set isAdmin only after the master key and administrator
-    // identity have both been verified. Keep the private identity off-device.
     if (window.Auth?.activeKeyData?.isAdmin !== true) {
-      const gate = document.getElementById('activationGate');
-      if (gate) {
-        gate.classList.remove('hidden');
-        document.body.classList.add('activation-locked');
-        const adminDetails = document.getElementById('adminLoginFields');
-        if (adminDetails) adminDetails.open = true;
-        const tele = document.getElementById('telegramInput');
-        if (tele) tele.focus();
+      if (window.promptAdminLogin) {
+        window.promptAdminLogin();
+      } else {
+        alert('Vui lòng đăng nhập với Key Admin: mnhut');
       }
-      alert('Vui lòng nhập Key Quản Trị và Telegram ID để xác thực quyền Admin.');
       return;
     }
 

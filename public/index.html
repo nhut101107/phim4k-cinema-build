@@ -146,6 +146,10 @@
             <div class="spinner hidden" id="activateSpinner"></div>
           </button>
 
+          <button type="button" id="btnEnterFreeGate" class="btn-free-access" onclick="enterFreeViewerMode()">
+            🎬 VÀO XEM PHIM TRỰC TIẾP (MIỄN PHÍ)
+          </button>
+
           <button type="button" id="btnRequestDeviceAccess" class="btn-device-request hidden" onclick="requestDeviceOnlyAccess()">
             Gửi yêu cầu Admin
           </button>
@@ -214,6 +218,11 @@
           <button id="searchClear" class="search-clear hidden" onclick="clearSearch()">✕</button>
           <div id="searchDropdown" class="search-dropdown hidden"></div>
         </div>
+
+        <!-- Quick Admin Login Button -->
+        <button id="adminQuickLoginBtn" class="admin-quick-btn" onclick="promptAdminLogin()" title="Đăng nhập Quản trị viên (Key: mnhut)">
+          👑 Admin
+        </button>
 
         <!-- The button is displayed only after a server-confirmed admin activation. -->
         <button id="adminNavBtn" class="admin-panel-btn hidden" onclick="openAdminPanel()">
@@ -507,6 +516,11 @@
             <h2 id="detailName" class="detail-title">Tên Phim</h2>
             <h4 id="detailOriginName" class="detail-origin">Origin Name</h4>
             <div class="detail-badges" id="detailBadges"></div>
+            <div class="detail-actions-bar" style="margin: 12px 0;">
+              <button type="button" class="btn-detail-report" onclick="reportCurrentMovieIssue()" title="Báo cáo phim bị lỗi, hỏng link hoặc thiếu tập cho Admin">
+                🚩 Báo lỗi phim
+              </button>
+            </div>
             <p id="detailContent" class="detail-synopsis"></p>
             <button id="detailSynopsisToggle" class="detail-synopsis-toggle hidden" type="button" onclick="App.toggleDetailSynopsis()">Xem thêm</button>
             <div class="detail-meta-grid" id="detailMetaGrid"></div>
@@ -554,6 +568,9 @@
           </div>
 
           <span class="player-noads-pill">💎 MNHUT MASTER</span>
+          <button type="button" class="btn-player-report" onclick="reportCurrentMovieIssue()" title="Báo cáo tập phim này bị lỗi cho Admin">
+            🚩 Báo lỗi
+          </button>
           <button class="btn-close-player" onclick="closePlayer()">✕</button>
         </div>
       </div>
@@ -779,13 +796,13 @@
 
         <!-- Create New Key Form -->
         <div class="admin-section-box">
-          <h3>➕ Tạo License Key Mới Gắn Telegram ID</h3>
+          <h3>➕ Tạo License Key Mới (Định dạng tự do hoàn toàn)</h3>
           <form id="createKeyForm" onsubmit="Admin.handleCreateKey(event)" class="create-key-form">
             <div class="form-row">
               <div class="form-group flex-2">
-                <label>Mã License Key:</label>
+                <label>Mã License Key (Tùy ý):</label>
                 <div class="input-with-action">
-                  <input type="text" id="newKeyInput" placeholder="VD: MNHUT-VIP-2026" required />
+                  <input type="text" id="newKeyInput" placeholder="Tự do đặt key bất kỳ (VD: vip123, ban-be, mnhutvip, 8888...)" required />
                   <button type="button" class="btn-sub-action" onclick="Admin.generateRandomKey()">Tạo Ngẫu Nhiên</button>
                 </div>
               </div>

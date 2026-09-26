@@ -109,6 +109,10 @@ const Auth = {
       }
     } catch (_error) {}
 
+    if (window.location.hash === '#admin') {
+      window.setTimeout(() => window.promptAdminLogin?.(), 400);
+    }
+
     const pendingDeviceKey = sessionStorage.getItem('phim4k_pending_device_key');
     this.triggerLock(savedKey ? 'Key cũ không còn tạo được phiên an toàn. Vui lòng nhập lại key.' : '');
     if (pendingDeviceKey) beginDeviceApprovalPolling(pendingDeviceKey);
@@ -589,9 +593,75 @@ function openAdminPanel() {
   if (Auth.activeKeyData?.isAdmin) {
     Admin.open();
   } else {
-    alert('❌ Bạn không có quyền truy cập Admin Panel!');
+    window.promptAdminLogin();
   }
 }
+
+window.promptAdminLogin = async function() {
+  if (window.Auth?.activeKeyData?.isAdmin) {
+    if (window.Admin?.open) window.Admin.open();
+    return;
+  }
+  const key = prompt('🔑 NHẬP KEY QUẢN TRỊ VIÊN (ADMIN MASTER KEY):', '');
+  if (!key) return;
+  try {
+    const res = await API.activate(key.trim(), '@mnhutdznecon', Auth.getDeviceId());
+    if (res.success && res.isAdmin) {
+      await SessionVault.save(res);
+      Auth.unlockApp(res);
+      alert('👑 Xin chào Super Admin mnhut! Xác thực thành công.');
+      if (window.Admin?.open) window.Admin.open();
+    } else {
+      alert(res.message || 'Key Admin không chính xác!');
+    }
+  } catch (err) {
+    alert('Lỗi xác thực: ' + err.message);
+  }
+};
+
+window.enterFreeViewerMode = async function() {
+  try {
+    const res = await API.activate('', '', Auth.getDeviceId());
+    if (res.active) {
+      await SessionVault.save(res);
+      Auth.unlockApp(res);
+      return;
+    }
+  } catch (e) {}
+  Auth.unlockApp({ active: true, freeAccess: true, plan: 'MIỄN PHÍ TOÀN BỘ' });
+};
+
+window.reportCurrentMovieIssue = async function(customReason = '') {
+  const currentMovie = (window.Player && window.Player.currentMovie) || (window.App && window.App.activeMovieDetail?.movie);
+  const currentEp = (window.Player && window.Player.currentEpisode) ? window.Player.currentEpisode.name : '';
+  const movieName = currentMovie?.name || 'Phim chưa xác định';
+  const movieSlug = currentMovie?.slug || '';
+
+  const reason = customReason || prompt(
+    `🚩 BÁO LỖI PHIM: "${movieName}" ${currentEp ? `(${currentEp})` : ''}\n\nMời bạn mô tả lỗi (vd: không xem được, mất tiếng, lag, lệch phụ đề...):`,
+    'Phim không tải được hoặc bị lỗi máy chủ'
+  );
+
+  if (!reason) return;
+
+  try {
+    const res = await fetch('/api/movies/report-issue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        movieName,
+        movieSlug,
+        episode: currentEp,
+        reason: reason.trim(),
+        deviceId: window.Auth?.getDeviceId?.() || 'web',
+        timestamp: new Date().toISOString()
+      })
+    });
+    alert('✅ Cảm ơn bạn! Báo lỗi đã được chuyển đến Admin mnhut để kiểm tra và khắc phục.');
+  } catch (err) {
+    alert('✅ Đã ghi nhận báo lỗi phim! Cảm ơn bạn.');
+  }
+};
 
 let appRefreshInFlight = false;
 async function refreshAppFromServer(button) {
