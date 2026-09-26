@@ -65,23 +65,18 @@
 .movie-copyright-watermark {
   position: absolute;
   z-index: 28;
-  top: max(14px, calc(env(safe-area-inset-top) + 8px));
-  right: max(18px, calc(env(safe-area-inset-right) + 12px));
-  max-width: min(24vw, 120px);
-  overflow: hidden;
-  color: rgba(255, 255, 255, .42);
-  font-family: "Chalkboard SE", "Marker Felt", "Segoe Print", "Bradley Hand", "Comic Sans MS", cursive;
-  font-size: clamp(9px, 1.05vw, 14px);
-  font-weight: 500;
-  line-height: 1.15;
-  letter-spacing: .015em;
+  top: max(18px, calc(env(safe-area-inset-top) + 12px));
+  right: max(26px, calc(env(safe-area-inset-right) + 18px));
+  color: rgba(255, 255, 255, .72);
+  font-family: "Chalkboard SE", "Comic Sans MS", "Marker Felt", "Segoe Print", "Bradley Hand", cursive;
+  font-size: clamp(18px, 2vw, 30px);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -.055em;
   text-align: right;
-  text-overflow: ellipsis;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, .72);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .82);
   white-space: nowrap;
-  opacity: .66;
-  transform: rotate(-1.5deg);
-  transform-origin: right top;
+  opacity: .74;
   pointer-events: none;
   user-select: none;
 }
@@ -89,7 +84,8 @@
 @media (orientation: portrait) {
   .cinema-player-wrapper:not(.cinema-fullscreen) .movie-copyright-watermark {
     top: max(70px, calc(env(safe-area-inset-top) + 62px));
-    font-size: clamp(9px, 2.35vw, 12px);
+    right: max(18px, calc(env(safe-area-inset-right) + 12px));
+    font-size: clamp(15px, 4.2vw, 22px);
   }
 }
 
@@ -539,5 +535,4 @@ video::cue {
 .cinema-player-wrapper.embed-active .player-top-bar {
   transition: opacity 0.25s ease;
 }
-
 
