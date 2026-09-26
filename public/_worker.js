@@ -4,6 +4,7 @@
 const LICENSE_ORIGIN = 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev';
 const ENS_ORIGIN = 'https://enshihi.vercel.app';
 const PHIMAPI_ORIGIN = 'https://phimapi.com';
+const VSMOV_ORIGIN = 'https://vsmov.com';
 const OPHIM_ORIGIN = 'https://ophim1.com';
 const PHIMIMG_ORIGIN = 'https://phimimg.com';
 
@@ -191,19 +192,32 @@ function normalizedMovieItems(payload) {
   return movieItems(payload).map((item) => normalizeMovie(item, payload)).filter(Boolean);
 }
 
+function movieIdentity(item) {
+  const tmdbId = String(item?.tmdb?.id || '').trim();
+  if (tmdbId) {
+    return `tmdb:${String(item?.tmdb?.type || item?.type || '').toLowerCase()}:${tmdbId}:${String(item?.tmdb?.season || '')}`;
+  }
+  const title = String(item?.origin_name || item?.name || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-');
+  return title ? `title:${title}:${String(item?.year || '')}` : `slug:${String(item?.slug || '').trim()}`;
+}
+
 function uniqueMovies(items) {
   const seen = new Set();
   return (items || []).filter((item) => {
-    const slug = String(item?.slug || '').trim();
-    if (!slug || seen.has(slug)) return false;
-    seen.add(slug);
+    const identity = movieIdentity(item);
+    if (!String(item?.slug || '').trim() || seen.has(identity)) return false;
+    seen.add(identity);
     return true;
   });
 }
 
-async function fetchMovieJson(path) {
+async function fetchMovieJson(path, origin = PHIMAPI_ORIGIN) {
   try {
-    const response = await fetch(`${PHIMAPI_ORIGIN}${path}`, {
+    const response = await fetch(`${origin}${path}`, {
       headers: { accept: 'application/json' },
       cf: { cacheEverything: true, cacheTtl: 60 },
     });
@@ -229,18 +243,29 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
   const page = searchParams.get('page') || '1';
   try {
     if (endpoint === '/api/movies/home') {
-      const requests = [
+      const phimApiRequests = [
         ...[1, 2, 3, 4].map((number) => `/danh-sach/phim-moi-cap-nhat?page=${number}`),
         ...['phim-chieu-rap', 'phim-le', 'phim-bo', 'hoat-hinh', 'tv-shows']
           .flatMap((category) => [1, 2, 3].map((number) => `/v1/api/danh-sach/${category}?page=${number}&limit=24`)),
       ];
-      const payloads = await Promise.all(requests.map(fetchMovieJson));
-      const groups = payloads.map((payload) => normalizedMovieItems(payload));
-      const latestItems = uniqueMovies(groups.slice(0, 4).flat());
+      const vsmovRequests = [
+        ...[1, 2, 3, 4].map((number) => `/api/danh-sach/phim-moi-cap-nhat?page=${number}`),
+        ...['phim-le', 'phim-bo']
+          .flatMap((category) => [1, 2, 3, 4].map((number) => `/api/danh-sach/${category}?page=${number}&limit=24`)),
+      ];
+      const [phimApiPayloads, vsmovPayloads] = await Promise.all([
+        Promise.all(phimApiRequests.map((path) => fetchMovieJson(path))),
+        Promise.all(vsmovRequests.map((path) => fetchMovieJson(path, VSMOV_ORIGIN))),
+      ]);
+      const groups = phimApiPayloads.map((payload) => normalizedMovieItems(payload));
+      const vsmovGroups = vsmovPayloads.map((payload) => normalizedMovieItems(payload));
+      const latestItems = uniqueMovies([...groups.slice(0, 4).flat(), ...vsmovGroups.slice(0, 4).flat()]);
       const categoryGroups = ['cinema', 'movies', 'series', 'anime', 'tv'].map((id, index) => ({
         id,
         items: uniqueMovies(groups.slice(4 + index * 3, 7 + index * 3).flat()),
       }));
+      categoryGroups[1].items = uniqueMovies([...categoryGroups[1].items, ...vsmovGroups.slice(4, 8).flat()]);
+      categoryGroups[2].items = uniqueMovies([...categoryGroups[2].items, ...vsmovGroups.slice(8, 12).flat()]);
       const allItems = uniqueMovies([...latestItems, ...categoryGroups.flatMap((group) => group.items)]);
       if (!allItems.length) return null;
 
@@ -254,12 +279,12 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
         hero,
         updatedAt: new Date().toISOString(),
         sections: [
-          { id: 'latest', title: '🔥 Phim Mới Cập Nhật', items: latestItems.slice(0, 72) },
-          { id: 'cinema', title: '🎬 Phim Chiếu Rạp', items: categoryGroups[0].items.slice(0, 72) },
-          { id: 'movies', title: '🍿 Phim Lẻ Mới', items: categoryGroups[1].items.slice(0, 72) },
-          { id: 'series', title: '📺 Phim Bộ Nổi Bật', items: categoryGroups[2].items.slice(0, 72) },
-          { id: 'anime', title: '✨ Hoạt Hình & Anime Hot', items: categoryGroups[3].items.slice(0, 72) },
-          { id: 'tv', title: '🌟 TV Shows', items: categoryGroups[4].items.slice(0, 72) },
+          { id: 'latest', title: '🔥 Phim Mới Cập Nhật', items: latestItems.slice(0, 120) },
+          { id: 'cinema', title: '🎬 Phim Chiếu Rạp', items: categoryGroups[0].items.slice(0, 54) },
+          { id: 'movies', title: '🍿 Phim Lẻ Mới', items: categoryGroups[1].items.slice(0, 132) },
+          { id: 'series', title: '📺 Phim Bộ Nổi Bật', items: categoryGroups[2].items.slice(0, 108) },
+          { id: 'anime', title: '✨ Hoạt Hình & Anime Hot', items: categoryGroups[3].items.slice(0, 64) },
+          { id: 'tv', title: '🌟 TV Shows', items: categoryGroups[4].items.slice(0, 42) },
         ].filter((section) => section.items.length),
         pagination: { currentPage: 1, totalPages: 1, totalItems: allItems.length },
       }, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=60' } });
@@ -267,21 +292,29 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
 
     if (endpoint.startsWith('/api/movies/detail/')) {
       const slug = endpoint.split('/api/movies/detail/')[1];
-      const res = await fetch(`${PHIMAPI_ORIGIN}/phim/${encodeURIComponent(slug)}`);
-      if (res.ok) {
-        const data = await res.json();
-        const normalized = data?.movie ? { ...data, movie: normalizeMovie(data.movie, data) || data.movie } : data;
-        return Response.json(normalized, {
-          headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=300' }
-        });
+      for (const target of [
+        `${PHIMAPI_ORIGIN}/phim/${encodeURIComponent(slug)}`,
+        `${VSMOV_ORIGIN}/api/phim/${encodeURIComponent(slug)}`,
+      ]) {
+        const res = await fetch(target, { headers: { accept: 'application/json' } });
+        if (res.ok) {
+          const data = await res.json();
+          const normalized = data?.movie ? { ...data, movie: normalizeMovie(data.movie, data) || data.movie } : data;
+          return Response.json(normalized, {
+            headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=300' }
+          });
+        }
       }
     }
 
     if (endpoint === '/api/movies/search') {
       const q = searchParams.get('q') || '';
-      const data = await fetchMovieJson(`/v1/api/tim-kiem?keyword=${encodeURIComponent(q)}&page=${page}&limit=48`);
-      if (data) {
-        const items = normalizedMovieItems(data);
+      const [data, vsmovData] = await Promise.all([
+        fetchMovieJson(`/v1/api/tim-kiem?keyword=${encodeURIComponent(q)}&page=${page}&limit=48`),
+        fetchMovieJson(`/api/tim-kiem?keyword=${encodeURIComponent(q)}&page=${page}&limit=24`, VSMOV_ORIGIN),
+      ]);
+      if (data || vsmovData) {
+        const items = uniqueMovies([...normalizedMovieItems(data), ...normalizedMovieItems(vsmovData)]);
         return Response.json({
           query: q,
           items,
@@ -291,9 +324,12 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
     }
 
     if (endpoint === '/api/movies/catalog') {
-      const data = await fetchMovieJson(`/v1/api/danh-sach/phim-moi-cap-nhat?page=${page}&limit=48&sort_field=modified.time&sort_type=desc`);
-      if (data) {
-        const items = normalizedMovieItems(data);
+      const [data, vsmovData] = await Promise.all([
+        fetchMovieJson(`/v1/api/danh-sach/phim-moi-cap-nhat?page=${page}&limit=48&sort_field=modified.time&sort_type=desc`),
+        fetchMovieJson(`/api/danh-sach/phim-moi-cap-nhat?page=${page}`, VSMOV_ORIGIN),
+      ]);
+      if (data || vsmovData) {
+        const items = uniqueMovies([...normalizedMovieItems(data), ...normalizedMovieItems(vsmovData)]);
         return Response.json({
           title: 'Toàn bộ kho phim',
           items,
