@@ -561,12 +561,13 @@
           
           <!-- In-player Server Switcher -->
           <div class="dropdown-control">
-            <button id="btnPlayerServer" class="btn-player-server" onclick="togglePlayerServerMenu()">
-              🔄 Đổi Server
+            <button id="btnPlayerServer" class="btn-player-server" onclick="togglePlayerServerMenu()" aria-haspopup="menu" aria-expanded="false">
+              📡 Chọn server
             </button>
             <div id="playerServerMenu" class="ctrl-dropdown player-server-menu hidden"></div>
           </div>
 
+          <button id="btnAutoSkipAdsTop" class="ctrl-btn-text active" type="button" onclick="toggleAutoSkipAds()" aria-pressed="true" title="Bật hoặc tắt tự động tua qua đoạn quảng cáo">⏩ QC: Bật</button>
           <span class="player-noads-pill">💎 MNHUT MASTER</span>
           <button type="button" id="btnNextEpTop" class="btn-player-report" onclick="Player.playNextEpisode()" title="Xem tập tiếp theo">
             ⏭️ Tập Tiếp
