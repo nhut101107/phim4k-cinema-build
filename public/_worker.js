@@ -292,6 +292,17 @@ export default {
       return proxyTo(request, ENS_ORIGIN);
     }
 
+    // Access Policy: Always grant free direct access unless maintenance is explicitly active
+    if (url.pathname === '/api/app/access-policy') {
+      return Response.json({
+        success: true,
+        freeAccess: RUNTIME_STATE.freeAccess,
+        maintenance: RUNTIME_STATE.maintenance
+      }, {
+        headers: { 'cache-control': 'no-store', 'content-type': 'application/json; charset=utf-8' }
+      });
+    }
+
     // 2. Auth Activation: Handles Admin Master Key 'mnhut', VIP keys, & Free Public Access
     if (request.method === 'POST' && url.pathname === '/api/auth/activate') {
       try {
@@ -423,23 +434,43 @@ export default {
       }
     }
 
-    // 3. Auth Status Check
+    // 3. Auth Status & Refresh Check
     if (request.method === 'GET' && url.pathname === '/api/auth/status') {
       const authHeader = request.headers.get('authorization') || '';
-      if (authHeader.startsWith('Bearer p4a_')) {
-        return Response.json({
-          success: true,
-          active: true,
-          isAdmin: authHeader.includes('adm') || false,
-          freeAccess: RUNTIME_STATE.freeAccess,
-          plan: 'SUPER ADMIN MASTER',
-          expiresAt: null,
-          forceUpdate: false,
-          isLatest: true
-        }, {
-          headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }
-        });
-      }
+      const isAdminSession = authHeader.includes('adm');
+      return Response.json({
+        success: true,
+        active: true,
+        isAdmin: isAdminSession,
+        freeAccess: RUNTIME_STATE.freeAccess,
+        plan: isAdminSession ? 'SUPER ADMIN MASTER' : (RUNTIME_STATE.freeAccess ? 'MIỄN PHÍ TOÀN BỘ KHÁN GIẢ (FREE 4K)' : 'VIP 4K'),
+        tier: isAdminSession ? 'admin' : (RUNTIME_STATE.freeAccess ? 'free' : 'vip'),
+        expiresAt: null,
+        forceUpdate: false,
+        isLatest: true
+      }, {
+        headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }
+      });
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/auth/refresh') {
+      const authHeader = request.headers.get('authorization') || '';
+      const isAdminSession = authHeader.includes('adm');
+      const accessToken = generateSecureToken(isAdminSession ? 'p4a_adm_' : 'p4a_');
+      const refreshToken = generateSecureToken(isAdminSession ? 'p4r_adm_' : 'p4r_');
+      const futureIso = new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString();
+      return Response.json({
+        success: true,
+        active: true,
+        isAdmin: isAdminSession,
+        freeAccess: RUNTIME_STATE.freeAccess,
+        accessToken,
+        refreshToken,
+        accessExpiresAt: futureIso,
+        refreshExpiresAt: futureIso
+      }, {
+        headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }
+      });
     }
 
     // 4. Movie Issue Report Endpoint (Nút Báo Lỗi Phim)

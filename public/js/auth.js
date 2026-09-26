@@ -95,11 +95,17 @@ const Auth = {
       return false;
     };
 
+    // 1. If an Admin session is saved, restore it immediately
     if (SessionVault.hasSession()) {
       try {
+        const session = SessionVault.current();
+        if (session && session.isAdmin) {
+          this.unlockApp(session);
+          this.startHeartbeat();
+          return;
+        }
         if (await restore(await API.checkStatus('', '', deviceId))) return;
       } catch (_error) {}
-      await SessionVault.clear();
     }
 
     if (savedKey) {
@@ -108,24 +114,42 @@ const Auth = {
       } catch (_error) {}
     }
 
+    // 2. Check access policy (Maintenance or Restricted mode)
     try {
       const policy = await this.getAccessPolicy();
-      if (policy.maintenance?.active === true) {
+      if (policy?.maintenance?.active === true) {
         this.showMaintenance(policy.maintenance);
         return;
       }
-      if (policy.freeAccess === true && policy.maintenance?.active !== true) {
-        if (await restore(await API.activate('', '', deviceId))) return;
+      if (policy && policy.freeAccess === false) {
+        this.triggerLock();
+        return;
       }
     } catch (_error) {}
+
+    // 3. DIRECT PUBLIC WATCH: Unlock app IMMEDIATELY! NO KEY GATE!
+    const defaultPublicSession = {
+      success: true,
+      active: true,
+      isAdmin: false,
+      freeAccess: true,
+      plan: 'MIỄN PHÍ TOÀN BỘ KHÁN GIẢ (FREE 4K)',
+      tier: 'free',
+      keyHint: 'FREE-PUBLIC••••'
+    };
+    this.unlockApp(defaultPublicSession);
+
+    // Asynchronously obtain access token in background
+    API.activate('', '', deviceId).then(res => {
+      if (res?.active) {
+        this.activeKeyData = res;
+        try { SessionVault.save(res); } catch (_e) {}
+      }
+    }).catch(() => {});
 
     if (window.location.hash === '#admin') {
       window.setTimeout(() => window.promptAdminLogin?.(), 400);
     }
-
-    const pendingDeviceKey = sessionStorage.getItem('phim4k_pending_device_key');
-    this.triggerLock(savedKey ? 'Key cũ không còn tạo được phiên an toàn. Vui lòng nhập lại key.' : '');
-    if (pendingDeviceKey) beginDeviceApprovalPolling(pendingDeviceKey);
   },
 
   triggerLock(errorMessage = '') {
@@ -329,7 +353,7 @@ const Auth = {
           }
         }
       } catch (err) {
-        if (this.activeKeyData?.freeAccess) this.triggerLock('Không xác minh được chế độ miễn key. Vui lòng thử lại.');
+        // Free public viewers are never locked out due to network jitter
       }
     }, 30000);
   }

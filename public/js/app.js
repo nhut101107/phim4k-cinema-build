@@ -33,6 +33,7 @@ const App = {
     this.bindEvents();
     this.bindTouchFeedback();
     this.syncPageScrollLock();
+    this.loadHomeFeed();
     this.startHomeFeedRefresh();
     this.startAnnouncementRefresh();
   },
