@@ -96,26 +96,42 @@ const RUNTIME_STATE = {
 // Anti-DDoS In-Worker Rate Limiting Tracker
 const IP_RATE_LIMIT = new Map();
 const RATE_LIMIT_WINDOW_MS = 10000; // 10 seconds sliding window
-const MAX_REQUESTS_PER_WINDOW = 120; // 120 API calls / 10s is plenty for normal users, blocks floods
+
+function rateLimitRule(path) {
+  if (path.startsWith('/api/admin/')) return { bucket: 'admin', limit: 35 };
+  if (path.startsWith('/api/auth/')) return { bucket: 'auth', limit: 30 };
+  if (path === '/api/movies/home') return { bucket: 'movie-home', limit: 20 };
+  if (path.startsWith('/api/movies/search') || path.startsWith('/api/movies/filter')) return { bucket: 'movie-query', limit: 45 };
+  if (path.startsWith('/api/movies/')) return { bucket: 'movies', limit: 70 };
+  return { bucket: 'api', limit: 120 };
+}
 
 function checkRateLimit(ip, path) {
-  if (!path.startsWith('/api/')) return true; // Static assets / images never blocked
+  if (!path.startsWith('/api/')) return { allowed: true, limit: 0, retryAfter: 0 }; // Static assets / images are served by the CDN.
   const now = Date.now();
-  let record = IP_RATE_LIMIT.get(ip);
+  const rule = rateLimitRule(path);
+  const key = `${ip}:${rule.bucket}`;
+  let record = IP_RATE_LIMIT.get(key);
   if (!record || now > record.resetAt) {
     record = { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS };
-    IP_RATE_LIMIT.set(ip, record);
+    IP_RATE_LIMIT.set(key, record);
     if (IP_RATE_LIMIT.size > 5000) {
       const oldestKey = IP_RATE_LIMIT.keys().next().value;
       IP_RATE_LIMIT.delete(oldestKey);
     }
-    return true;
+    return { allowed: true, limit: rule.limit, retryAfter: 0 };
   }
   record.count++;
-  if (record.count > MAX_REQUESTS_PER_WINDOW) {
-    return false;
-  }
-  return true;
+  const retryAfter = Math.max(1, Math.ceil((record.resetAt - now) / 1000));
+  return { allowed: record.count <= rule.limit, limit: rule.limit, retryAfter };
+}
+
+function invalidRequestReason(request, url) {
+  if (url.href.length > 2048 || [...url.searchParams].length > 20) return { status: 414, error: 'Yêu cầu quá dài.' };
+  const contentLength = Number(request.headers.get('content-length') || 0);
+  if (contentLength > 1024 * 1024) return { status: 413, error: 'Dữ liệu gửi lên vượt giới hạn.' };
+  if (!['GET', 'HEAD', 'POST', 'OPTIONS'].includes(request.method)) return { status: 405, error: 'Phương thức không được hỗ trợ.' };
+  return null;
 }
 
 // Generates valid session tokens matching regex: /^p4a_[A-Za-z0-9_-]{43}$/
@@ -215,6 +231,39 @@ function uniqueMovies(items) {
   });
 }
 
+function movieModifiedTime(movie) {
+  const value = movie?.modified?.time || movie?.updated_at || movie?.updatedAt || '';
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function latestFirst(items) {
+  return uniqueMovies(items).sort((left, right) => movieModifiedTime(right) - movieModifiedTime(left));
+}
+
+function hotNewMovies(items, limit = 12) {
+  const currentYear = new Date().getUTCFullYear();
+  const now = Date.now();
+  const score = (movie) => {
+    const year = Number(movie?.year) || 0;
+    const modified = movieModifiedTime(movie);
+    const ageDays = modified ? Math.max(0, (now - modified) / 86400000) : 365;
+    const voteAverage = Number(movie?.tmdb?.vote_average) || 0;
+    const voteCount = Number(movie?.tmdb?.vote_count) || 0;
+    const quality = String(movie?.quality || '').toLowerCase();
+    return (year >= currentYear ? 1400 : year === currentYear - 1 ? 650 : 0)
+      + Math.max(0, 360 - ageDays)
+      + (movie?.chieurap ? 220 : 0)
+      + (quality.includes('4k') || quality.includes('fhd') ? 90 : 0)
+      + voteAverage * 18
+      + Math.min(180, Math.log10(voteCount + 1) * 55);
+  };
+  return uniqueMovies(items)
+    .filter((movie) => movie.poster_url || movie.thumb_url)
+    .sort((left, right) => score(right) - score(left))
+    .slice(0, limit);
+}
+
 async function fetchMovieJson(path, origin = PHIMAPI_ORIGIN) {
   try {
     const response = await fetch(`${origin}${path}`, {
@@ -249,9 +298,9 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
           .flatMap((category) => [1, 2, 3].map((number) => `/v1/api/danh-sach/${category}?page=${number}&limit=24`)),
       ];
       const vsmovRequests = [
-        ...[1, 2, 3, 4].map((number) => `/api/danh-sach/phim-moi-cap-nhat?page=${number}`),
+        ...[1, 2, 3, 4, 5, 6].map((number) => `/api/danh-sach/phim-moi-cap-nhat?page=${number}`),
         ...['phim-le', 'phim-bo']
-          .flatMap((category) => [1, 2, 3, 4].map((number) => `/api/danh-sach/${category}?page=${number}&limit=24`)),
+          .flatMap((category) => [1, 2, 3, 4, 5, 6].map((number) => `/api/danh-sach/${category}?page=${number}&limit=24`)),
       ];
       const [phimApiPayloads, vsmovPayloads] = await Promise.all([
         Promise.all(phimApiRequests.map((path) => fetchMovieJson(path))),
@@ -259,17 +308,22 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
       ]);
       const groups = phimApiPayloads.map((payload) => normalizedMovieItems(payload));
       const vsmovGroups = vsmovPayloads.map((payload) => normalizedMovieItems(payload));
-      const latestItems = uniqueMovies([...groups.slice(0, 4).flat(), ...vsmovGroups.slice(0, 4).flat()]);
+      const latestItems = latestFirst([...groups.slice(0, 4).flat(), ...vsmovGroups.slice(0, 6).flat()]);
       const categoryGroups = ['cinema', 'movies', 'series', 'anime', 'tv'].map((id, index) => ({
         id,
         items: uniqueMovies(groups.slice(4 + index * 3, 7 + index * 3).flat()),
       }));
-      categoryGroups[1].items = uniqueMovies([...categoryGroups[1].items, ...vsmovGroups.slice(4, 8).flat()]);
-      categoryGroups[2].items = uniqueMovies([...categoryGroups[2].items, ...vsmovGroups.slice(8, 12).flat()]);
+      categoryGroups[1].items = latestFirst([...categoryGroups[1].items, ...vsmovGroups.slice(6, 12).flat()]);
+      categoryGroups[2].items = latestFirst([...categoryGroups[2].items, ...vsmovGroups.slice(12, 18).flat()]);
       const allItems = uniqueMovies([...latestItems, ...categoryGroups.flatMap((group) => group.items)]);
       if (!allItems.length) return null;
 
-      const hero = latestItems.filter((movie) => movie.poster_url || movie.thumb_url).slice(0, 10).map((movie) => ({
+      const hero = hotNewMovies([
+        ...latestItems,
+        ...categoryGroups[0].items,
+        ...categoryGroups[1].items,
+        ...categoryGroups[2].items,
+      ], 12).map((movie) => ({
         ...movie,
         quality: movie.quality || 'HD',
         episode_current: movie.episode_current || 'Mới cập nhật',
@@ -279,15 +333,15 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
         hero,
         updatedAt: new Date().toISOString(),
         sections: [
-          { id: 'latest', title: '🔥 Phim Mới Cập Nhật', items: latestItems.slice(0, 120) },
+          { id: 'latest', title: '🔥 Phim Mới & Hot Cập Nhật Liên Tục', items: latestItems.slice(0, 174) },
           { id: 'cinema', title: '🎬 Phim Chiếu Rạp', items: categoryGroups[0].items.slice(0, 54) },
-          { id: 'movies', title: '🍿 Phim Lẻ Mới', items: categoryGroups[1].items.slice(0, 132) },
-          { id: 'series', title: '📺 Phim Bộ Nổi Bật', items: categoryGroups[2].items.slice(0, 108) },
+          { id: 'movies', title: '🍿 Phim Lẻ Mới', items: categoryGroups[1].items.slice(0, 186) },
+          { id: 'series', title: '📺 Phim Bộ Nổi Bật', items: categoryGroups[2].items.slice(0, 162) },
           { id: 'anime', title: '✨ Hoạt Hình & Anime Hot', items: categoryGroups[3].items.slice(0, 64) },
           { id: 'tv', title: '🌟 TV Shows', items: categoryGroups[4].items.slice(0, 42) },
         ].filter((section) => section.items.length),
         pagination: { currentPage: 1, totalPages: 1, totalItems: allItems.length },
-      }, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=60' } });
+      }, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=30, stale-while-revalidate=120' } });
     }
 
     if (endpoint.startsWith('/api/movies/detail/')) {
@@ -361,9 +415,14 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
 
     if (endpoint.startsWith('/api/movies/category/')) {
       const cat = endpoint.split('/api/movies/category/')[1];
-      const data = await fetchMovieJson(`/v1/api/danh-sach/${encodeURIComponent(cat)}?page=${page}&limit=48`);
-      if (data) {
-        const items = normalizedMovieItems(data);
+      const [data, vsmovData] = await Promise.all([
+        fetchMovieJson(`/v1/api/danh-sach/${encodeURIComponent(cat)}?page=${page}&limit=48`),
+        ['phim-le', 'phim-bo'].includes(cat)
+          ? fetchMovieJson(`/api/danh-sach/${encodeURIComponent(cat)}?page=${page}&limit=24`, VSMOV_ORIGIN)
+          : Promise.resolve(null),
+      ]);
+      if (data || vsmovData) {
+        const items = uniqueMovies([...normalizedMovieItems(data), ...normalizedMovieItems(vsmovData)]);
         return Response.json({
           category: cat,
           items,
@@ -377,28 +436,53 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
   return null;
 }
 
+function publicMovieCacheRequest(url) {
+  const cacheUrl = new URL(url.origin + url.pathname);
+  for (const key of ['page', 'q', 'genre', 'country']) {
+    const value = url.searchParams.get(key);
+    if (value) cacheUrl.searchParams.set(key, value.slice(0, 120));
+  }
+  return new Request(cacheUrl.href, { method: 'GET' });
+}
+
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const clientIp = request.headers.get('cf-connecting-ip') || 'unknown';
 
     // 1. Anti-DDoS Rate Limiting Guard
-    if (!checkRateLimit(clientIp, url.pathname)) {
-      RUNTIME_STATE.stats.ddosBlockedCount++;
-      RUNTIME_STATE.logs.unshift({
-        action: 'DDOS_BLOCKED',
-        actor: 'SHIELD',
-        target: clientIp,
-        ip: clientIp,
-        created_at: new Date().toISOString(),
-        detail: `Phát hiện tần suất truy vấn bất thường (>120 req/10s). Anti-DDoS đã tự động chặn IP.`
+    const invalid = url.pathname.startsWith('/api/') ? invalidRequestReason(request, url) : null;
+    if (invalid) {
+      return Response.json({ success: false, error: invalid.error }, {
+        status: invalid.status,
+        headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
       });
+    }
+    const rateLimit = checkRateLimit(clientIp, url.pathname);
+    if (!rateLimit.allowed) {
+      RUNTIME_STATE.stats.ddosBlockedCount++;
+      if (RUNTIME_STATE.stats.ddosBlockedCount % 50 === 1) {
+        RUNTIME_STATE.logs.unshift({
+          action: 'DDOS_BLOCKED',
+          actor: 'SHIELD',
+          target: clientIp,
+          ip: clientIp,
+          created_at: new Date().toISOString(),
+          detail: `Phát hiện tần suất truy vấn bất thường (>${rateLimit.limit} req/10s). Anti-DDoS đã tự động chặn IP.`
+        });
+        RUNTIME_STATE.logs.length = Math.min(RUNTIME_STATE.logs.length, 500);
+      }
       return Response.json({
         success: false,
         error: 'Tần suất gửi yêu cầu quá nhanh. Hệ thống Anti-DDoS đang kích hoạt bảo vệ. Vui lòng thử lại sau vài giây.'
       }, {
         status: 429,
-        headers: { 'content-type': 'application/json; charset=utf-8', 'retry-after': '10' }
+        headers: {
+          'content-type': 'application/json; charset=utf-8',
+          'cache-control': 'no-store',
+          'retry-after': String(rateLimit.retryAfter || 10),
+          'x-rate-limit-limit': String(rateLimit.limit),
+        }
       });
     }
 
@@ -863,7 +947,7 @@ export default {
 
     if (url.pathname === '/api/admin/content-status') {
       return Response.json({
-        source: 'phimapi + ophim + nguonc + ensmovie',
+        source: 'phimapi + vsmov + ensmovie',
         cacheActive: true,
         lastSuccessfulRefreshAt: new Date().toISOString(),
         refreshIntervalSeconds: 30
@@ -895,6 +979,13 @@ export default {
 
     // 6. All Other Movie & Backend APIs -> Proxy to Upstream with fallback
     if (url.pathname.startsWith('/api/')) {
+      const canCacheMovie = request.method === 'GET' && url.pathname.startsWith('/api/movies/');
+      const movieCache = canCacheMovie ? globalThis.caches?.default : null;
+      const movieCacheKey = canCacheMovie ? publicMovieCacheRequest(url) : null;
+      if (movieCache && movieCacheKey) {
+        const cached = await movieCache.match(movieCacheKey);
+        if (cached) return cached;
+      }
       const response = await proxyTo(request, LICENSE_ORIGIN, {
         'x-forwarded-host': url.host,
         'x-forwarded-proto': 'https',
@@ -904,7 +995,10 @@ export default {
       // If license server returns error on movie browsing, fallback to direct catalogs so browsing always works
       if ((response.status === 401 || response.status === 403 || response.status >= 500) && url.pathname.startsWith('/api/movies/')) {
         const direct = await fetchDirectMovieCatalog(url.pathname, url.searchParams);
-        if (direct) return direct;
+        if (direct) {
+          if (movieCache && movieCacheKey) ctx?.waitUntil(movieCache.put(movieCacheKey, direct.clone()));
+          return direct;
+        }
       }
 
       return response;
