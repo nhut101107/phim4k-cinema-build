@@ -206,6 +206,18 @@ const Player = {
     const requestId = ++this.playbackTicketRequest;
     this.currentEpisode = episode;
 
+    // Reset embed iframe if any and restore video
+    const iframe = document.getElementById('playerEmbed');
+    if (iframe) {
+      iframe.src = 'about:blank';
+      iframe.classList.add('hidden');
+    }
+    if (this.video) {
+      this.video.classList.remove('hidden');
+    }
+    const btnToggle = document.getElementById('btnToggleEmbed');
+    if (btnToggle) btnToggle.textContent = '📺 Nguồn Dự Phòng (Embed)';
+
     // 1. Direct stream URL provided by catalog (OPhim, KKPhim, PhimAPI)
     const directStreamUrl = episode?.link_m3u8 || episode?.m3u8 || episode?.stream_url || episode?.url || '';
     if (directStreamUrl) {
@@ -215,56 +227,50 @@ const Player = {
       return;
     }
 
-    // 2. If episode has stream_ref, fetch playback ticket
-    if (episode?.stream_ref) {
-      this.showBuffering(true, 'Đang xác thực vé phát an toàn…');
-      this.setResolutionBadge(0, 0, 'Đang xác minh');
-      try {
-        const result = await API.getPlaybackTicket(episode.stream_ref);
-        if (requestId !== this.playbackTicketRequest || this.modal?.classList.contains('hidden')) return;
-        let streamUrl = result.streamUrl;
-        let nativeDirectHls = false;
-        if (result.nativeBootstrap) {
-          this.showBuffering(true, 'Đang kết nối nguồn dự phòng…');
-          const resolver = this.getNativePlugin('StreamResolver') || window.Phim4KStreamResolver;
-          if (resolver?.resolve) {
-            const resolved = await resolver.resolve(result.nativeBootstrap);
-            if (resolved?.playlist) {
-              streamUrl = resolved.playlist;
-              nativeDirectHls = true;
-            }
-          }
-        }
-        if (streamUrl) {
-          this.loadStream(streamUrl, { ...options, isHls: Boolean(result.isHls), nativeDirectHls });
-          return;
-        }
-      } catch (error) {
-        console.warn('Playback ticket error:', error);
-      }
-    }
-
-    // 3. Fallback: Check if link_embed has a ?url= parameter containing m3u8
+    // 2. Direct embed fallback if no direct m3u8
     if (episode?.link_embed) {
-      const match = String(episode.link_embed).match(/url=([^&]+)/);
-      if (match) {
-        const decoded = decodeURIComponent(match[1]);
-        if (decoded.includes('.m3u8')) {
-          this.showBuffering(true, 'Đang kết nối luồng phát…');
-          this.loadStream(decoded, { ...options, isHls: true });
-          return;
-        }
-      }
-      // If direct embed url
-      this.showBuffering(true, 'Đang kết nối luồng phát…');
-      this.loadStream(episode.link_embed, { ...options, isHls: false });
+      this.playEmbedStream(episode.link_embed);
       return;
     }
 
-    // 4. Otherwise fallback to next server
+    // 3. Otherwise fallback to next server
     this.showBuffering(false);
     this.showAlert('Server này hiện không có luồng phát. Đang thử server khác…');
     this.fallbackToNextServer();
+  },
+
+  toggleEmbedMode() {
+    if (!this.currentEpisode) return;
+    const embedUrl = this.currentEpisode.link_embed || '';
+    if (!embedUrl) {
+      this.showAlert('Tập phim này không có nguồn phát Embed dự phòng.');
+      return;
+    }
+    const iframe = document.getElementById('playerEmbed');
+    const isCurrentlyEmbed = iframe && !iframe.classList.contains('hidden');
+    if (isCurrentlyEmbed) {
+      this.loadEpisode(this.currentEpisode, { autoplay: true });
+    } else {
+      this.playEmbedStream(embedUrl);
+    }
+  },
+
+  playEmbedStream(embedUrl) {
+    this.destroyHls();
+    this.clearStallWatchdog();
+    if (this.video) {
+      this.video.pause();
+      this.video.classList.add('hidden');
+    }
+    const iframe = document.getElementById('playerEmbed');
+    if (iframe) {
+      iframe.src = embedUrl;
+      iframe.classList.remove('hidden');
+    }
+    this.showBuffering(false);
+    this.showAlert('Đã chuyển sang trình phát dự phòng (Embed). Bấm phát để xem!');
+    const btnToggle = document.getElementById('btnToggleEmbed');
+    if (btnToggle) btnToggle.textContent = '⚡ Đổi sang Player Gốc';
   },
 
   loadStream(streamUrl, options = {}) {
@@ -336,11 +342,11 @@ const Player = {
       hls.attachMedia(this.video);
       hls.on(HlsEngine.Events.MANIFEST_PARSED, () => {
         if (session !== this.streamSession || hls !== this.hls) return;
-        // A rendition change is telemetry, never a request to lock playback.
         hls.currentLevel = -1;
         this.qualityOptions = PlayerCore.uniqueQualityOptions(hls.levels);
         this.populateQualityMenu(this.qualityOptions);
         this.setAvailableResolution(this.qualityOptions);
+        this.onStreamReady(resumeTime, autoplay);
       });
       hls.on(HlsEngine.Events.LEVEL_SWITCHED, (_event, data) => {
         if (session !== this.streamSession || hls !== this.hls) return;
@@ -364,6 +370,11 @@ const Player = {
           hls.recoverMediaError();
           return;
         }
+        console.warn('HLS stream fatal error:', data);
+        if (this.currentEpisode?.link_embed) {
+          this.playEmbedStream(this.currentEpisode.link_embed);
+          return;
+        }
         this.showBuffering(false);
         void this.recoverPlayback('hls_fatal');
       });
@@ -378,6 +389,8 @@ const Player = {
   },
 
   onStreamReady(resumeTime, autoplay) {
+    if (this.readySessionDone === this.streamSession) return;
+    this.readySessionDone = this.streamSession;
     const safeTime = PlayerCore.clampResumeTime(resumeTime, this.video.duration);
     if (safeTime > 3) {
       try { this.video.currentTime = safeTime; } catch (_error) {}
@@ -389,7 +402,15 @@ const Player = {
       duration: Number.isFinite(this.video.duration) ? this.video.duration : 0,
       quality: this.usingNativeHls ? `Tự động ${this.nativePlatform()}` : this.qualityMode
     });
-    if (autoplay) this.video.play().catch(() => this.showAlert('Chạm nút Phát để bắt đầu xem.'));
+    if (autoplay) {
+      const p = this.video.play();
+      if (p !== undefined) {
+        p.catch(() => {
+          this.updatePlayBtn(false);
+          this.showAlert('Chạm nút Phát ở giữa màn hình để bắt đầu xem ▶');
+        });
+      }
+    }
   },
 
   clearStallWatchdog() {
@@ -1073,6 +1094,8 @@ function toggleQualityMenu() {
   document.getElementById('playerServerMenu')?.classList.add('hidden');
 }
 function setQuality(index) { Player.setQuality(index); }
+
+window.Player = Player;
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => Player.init(), { once: true });
 else Player.init();

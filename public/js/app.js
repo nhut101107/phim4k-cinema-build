@@ -236,10 +236,15 @@ const App = {
   },
 
   applyHomeFeed(data) {
-    if (data?.policy !== Phim4KHome.POLICY) data = Phim4KHome.build([
-      ...(data?.hero || []), ...(data?.sections || []).flatMap(section => section.items || [])
-    ], { updatedAt: data?.updatedAt || null, offline: Boolean(data?.offline) });
-    const sections = Array.isArray(data?.sections) ? data.sections : [];
+    let sections = Array.isArray(data?.sections) ? data.sections : [];
+    if (!sections.some((section) => Array.isArray(section?.items) && section.items.length > 0)) {
+      if (data?.policy !== Phim4KHome.POLICY) {
+        data = Phim4KHome.build([
+          ...(data?.hero || []), ...(data?.sections || []).flatMap(section => section.items || [])
+        ], { updatedAt: data?.updatedAt || null, offline: Boolean(data?.offline) });
+        sections = Array.isArray(data?.sections) ? data.sections : [];
+      }
+    }
     const hasMovies = sections.some((section) => Array.isArray(section?.items) && section.items.length > 0);
     if (!hasMovies) throw new Error('MOVIE_CATALOG_EMPTY');
     this.homeFeedOffline = Boolean(data.offline);
@@ -829,12 +834,9 @@ const App = {
   resolveDirectImageUrl(path) {
     const value = String(path || '').trim();
     if (!value) return this.posterFallbackUrl();
-    if (value.startsWith('/media/')) return value;
-    try {
-      const parsed = new URL(value);
-      const relayOrigin = window.Phim4KRuntime?.apiBaseUrl || '';
-      if (relayOrigin && parsed.origin === relayOrigin && parsed.pathname === '/api/media/image' && parsed.searchParams.has('t')) return parsed.href;
-    } catch (_error) {}
+    if (value.startsWith('http://') || value.startsWith('https://') || value.startsWith('//') || value.startsWith('/')) {
+      return value;
+    }
     return this.posterFallbackUrl();
   },
 
