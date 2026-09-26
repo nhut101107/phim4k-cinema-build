@@ -5,6 +5,7 @@ const LICENSE_ORIGIN = 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev';
 const ENS_ORIGIN = 'https://enshihi.vercel.app';
 const PHIMAPI_ORIGIN = 'https://phimapi.com';
 const OPHIM_ORIGIN = 'https://ophim1.com';
+const PHIMIMG_ORIGIN = 'https://phimimg.com';
 
 // Pre-configured Admin Keys (User specified key: mnhut)
 const ADMIN_MASTER_KEYS = new Set([
@@ -157,46 +158,110 @@ async function proxyTo(request, origin, extraHeaders = {}) {
   });
 }
 
-// Fallback catalog directly from public sources
+function absoluteMovieImage(value, base = PHIMIMG_ORIGIN) {
+  const raw = String(value || '').trim();
+  if (!raw || raw === 'null' || raw === 'undefined') return '';
+  try {
+    const url = new URL(raw.replace(/^\/+/, ''), `${String(base || PHIMIMG_ORIGIN).replace(/\/$/, '')}/`);
+    return url.protocol === 'https:' ? url.href : '';
+  } catch (_error) {
+    return '';
+  }
+}
+
+function movieItems(payload) {
+  return Array.isArray(payload?.items)
+    ? payload.items
+    : (Array.isArray(payload?.data?.items) ? payload.data.items : []);
+}
+
+function normalizeMovie(item, payload = null) {
+  if (!item || typeof item !== 'object' || !String(item.slug || '').trim()) return null;
+  const imageBase = payload?.data?.APP_DOMAIN_CDN_IMAGE || payload?.APP_DOMAIN_CDN_IMAGE || PHIMIMG_ORIGIN;
+  const poster = absoluteMovieImage(item.poster_url, imageBase);
+  const thumb = absoluteMovieImage(item.thumb_url, imageBase);
+  return {
+    ...item,
+    poster_url: poster || thumb,
+    thumb_url: thumb || poster,
+  };
+}
+
+function normalizedMovieItems(payload) {
+  return movieItems(payload).map((item) => normalizeMovie(item, payload)).filter(Boolean);
+}
+
+function uniqueMovies(items) {
+  const seen = new Set();
+  return (items || []).filter((item) => {
+    const slug = String(item?.slug || '').trim();
+    if (!slug || seen.has(slug)) return false;
+    seen.add(slug);
+    return true;
+  });
+}
+
+async function fetchMovieJson(path) {
+  try {
+    const response = await fetch(`${PHIMAPI_ORIGIN}${path}`, {
+      headers: { accept: 'application/json' },
+      cf: { cacheEverything: true, cacheTtl: 60 },
+    });
+    if (!response.ok || !String(response.headers.get('content-type') || '').includes('application/json')) return null;
+    return await response.json();
+  } catch (_error) {
+    return null;
+  }
+}
+
+function catalogPagination(payload, page, itemCount) {
+  return payload?.pagination || payload?.data?.params?.pagination || {
+    currentPage: Number(page) || 1,
+    totalPages: itemCount ? 1 : 0,
+    totalItems: itemCount,
+  };
+}
+
+// Public web catalogue fallback. It keeps browsing available when the licensed
+// API requires a native session, and normalizes every relative poster path
+// before it reaches the browser.
 async function fetchDirectMovieCatalog(endpoint, searchParams) {
   const page = searchParams.get('page') || '1';
   try {
     if (endpoint === '/api/movies/home') {
-      const [latestRes, seriesRes, animeRes] = await Promise.allSettled([
-        fetch(`${PHIMAPI_ORIGIN}/danh-sach/phim-moi-cap-nhat?page=1`).then(r => r.json()),
-        fetch(`${PHIMAPI_ORIGIN}/v1/api/danh-sach/phim-bo?page=1&limit=18`).then(r => r.json()),
-        fetch(`${PHIMAPI_ORIGIN}/v1/api/danh-sach/hoat-hinh?page=1&limit=18`).then(r => r.json())
-      ]);
-
-      const latestItems = latestRes.status === 'fulfilled' ? (latestRes.value.items || []) : [];
-      const seriesItems = seriesRes.status === 'fulfilled' ? (seriesRes.value.data?.items || []) : [];
-      const animeItems = animeRes.status === 'fulfilled' ? (animeRes.value.data?.items || []) : [];
-
-      const hero = latestItems.slice(0, 6).map(m => ({
-        name: m.name,
-        slug: m.slug,
-        origin_name: m.origin_name,
-        poster_url: m.poster_url?.startsWith('http') ? m.poster_url : `https://phimimg.com/${m.poster_url}`,
-        thumb_url: m.thumb_url?.startsWith('http') ? m.thumb_url : `https://phimimg.com/${m.thumb_url}`,
-        year: m.year,
-        quality: m.quality || '4K Ultra HD',
-        episode_current: m.episode_current || 'Bản Đẹp'
+      const requests = [
+        ...[1, 2, 3, 4].map((number) => `/danh-sach/phim-moi-cap-nhat?page=${number}`),
+        ...['phim-chieu-rap', 'phim-le', 'phim-bo', 'hoat-hinh', 'tv-shows']
+          .flatMap((category) => [1, 2, 3].map((number) => `/v1/api/danh-sach/${category}?page=${number}&limit=24`)),
+      ];
+      const payloads = await Promise.all(requests.map(fetchMovieJson));
+      const groups = payloads.map((payload) => normalizedMovieItems(payload));
+      const latestItems = uniqueMovies(groups.slice(0, 4).flat());
+      const categoryGroups = ['cinema', 'movies', 'series', 'anime', 'tv'].map((id, index) => ({
+        id,
+        items: uniqueMovies(groups.slice(4 + index * 3, 7 + index * 3).flat()),
       }));
+      const allItems = uniqueMovies([...latestItems, ...categoryGroups.flatMap((group) => group.items)]);
+      if (!allItems.length) return null;
 
-      const normalize = (items) => items.map(m => ({
-        ...m,
-        poster_url: m.poster_url?.startsWith('http') ? m.poster_url : `https://phimimg.com/${m.poster_url}`,
-        thumb_url: m.thumb_url?.startsWith('http') ? m.thumb_url : `https://phimimg.com/${m.thumb_url}`
+      const hero = latestItems.filter((movie) => movie.poster_url || movie.thumb_url).slice(0, 10).map((movie) => ({
+        ...movie,
+        quality: movie.quality || 'HD',
+        episode_current: movie.episode_current || 'Mới cập nhật',
       }));
 
       return Response.json({
         hero,
         updatedAt: new Date().toISOString(),
         sections: [
-          { id: 'latest', title: '🔥 Phim Mới Cập Nhật', items: normalize(latestItems.slice(0, 18)) },
-          { id: 'series', title: '📺 Phim Bộ Nổi Bật', items: normalize(seriesItems) },
-          { id: 'anime', title: '✨ Hoạt Hình & Anime Hot', items: normalize(animeItems) }
-        ]
+          { id: 'latest', title: '🔥 Phim Mới Cập Nhật', items: latestItems.slice(0, 72) },
+          { id: 'cinema', title: '🎬 Phim Chiếu Rạp', items: categoryGroups[0].items.slice(0, 72) },
+          { id: 'movies', title: '🍿 Phim Lẻ Mới', items: categoryGroups[1].items.slice(0, 72) },
+          { id: 'series', title: '📺 Phim Bộ Nổi Bật', items: categoryGroups[2].items.slice(0, 72) },
+          { id: 'anime', title: '✨ Hoạt Hình & Anime Hot', items: categoryGroups[3].items.slice(0, 72) },
+          { id: 'tv', title: '🌟 TV Shows', items: categoryGroups[4].items.slice(0, 72) },
+        ].filter((section) => section.items.length),
+        pagination: { currentPage: 1, totalPages: 1, totalItems: allItems.length },
       }, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=60' } });
     }
 
@@ -205,7 +270,8 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
       const res = await fetch(`${PHIMAPI_ORIGIN}/phim/${encodeURIComponent(slug)}`);
       if (res.ok) {
         const data = await res.json();
-        return Response.json(data, {
+        const normalized = data?.movie ? { ...data, movie: normalizeMovie(data.movie, data) || data.movie } : data;
+        return Response.json(normalized, {
           headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=300' }
         });
       }
@@ -213,26 +279,59 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
 
     if (endpoint === '/api/movies/search') {
       const q = searchParams.get('q') || '';
-      const res = await fetch(`${PHIMAPI_ORIGIN}/v1/api/tim-kiem?keyword=${encodeURIComponent(q)}&page=${page}&limit=24`);
-      if (res.ok) {
-        const data = await res.json();
+      const data = await fetchMovieJson(`/v1/api/tim-kiem?keyword=${encodeURIComponent(q)}&page=${page}&limit=48`);
+      if (data) {
+        const items = normalizedMovieItems(data);
         return Response.json({
           query: q,
-          items: data.data?.items || [],
-          pagination: data.data?.params?.pagination || { currentPage: parseInt(page, 10), totalPages: 1 }
+          items,
+          pagination: catalogPagination(data, page, items.length),
         }, { headers: { 'content-type': 'application/json; charset=utf-8' } });
+      }
+    }
+
+    if (endpoint === '/api/movies/catalog') {
+      const data = await fetchMovieJson(`/v1/api/danh-sach/phim-moi-cap-nhat?page=${page}&limit=48&sort_field=modified.time&sort_type=desc`);
+      if (data) {
+        const items = normalizedMovieItems(data);
+        return Response.json({
+          title: 'Toàn bộ kho phim',
+          items,
+          pagination: catalogPagination(data, page, items.length),
+        }, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=60' } });
+      }
+    }
+
+    if (endpoint === '/api/movies/filter') {
+      const genre = String(searchParams.get('genre') || '').trim().toLowerCase();
+      const country = String(searchParams.get('country') || '').trim().toLowerCase();
+      if (!genre && !country) return null;
+      let target = genre === 'hoat-hinh'
+        ? `/v1/api/danh-sach/hoat-hinh?page=${page}&limit=48`
+        : genre
+          ? `/v1/api/the-loai/${encodeURIComponent(genre)}?page=${page}&limit=48`
+          : `/v1/api/quoc-gia/${encodeURIComponent(country)}?page=${page}&limit=48`;
+      if (genre && country) target += `&country=${encodeURIComponent(country)}`;
+      const data = await fetchMovieJson(target);
+      if (data) {
+        const items = normalizedMovieItems(data);
+        return Response.json({
+          filters: { genre, country },
+          items,
+          pagination: catalogPagination(data, page, items.length),
+        }, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=60' } });
       }
     }
 
     if (endpoint.startsWith('/api/movies/category/')) {
       const cat = endpoint.split('/api/movies/category/')[1];
-      const res = await fetch(`${PHIMAPI_ORIGIN}/v1/api/danh-sach/${encodeURIComponent(cat)}?page=${page}&limit=24`);
-      if (res.ok) {
-        const data = await res.json();
+      const data = await fetchMovieJson(`/v1/api/danh-sach/${encodeURIComponent(cat)}?page=${page}&limit=48`);
+      if (data) {
+        const items = normalizedMovieItems(data);
         return Response.json({
           category: cat,
-          items: data.data?.items || [],
-          pagination: data.data?.params?.pagination || { currentPage: parseInt(page, 10), totalPages: 1 }
+          items,
+          pagination: catalogPagination(data, page, items.length),
         }, { headers: { 'content-type': 'application/json; charset=utf-8' } });
       }
     }
@@ -767,7 +866,7 @@ export default {
       });
 
       // If license server returns error on movie browsing, fallback to direct catalogs so browsing always works
-      if ((response.status === 401 || response.status >= 500) && url.pathname.startsWith('/api/movies/')) {
+      if ((response.status === 401 || response.status === 403 || response.status >= 500) && url.pathname.startsWith('/api/movies/')) {
         const direct = await fetchDirectMovieCatalog(url.pathname, url.searchParams);
         if (direct) return direct;
       }
