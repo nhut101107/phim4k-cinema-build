@@ -593,12 +593,19 @@ const Player = {
     this.allServers.forEach((server, index) => {
       const button = document.createElement('button');
       button.type = 'button';
+      button.setAttribute('role', 'menuitemradio');
+      button.setAttribute('aria-checked', String(index === this.currentServerIndex));
       button.classList.toggle('active', index === this.currentServerIndex);
-      button.textContent = server.server_name || `Server ${index + 1}`;
+      const episodeCount = Array.isArray(server?.server_data) ? server.server_data.length : 0;
+      button.textContent = `${index === this.currentServerIndex ? '✓ ' : ''}${server.server_name || `Server ${index + 1}`} · ${episodeCount} tập`;
       button.onclick = () => this.switchServer(index);
       menu.appendChild(button);
     });
-    if (trigger) trigger.textContent = this.allServers[this.currentServerIndex]?.server_name || 'Đổi server';
+    if (trigger) {
+      const activeName = this.allServers[this.currentServerIndex]?.server_name || `Server ${this.currentServerIndex + 1}`;
+      trigger.textContent = `📡 ${activeName}`;
+      trigger.title = `Đang phát bằng ${activeName}. Bấm để chọn server khác.`;
+    }
   },
 
   switchServer(newServerIndex, { automatic = false } = {}) {
@@ -712,12 +719,18 @@ const Player = {
   },
 
   updateAutoSkipButton() {
-    const button = document.getElementById('btnAutoSkipAds');
-    if (!button) return;
     const enabled = this.autoSkipAdsEnabled;
-    button.textContent = enabled ? 'Bỏ QC: Bật' : 'Bỏ QC: Tắt';
-    button.classList.toggle('active', enabled);
-    button.setAttribute('aria-pressed', String(enabled));
+    const labels = {
+      btnAutoSkipAds: enabled ? 'Bỏ QC: Bật' : 'Bỏ QC: Tắt',
+      btnAutoSkipAdsTop: enabled ? '⏩ QC: Bật' : '⏸ QC: Tắt',
+    };
+    Object.entries(labels).forEach(([id, label]) => {
+      const button = document.getElementById(id);
+      if (!button) return;
+      button.textContent = label;
+      button.classList.toggle('active', enabled);
+      button.setAttribute('aria-pressed', String(enabled));
+    });
   },
 
   maybeAutoSkipAd() {
@@ -994,6 +1007,7 @@ const Player = {
 
   closeDropdowns() {
     ['playerServerMenu', 'speedMenu', 'qualityMenu'].forEach((id) => document.getElementById(id)?.classList.add('hidden'));
+    document.getElementById('btnPlayerServer')?.setAttribute('aria-expanded', 'false');
   },
 
   clearSurfaceTap() {
@@ -1117,7 +1131,10 @@ function setAspectRatio(mode) { Player.setAspectRatio(mode); }
 function playNextEpisode() { Player.playNextEpisode(); }
 function closePlayer() { Player.close(); }
 function togglePlayerServerMenu() {
-  document.getElementById('playerServerMenu')?.classList.toggle('hidden');
+  const menu = document.getElementById('playerServerMenu');
+  const button = document.getElementById('btnPlayerServer');
+  menu?.classList.toggle('hidden');
+  button?.setAttribute('aria-expanded', String(Boolean(menu && !menu.classList.contains('hidden'))));
   document.getElementById('speedMenu')?.classList.add('hidden');
   document.getElementById('qualityMenu')?.classList.add('hidden');
 }
