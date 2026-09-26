@@ -677,14 +677,14 @@ body {
 }
 
 /* --- 1. KEY ENTRY GATE REDESIGN --- */
-.gate-overlay {
+.gate-overlay:not(.hidden) {
   background: 
     radial-gradient(ellipse 80% 60% at 50% -10%, rgba(139, 92, 246, 0.22), transparent 70%),
     radial-gradient(ellipse 60% 50% at 85% 95%, rgba(6, 182, 212, 0.15), transparent 70%),
     radial-gradient(circle 400px at 15% 85%, rgba(244, 63, 94, 0.12), transparent 60%),
     linear-gradient(180deg, #070911 0%, #05060a 100%) !important;
   backdrop-filter: blur(28px) !important;
-  display: flex !important;
+  display: flex;
   align-items: center !important;
   justify-content: center !important;
   padding: 20px !important;
@@ -1954,5 +1954,16 @@ body {
     font-size: 10px !important;
     gap: 5px !important;
   }
+}
+
+/* ABSOLUTE OVERRIDE FOR HIDDEN ELEMENTS */
+#activationGate.hidden,
+.gate-overlay.hidden,
+div#activationGate.hidden,
+.hidden {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 

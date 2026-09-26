@@ -175,7 +175,7 @@ const API = {
         if (refreshed?.active) return this.request(endpoint, options, true);
       }
       if (response.status === 401 || response.status === 403) {
-        if (!window.Auth?.activeKeyData?.freeAccess) {
+        if (!window.Auth?.activeKeyData?.freeAccess && window.Auth?.activeKeyData && !window.Auth?.activeKeyData?.freeAccess) {
           Auth.triggerLock(payload.message || 'Khóa kích hoạt không hợp lệ hoặc đã hết hạn!');
         }
         const error = new Error(payload.error || 'UNAUTHORIZED_KEY');

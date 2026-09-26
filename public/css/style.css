@@ -64,14 +64,20 @@ body.activation-locked {
   background: #374b68;
 }
 
-.hidden {
+.hidden,
+#activationGate.hidden,
+.gate-overlay.hidden,
+div#activationGate.hidden {
   display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 
 /* ================================================= */
 /* 1. ACTIVATION GATE (KHÓA NHẬP KEY BẢN QUYỀN)      */
 /* ================================================= */
-.gate-overlay {
+.gate-overlay:not(.hidden) {
   position: fixed;
   inset: 0;
   background: radial-gradient(circle at center, #131c2e 0%, #070a10 100%);

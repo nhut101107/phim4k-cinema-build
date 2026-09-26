@@ -54,13 +54,29 @@ const Auth = {
   },
 
   async init() {
+    // Default to free public access immediately so UI never locks viewers out
+    if (!this.activeKeyData) {
+      this.activeKeyData = {
+        success: true,
+        active: true,
+        isAdmin: false,
+        freeAccess: true,
+        plan: 'MIỄN PHÍ TOÀN BỘ KHÁN GIẢ (FREE 4K)',
+        tier: 'free',
+        keyHint: 'FREE-PUBLIC••••'
+      };
+    }
+    const initialGate = document.getElementById('activationGate');
+    if (initialGate) {
+      initialGate.classList.add('hidden');
+      initialGate.style.setProperty('display', 'none', 'important');
+    }
+
     // FAILSAFE: If init takes too long or any step fails, force-unlock after 4 seconds.
     // This prevents users from being stuck on the key gate forever.
     const failsafeTimer = window.setTimeout(() => {
-      if (!this.activeKeyData) {
-        console.warn('[Auth] Failsafe triggered: unlocking app after timeout');
-        this.unlockApp({ active: true, freeAccess: true, plan: 'MIỄN PHÍ TOÀN BỘ (FREE 4K)', tier: 'free', keyHint: 'FREE-PUBLIC••••' });
-      }
+      console.warn('[Auth] Failsafe triggered: unlocking app after timeout');
+      this.unlockApp({ active: true, freeAccess: true, plan: 'MIỄN PHÍ TOÀN BỘ (FREE 4K)', tier: 'free', keyHint: 'FREE-PUBLIC••••' });
     }, 4000);
 
     try {
@@ -173,6 +189,11 @@ const Auth = {
   },
 
   triggerLock(errorMessage = '') {
+    // If freeAccess is currently active on system, NEVER lock viewers out unless maintenance is active!
+    if (this.activeKeyData?.freeAccess && (!errorMessage || !errorMessage.includes('bảo trì'))) {
+      return;
+    }
+
     if (window.Player && window.Player.close) {
       window.Player.close();
     }
@@ -188,9 +209,17 @@ const Auth = {
 
     document.body.classList.add('activation-locked');
     const gate = document.getElementById('activationGate');
-    gate.classList.remove('hidden', 'maintenance-active');
+    if (gate) {
+      gate.classList.remove('hidden', 'maintenance-active');
+      gate.style.removeProperty('display');
+      gate.style.display = 'flex';
+    }
     document.getElementById('maintenanceNotice')?.classList.add('hidden');
-    document.getElementById('appContainer').classList.add('hidden');
+    const appContainer = document.getElementById('appContainer');
+    if (appContainer) {
+      appContainer.classList.add('hidden');
+      appContainer.style.setProperty('display', 'none', 'important');
+    }
     
     const adminBtn = document.getElementById('adminNavBtn');
     if (adminBtn) adminBtn.classList.add('hidden');
@@ -284,12 +313,19 @@ const Auth = {
 
     document.body.classList.remove('activation-locked');
     const gate = document.getElementById('activationGate');
-    gate.classList.remove('maintenance-active');
-    gate.classList.add('hidden');
+    if (gate) {
+      gate.classList.remove('maintenance-active');
+      gate.classList.add('hidden');
+      gate.style.setProperty('display', 'none', 'important');
+    }
     document.getElementById('maintenanceNotice')?.classList.add('hidden');
     const buttonText = document.querySelector('#btnActivate .btn-text');
     if (buttonText) buttonText.textContent = 'Kích hoạt';
-    document.getElementById('appContainer').classList.remove('hidden');
+    const app = document.getElementById('appContainer');
+    if (app) {
+      app.classList.remove('hidden');
+      app.style.removeProperty('display');
+    }
 
     // VIP Plan display
     const vipText = document.getElementById('vipPlanText');
@@ -694,15 +730,27 @@ window.promptAdminLogin = async function() {
 };
 
 window.enterFreeViewerMode = async function() {
+  const gate = document.getElementById('activationGate');
+  if (gate) {
+    gate.classList.remove('maintenance-active');
+    gate.classList.add('hidden');
+    gate.style.setProperty('display', 'none', 'important');
+  }
+  document.body.classList.remove('activation-locked');
+  const app = document.getElementById('appContainer');
+  if (app) {
+    app.classList.remove('hidden');
+    app.style.removeProperty('display');
+  }
   try {
     const res = await API.activate('', '', Auth.getDeviceId());
-    if (res.active) {
+    if (res?.active) {
       await SessionVault.save(res);
       Auth.unlockApp(res);
       return;
     }
   } catch (e) {}
-  Auth.unlockApp({ active: true, freeAccess: true, plan: 'MIỄN PHÍ TOÀN BỘ' });
+  Auth.unlockApp({ active: true, freeAccess: true, plan: 'MIỄN PHÍ TOÀN BỘ KHÁN GIẢ (FREE 4K)', tier: 'free', keyHint: 'FREE-PUBLIC••••' });
 };
 
 window.reportCurrentMovieIssue = async function(customReason = '') {
