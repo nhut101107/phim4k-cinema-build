@@ -78,6 +78,7 @@
   };
 
   async function readSession() {
+    if (session) return session;
     const native = nativeStore();
     if (native?.get) {
       try {
@@ -87,22 +88,35 @@
         return null;
       }
     }
-    try { return safeSession(await dbOperation('readonly', (store) => store.get(SESSION_KEY))); }
-    catch (_error) { return null; }
+    try {
+      const stored = await dbOperation('readonly', (store) => store.get(SESSION_KEY));
+      if (stored) return safeSession(stored);
+    } catch (_error) {}
+    try {
+      const raw = localStorage.getItem('phim4k_session_fallback');
+      if (raw) return safeSession(JSON.parse(raw));
+    } catch (_e) {}
+    return null;
   }
 
   async function writeSession(value) {
     const clean = safeSession(value);
     if (!clean) throw new Error('INVALID_SESSION_ENVELOPE');
-    const native = nativeStore();
-    if (native?.set) await native.set({ value: JSON.stringify(clean) });
-    else await dbOperation('readwrite', (store) => store.put(clean, SESSION_KEY));
     session = clean;
+    try {
+      localStorage.setItem('phim4k_session_fallback', JSON.stringify(clean));
+    } catch (_e) {}
+    try {
+      const native = nativeStore();
+      if (native?.set) await native.set({ value: JSON.stringify(clean) });
+      else await dbOperation('readwrite', (store) => store.put(clean, SESSION_KEY));
+    } catch (_error) {}
     return clean;
   }
 
   async function clearSession() {
     session = null;
+    try { localStorage.removeItem('phim4k_session_fallback'); } catch (_e) {}
     const native = nativeStore();
     if (native?.clear) {
       try { await native.clear(); } catch (_error) {}
@@ -111,73 +125,101 @@
     catch (_error) {}
   }
 
+  let inMemoryDeviceKey = null;
+
   async function createDeviceKey() {
-    // WebKit applies the generateKey extractability flag to the public key as
-    // well. Generate briefly exportable keys, then immediately re-import the
-    // private key as non-extractable before persisting it.
-    const generated = await crypto.subtle.generateKey(
-      { name: 'ECDSA', namedCurve: 'P-256' },
-      true,
-      ['sign', 'verify'],
-    );
-    const [publicJwk, privateJwk] = await Promise.all([
-      crypto.subtle.exportKey('jwk', generated.publicKey),
-      crypto.subtle.exportKey('jwk', generated.privateKey),
-    ]);
-    const [publicKey, privateKey] = await Promise.all([
-      crypto.subtle.importKey('jwk', publicJwk, { name: 'ECDSA', namedCurve: 'P-256' }, true, ['verify']),
-      crypto.subtle.importKey('jwk', privateJwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']),
-    ]);
-    const pair = { publicKey, privateKey };
-    await dbOperation('readwrite', (store) => store.put(pair, DEVICE_KEY));
-    return pair;
+    try {
+      if (!window.crypto?.subtle?.generateKey) return null;
+      const generated = await crypto.subtle.generateKey(
+        { name: 'ECDSA', namedCurve: 'P-256' },
+        true,
+        ['sign', 'verify'],
+      );
+      const [publicJwk, privateJwk] = await Promise.all([
+        crypto.subtle.exportKey('jwk', generated.publicKey),
+        crypto.subtle.exportKey('jwk', generated.privateKey),
+      ]);
+      const [publicKey, privateKey] = await Promise.all([
+        crypto.subtle.importKey('jwk', publicJwk, { name: 'ECDSA', namedCurve: 'P-256' }, true, ['verify']),
+        crypto.subtle.importKey('jwk', privateJwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']),
+      ]);
+      const pair = { publicKey, privateKey };
+      inMemoryDeviceKey = pair;
+      try {
+        await dbOperation('readwrite', (store) => store.put(pair, DEVICE_KEY));
+      } catch (_e) {}
+      return pair;
+    } catch (_err) {
+      return null;
+    }
   }
 
   async function ensureDeviceKey() {
+    if (inMemoryDeviceKey) return inMemoryDeviceKey;
     if (deviceKeyPromise) return deviceKeyPromise;
     deviceKeyPromise = (async () => {
-      let pair;
-      try { pair = await dbOperation('readonly', (store) => store.get(DEVICE_KEY)); }
-      catch (_error) { pair = null; }
+      let pair = null;
+      try {
+        pair = await dbOperation('readonly', (store) => store.get(DEVICE_KEY));
+      } catch (_error) {
+        pair = null;
+      }
       if (pair?.privateKey && pair?.publicKey) {
         try {
           await crypto.subtle.exportKey('jwk', pair.publicKey);
+          inMemoryDeviceKey = pair;
           return pair;
         } catch (_error) {
-          // Replace keys created by older iOS builds whose public half was
-          // incorrectly stored as non-extractable.
           try { await dbOperation('readwrite', (store) => store.delete(DEVICE_KEY)); }
           catch (_deleteError) {}
         }
       }
-      return createDeviceKey();
+      const created = await createDeviceKey();
+      inMemoryDeviceKey = created;
+      return created;
     })();
-    try { return await deviceKeyPromise; }
-    catch (error) { deviceKeyPromise = null; throw error; }
+    try {
+      return await deviceKeyPromise;
+    } catch (_err) {
+      deviceKeyPromise = null;
+      return null;
+    }
   }
 
   async function publicDeviceKey() {
-    const pair = await ensureDeviceKey();
-    const jwk = await crypto.subtle.exportKey('jwk', pair.publicKey);
-    return { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y };
+    try {
+      const pair = await ensureDeviceKey();
+      if (!pair?.publicKey || !window.crypto?.subtle?.exportKey) return null;
+      const jwk = await crypto.subtle.exportKey('jwk', pair.publicKey);
+      return { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y };
+    } catch (_err) {
+      return null;
+    }
   }
 
   async function proofHeaders(method, input, credential) {
-    const url = new URL(typeof input === 'string' ? input : input.url, location.href);
-    const timestamp = String(Math.floor(Date.now() / 1000));
-    const nonce = bytesToBase64Url(crypto.getRandomValues(new Uint8Array(18)));
-    const canonical = `${String(method || 'GET').toUpperCase()}\n${url.pathname}${url.search}\n${timestamp}\n${nonce}\n${credential}`;
-    const pair = await ensureDeviceKey();
-    const signature = await crypto.subtle.sign(
-      { name: 'ECDSA', hash: 'SHA-256' },
-      pair.privateKey,
-      new TextEncoder().encode(canonical),
-    );
-    return {
-      'x-device-time': timestamp,
-      'x-device-nonce': nonce,
-      'x-device-proof': bytesToBase64Url(signature),
-    };
+    try {
+      const url = new URL(typeof input === 'string' ? input : input.url, location.href);
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const nonce = bytesToBase64Url(crypto.getRandomValues(new Uint8Array(18)));
+      const canonical = `${String(method || 'GET').toUpperCase()}\n${url.pathname}${url.search}\n${timestamp}\n${nonce}\n${credential}`;
+      const pair = await ensureDeviceKey();
+      if (!pair?.privateKey || !window.crypto?.subtle?.sign) {
+        return { 'x-device-time': timestamp, 'x-device-nonce': nonce };
+      }
+      const signature = await crypto.subtle.sign(
+        { name: 'ECDSA', hash: 'SHA-256' },
+        pair.privateKey,
+        new TextEncoder().encode(canonical),
+      );
+      return {
+        'x-device-time': timestamp,
+        'x-device-nonce': nonce,
+        'x-device-proof': bytesToBase64Url(signature),
+      };
+    } catch (_e) {
+      return {};
+    }
   }
 
   const PUBLIC_PATHS = new Set([
@@ -199,8 +241,12 @@
     async init() {
       if (initialized) return session;
       initialized = true;
-      await ensureDeviceKey();
-      session = await readSession();
+      try {
+        await ensureDeviceKey();
+      } catch (_e) {}
+      try {
+        session = await readSession();
+      } catch (_e) {}
       return session;
     },
     current() { return session; },
@@ -210,15 +256,24 @@
     clear: clearSession,
     proofHeaders,
     async decorate(input, init = {}) {
-      const url = new URL(typeof input === 'string' ? input : input.url, location.href);
-      if (!url.pathname.startsWith('/api/') || PUBLIC_PATHS.has(url.pathname) || !session?.accessToken) return init;
-      const method = String(init.method || (typeof input === 'object' && input.method) || 'GET').toUpperCase();
-      const headers = new Headers(init.headers || (typeof input === 'object' ? input.headers : undefined));
-      const deviceId = String(localStorage.getItem('phim4k_device_id') || '').trim();
-      if (deviceId) headers.set('x-device-id', deviceId);
-      headers.set('authorization', `Bearer ${session.accessToken}`);
-      for (const [name, value] of Object.entries(await proofHeaders(method, url.href, session.accessToken))) headers.set(name, value);
-      return { ...init, headers };
+      try {
+        const url = new URL(typeof input === 'string' ? input : input.url, location.href);
+        if (!url.pathname.startsWith('/api/') || PUBLIC_PATHS.has(url.pathname) || !session?.accessToken) return init;
+        const method = String(init.method || (typeof input === 'object' && input.method) || 'GET').toUpperCase();
+        const headers = new Headers(init.headers || (typeof input === 'object' ? input.headers : undefined));
+        const deviceId = String(localStorage.getItem('phim4k_device_id') || '').trim();
+        if (deviceId) headers.set('x-device-id', deviceId);
+        headers.set('authorization', `Bearer ${session.accessToken}`);
+        try {
+          const proofs = await proofHeaders(method, url.href, session.accessToken);
+          for (const [name, value] of Object.entries(proofs || {})) {
+            if (value) headers.set(name, value);
+          }
+        } catch (_proofErr) {}
+        return { ...init, headers };
+      } catch (_e) {
+        return init;
+      }
     },
   };
 

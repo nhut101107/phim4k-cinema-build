@@ -32,11 +32,19 @@ const Auth = {
   initializingPromise: null,
 
   getDeviceId() {
-    let id = localStorage.getItem('phim4k_device_id') || getPersistentCookie('phim4k_device_id');
+    let id = '';
+    try {
+      id = localStorage.getItem('phim4k_device_id') || getPersistentCookie('phim4k_device_id');
+    } catch (_e) {}
     if (!id) {
-      id = 'dev_' + crypto.randomUUID();
+      const randStr = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+        ? crypto.randomUUID()
+        : (Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 12));
+      id = 'dev_' + String(randStr).replace(/[^a-zA-Z0-9_-]/g, '');
     }
-    localStorage.setItem('phim4k_device_id', id);
+    try {
+      localStorage.setItem('phim4k_device_id', id);
+    } catch (_e) {}
     deletePersistentCookie('phim4k_device_id');
     return id;
   },
@@ -46,7 +54,9 @@ const Auth = {
   },
 
   async init() {
-    await SessionVault.init();
+    try {
+      await SessionVault.init();
+    } catch (_e) {}
     // One-time migration from old releases: use the saved key only to obtain
     // a server session, then erase the long-lived credential immediately.
     const savedKey = localStorage.getItem('phim4k_key') || getPersistentCookie('phim4k_key');

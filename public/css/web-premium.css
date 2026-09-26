@@ -1529,3 +1529,386 @@ body {
   border-color: #f87171 !important;
 }
 
+/* =========================================================
+   MOBILE RESPONSIVE PERFECTION FOR PHONES (< 860px)
+   ========================================================= */
+
+@media (max-width: 860px) {
+  /* 1. Gate Overlay & Card */
+  .gate-overlay {
+    padding: 12px !important;
+    align-items: center !important;
+    justify-content: center !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  .gate-card.license-shell {
+    grid-template-columns: 1fr !important;
+    width: 100% !important;
+    max-width: 480px !important;
+    min-height: auto !important;
+    border-radius: 20px !important;
+    margin: auto !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8) !important;
+  }
+
+  .license-visual {
+    display: none !important; /* Hide left decorative column on mobile so key form is right in view */
+  }
+
+  .license-entry {
+    padding: 24px 18px !important;
+    width: 100% !important;
+  }
+
+  .license-entry-head h2 {
+    font-size: 20px !important;
+  }
+
+  .input-group.license-key-field input {
+    height: 48px !important;
+    font-size: 14px !important;
+  }
+
+  .btn-primary.license-activate-btn {
+    height: 48px !important;
+    font-size: 14px !important;
+  }
+
+  /* 2. Top Navbar on Mobile Phones */
+  .navbar {
+    padding: 0 12px !important;
+    height: 56px !important;
+  }
+
+  .nav-left {
+    gap: 8px !important;
+  }
+
+  .brand-logo {
+    gap: 6px !important;
+  }
+
+  .brand-avatar {
+    width: 32px !important;
+    height: 32px !important;
+    font-size: 12px !important;
+  }
+
+  .logo-gradient {
+    font-size: 16px !important;
+  }
+
+  .badge-noads {
+    display: none !important;
+  }
+
+  .nav-links {
+    display: none !important;
+  }
+
+  .nav-right {
+    gap: 6px !important;
+  }
+
+  /* Hide duplicate desktop buttons on mobile navbar */
+  .nav-download-btn,
+  .nav-key-btn {
+    display: none !important;
+  }
+
+  .search-box {
+    width: 110px !important;
+  }
+
+  .search-box:focus-within {
+    width: 160px !important;
+  }
+
+  .search-box input {
+    font-size: 12px !important;
+    padding-left: 32px !important;
+  }
+
+  .admin-quick-btn {
+    padding: 6px 10px !important;
+    font-size: 11.5px !important;
+    gap: 4px !important;
+    border-radius: 8px !important;
+  }
+
+  .user-menu .vip-status-btn {
+    padding: 5px 8px !important;
+  }
+
+  .vip-status-copy small {
+    display: none !important;
+  }
+
+  /* 3. Admin Panel Modal on Mobile */
+  .modal-dialog.admin-dialog {
+    width: 96vw !important;
+    max-height: 94vh !important;
+    padding: 18px 12px !important;
+    border-radius: 18px !important;
+  }
+
+  .admin-title-row {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 8px !important;
+  }
+
+  .admin-stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+
+  .stat-card {
+    padding: 12px 14px !important;
+  }
+
+  .stat-card .stat-num {
+    font-size: 22px !important;
+  }
+
+  .admin-tabs-nav {
+    gap: 4px !important;
+    padding: 4px !important;
+  }
+
+  .admin-tab-btn {
+    padding: 8px 10px !important;
+    font-size: 11px !important;
+  }
+
+  .form-row {
+    flex-direction: column !important;
+    gap: 10px !important;
+  }
+
+  .form-group {
+    width: 100% !important;
+  }
+
+  .admin-table-wrapper {
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  .admin-table th,
+  .admin-table td {
+    padding: 8px 10px !important;
+    font-size: 11.5px !important;
+  }
+
+  /* 4. Cinema Player on Mobile */
+  .player-top-bar {
+    padding: max(8px, env(safe-area-inset-top)) 10px 8px !important;
+    gap: 6px !important;
+  }
+
+  .player-title-info h3 {
+    font-size: 13px !important;
+    max-width: 120px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  .player-noads-pill {
+    display: none !important;
+  }
+
+  .btn-player-server {
+    padding: 5px 8px !important;
+    font-size: 11px !important;
+  }
+
+  .badge-real-res {
+    font-size: 9.5px !important;
+    padding: 2px 5px !important;
+  }
+
+  /* 5. Movie Detail Modal on Mobile */
+  .movie-detail-dialog {
+    width: 100% !important;
+    max-height: 92dvh !important;
+    border-radius: 20px !important;
+  }
+
+  /* 6. Body & Global Overflow on Mobile Phones */
+  body.web-preview {
+    overflow-x: hidden !important;
+    max-width: 100vw !important;
+    width: 100% !important;
+  }
+
+  #appContainer {
+    width: 100% !important;
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
+    box-sizing: border-box !important;
+  }
+
+  /* 7. Coverflow Hero Section on Mobile Phones (< 860px) */
+  body.web-preview .coverflow-section {
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100% !important;
+    max-width: 100vw !important;
+    min-height: auto !important;
+    margin: 0 !important;
+    padding: 68px 12px 18px !important;
+    gap: 14px !important;
+    border-radius: 0 0 20px 20px !important;
+    border-inline: none !important;
+    overflow: hidden !important;
+    box-sizing: border-box !important;
+    background: radial-gradient(circle at 50% 20%, rgba(124, 135, 255, 0.16), transparent 50%),
+                linear-gradient(180deg, rgba(20, 25, 40, 0.8), rgba(8, 11, 17, 1)) !important;
+  }
+
+  body.web-preview .coverflow-container {
+    grid-column: unset !important;
+    grid-row: unset !important;
+    width: 100% !important;
+    height: 280px !important;
+    min-height: 280px !important;
+    margin: 0 auto !important;
+    position: relative !important;
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    overflow: visible !important;
+    perspective: 1000px !important;
+  }
+
+  body.web-preview .coverflow-track {
+    width: 100% !important;
+    max-width: 100% !important;
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+  }
+
+  body.web-preview .coverflow-card {
+    border-radius: 14px !important;
+  }
+
+  body.web-preview .coverflow-card.center {
+    width: 180px !important;
+    height: 265px !important;
+    z-index: 10 !important;
+    box-shadow: 0 12px 35px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
+  }
+
+  body.web-preview .coverflow-card.left {
+    width: 145px !important;
+    height: 220px !important;
+    transform: translateX(-88px) scale(0.85) rotateY(16deg) translateZ(-25px) !important;
+    opacity: 0.45 !important;
+  }
+
+  body.web-preview .coverflow-card.right {
+    width: 145px !important;
+    height: 220px !important;
+    transform: translateX(88px) scale(0.85) rotateY(-16deg) translateZ(-25px) !important;
+    opacity: 0.45 !important;
+  }
+
+  body.web-preview .coverflow-details {
+    grid-column: unset !important;
+    grid-row: unset !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 6px !important;
+    text-align: center !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    box-sizing: border-box !important;
+  }
+
+  body.web-preview .cf-title {
+    font-size: 20px !important;
+    line-height: 1.3 !important;
+    margin-bottom: 6px !important;
+    text-align: center !important;
+  }
+
+  body.web-preview .cf-overview {
+    font-size: 12px !important;
+    line-height: 1.5 !important;
+    -webkit-line-clamp: 2 !important;
+    display: -webkit-box !important;
+    -webkit-box-orient: vertical !important;
+    overflow: hidden !important;
+    max-width: 100% !important;
+    margin-bottom: 12px !important;
+    text-align: center !important;
+    color: #94a3b8 !important;
+  }
+
+  body.web-preview .coverflow-cta-group {
+    justify-content: center !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+
+  body.web-preview .cf-btn-play,
+  body.web-preview .cf-btn-detail {
+    padding: 9px 18px !important;
+    font-size: 13px !important;
+    border-radius: 10px !important;
+  }
+
+  /* 8. Movie Rail & Section Cards on Mobile Phones */
+  body.web-preview .cinema-rail-section,
+  body.web-preview .movie-section {
+    padding: 0 12px !important;
+    margin-bottom: 22px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  body.web-preview .cinema-section-header {
+    margin-bottom: 10px !important;
+  }
+
+  body.web-preview .cinema-section-header .section-title,
+  body.web-preview .section-title {
+    font-size: 17px !important;
+  }
+
+  body.web-preview .movie-row.cinema-rail {
+    grid-auto-columns: 130px !important;
+    gap: 10px !important;
+    padding: 4px 2px 14px !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    scroll-snap-type: x mandatory !important;
+  }
+
+  body.web-preview .cinema-rail .movie-card {
+    width: 130px !important;
+    scroll-snap-align: start !important;
+  }
+
+  body.web-preview .cinema-rail .card-poster-wrapper {
+    height: 195px !important;
+    border-radius: 12px !important;
+  }
+
+  body.web-preview .cinema-rail .card-title {
+    font-size: 12px !important;
+    min-height: 2.6em !important;
+    line-height: 1.3 !important;
+  }
+
+  body.web-preview .cinema-rail .card-meta {
+    font-size: 10px !important;
+    gap: 5px !important;
+  }
+}
+

@@ -231,7 +231,12 @@ const API = {
   // accept a key locally when the licensing API is unavailable.
   async activate(key, telegramId, deviceId) {
     try {
-      const devicePublicKey = await SessionVault.publicDeviceKey();
+      let devicePublicKey = null;
+      try {
+        devicePublicKey = await SessionVault?.publicDeviceKey?.();
+      } catch (_vaultErr) {
+        devicePublicKey = null;
+      }
       const response = await this.fetchWithTimeout('/api/auth/activate', {
         method: 'POST',
         headers: { 
