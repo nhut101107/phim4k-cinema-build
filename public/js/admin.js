@@ -125,7 +125,16 @@ const Admin = {
     // Server responses set isAdmin only after the master key and administrator
     // identity have both been verified. Keep the private identity off-device.
     if (window.Auth?.activeKeyData?.isAdmin !== true) {
-      alert('Truy cập bị từ chối: chỉ tài khoản quản trị đã được máy chủ xác thực mới được mở Panel Quản trị.');
+      const gate = document.getElementById('activationGate');
+      if (gate) {
+        gate.classList.remove('hidden');
+        document.body.classList.add('activation-locked');
+        const adminDetails = document.getElementById('adminLoginFields');
+        if (adminDetails) adminDetails.open = true;
+        const tele = document.getElementById('telegramInput');
+        if (tele) tele.focus();
+      }
+      alert('Vui lòng nhập Key Quản Trị và Telegram ID để xác thực quyền Admin.');
       return;
     }
 
