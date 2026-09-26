@@ -1089,7 +1089,7 @@ const App = {
   // =================================================
   // 4. MOVIE DETAIL MODAL & EPISODES
   // =================================================
-  async openMovieDetail(slug) {
+  async openMovieDetail(slug, autoPlay = false) {
     const requestId = ++this.detailRequestId;
     const modal = document.getElementById('movieModal');
     modal.classList.remove('hidden');
@@ -1116,6 +1116,9 @@ const App = {
       this.activeServerIndex = 0;
       this.renderDetailModalContent(data);
       API.trackUsage('movie_open', { movie: data.movie?.name || slug });
+      if (autoPlay) {
+        this.playCurrentFirstEpisode();
+      }
     } catch (err) {
       if (requestId !== this.detailRequestId) return;
       document.getElementById('detailName').textContent = 'Không thể tải chi tiết phim';

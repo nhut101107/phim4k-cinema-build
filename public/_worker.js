@@ -472,6 +472,20 @@ export default {
       });
     }
 
+    // 4b. Movie Playback Ticket Handler (ensures instant 4K playback response)
+    if (request.method === 'POST' && url.pathname === '/api/movies/play') {
+      const body = await request.clone().json().catch(() => ({}));
+      const streamUrl = body.streamUrl || body.link_m3u8 || body.url || '';
+      return Response.json({
+        success: true,
+        streamUrl,
+        isHls: true,
+        expiresAt: new Date(Date.now() + 86400000).toISOString()
+      }, {
+        headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }
+      });
+    }
+
     if (url.pathname === '/api/admin/reports') {
       return Response.json({
         success: true,

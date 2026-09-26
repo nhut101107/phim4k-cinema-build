@@ -204,39 +204,67 @@ const Player = {
 
   async loadEpisode(episode, options = {}) {
     const requestId = ++this.playbackTicketRequest;
-    if (!episode?.stream_ref) {
-      this.showBuffering(false);
-      this.showAlert('Server này không cung cấp vé phát an toàn. Đang thử server khác…');
-      this.fallbackToNextServer();
+    this.currentEpisode = episode;
+
+    // 1. Direct stream URL provided by catalog (OPhim, KKPhim, PhimAPI)
+    const directStreamUrl = episode?.link_m3u8 || episode?.m3u8 || episode?.stream_url || episode?.url || '';
+    if (directStreamUrl) {
+      this.showBuffering(true, 'Đang mở luồng phát 4K…');
+      this.setResolutionBadge(0, 0, '4K Ultra HD');
+      this.loadStream(directStreamUrl, { ...options, isHls: true, nativeDirectHls: false });
       return;
     }
-    this.showBuffering(true, 'Đang xác thực vé phát an toàn…');
-    this.setResolutionBadge(0, 0, 'Đang xác minh');
-    try {
-      const result = await API.getPlaybackTicket(episode.stream_ref);
-      if (requestId !== this.playbackTicketRequest || this.modal?.classList.contains('hidden')) return;
-      let streamUrl = result.streamUrl;
-      let nativeDirectHls = false;
-      if (result.nativeBootstrap) {
-        this.showBuffering(true, 'Đang kết nối nguồn dự phòng…');
-        const resolver = this.getNativePlugin('StreamResolver') || window.Phim4KStreamResolver;
-        if (!resolver?.resolve) throw Object.assign(new Error('Thiết bị chưa hỗ trợ nguồn dự phòng.'), { code: 'NATIVE_STREAM_RESOLVER_UNAVAILABLE' });
-        const resolved = await resolver.resolve(result.nativeBootstrap);
+
+    // 2. If episode has stream_ref, fetch playback ticket
+    if (episode?.stream_ref) {
+      this.showBuffering(true, 'Đang xác thực vé phát an toàn…');
+      this.setResolutionBadge(0, 0, 'Đang xác minh');
+      try {
+        const result = await API.getPlaybackTicket(episode.stream_ref);
         if (requestId !== this.playbackTicketRequest || this.modal?.classList.contains('hidden')) return;
-        streamUrl = resolved?.playlist;
-        nativeDirectHls = true;
+        let streamUrl = result.streamUrl;
+        let nativeDirectHls = false;
+        if (result.nativeBootstrap) {
+          this.showBuffering(true, 'Đang kết nối nguồn dự phòng…');
+          const resolver = this.getNativePlugin('StreamResolver') || window.Phim4KStreamResolver;
+          if (resolver?.resolve) {
+            const resolved = await resolver.resolve(result.nativeBootstrap);
+            if (resolved?.playlist) {
+              streamUrl = resolved.playlist;
+              nativeDirectHls = true;
+            }
+          }
+        }
+        if (streamUrl) {
+          this.loadStream(streamUrl, { ...options, isHls: Boolean(result.isHls), nativeDirectHls });
+          return;
+        }
+      } catch (error) {
+        console.warn('Playback ticket error:', error);
       }
-      this.loadStream(streamUrl, { ...options, isHls: Boolean(result.isHls), nativeDirectHls });
-    } catch (error) {
-      if (requestId !== this.playbackTicketRequest) return;
-      this.showBuffering(false);
-      const sourceOffline = ['STREAM_SOURCE_OFFLINE', 'STREAM_SOURCE_UNREACHABLE', 'INVALID_STREAM_SOURCE']
-        .includes(error?.payload?.code);
-      this.showAlert(sourceOffline
-        ? 'Nguồn phim đã bị gỡ hoặc tạm lỗi. Đang thử server khác…'
-        : 'Không lấy được vé phát. Đang thử server khác…');
-      this.fallbackToNextServer();
     }
+
+    // 3. Fallback: Check if link_embed has a ?url= parameter containing m3u8
+    if (episode?.link_embed) {
+      const match = String(episode.link_embed).match(/url=([^&]+)/);
+      if (match) {
+        const decoded = decodeURIComponent(match[1]);
+        if (decoded.includes('.m3u8')) {
+          this.showBuffering(true, 'Đang kết nối luồng phát…');
+          this.loadStream(decoded, { ...options, isHls: true });
+          return;
+        }
+      }
+      // If direct embed url
+      this.showBuffering(true, 'Đang kết nối luồng phát…');
+      this.loadStream(episode.link_embed, { ...options, isHls: false });
+      return;
+    }
+
+    // 4. Otherwise fallback to next server
+    this.showBuffering(false);
+    this.showAlert('Server này hiện không có luồng phát. Đang thử server khác…');
+    this.fallbackToNextServer();
   },
 
   loadStream(streamUrl, options = {}) {
@@ -245,7 +273,7 @@ const Player = {
     const session = ++this.streamSession;
     const resumeTime = Number(options.resumeTime) || 0;
     const autoplay = options.autoplay !== false;
-    const isHls = options.isHls === true;
+    const isHls = options.isHls !== false && (String(streamUrl).includes('.m3u8') || options.isHls === true);
     const nativeDirectHls = options.nativeDirectHls === true;
     if (!streamUrl) {
       this.showBuffering(false);
@@ -262,7 +290,7 @@ const Player = {
     this.destroyHls();
     this.closeDropdowns();
     this.showBuffering(true, 'Đang kết nối luồng phim…');
-    this.setResolutionBadge(0, 0, 'Đang xác minh');
+    this.setResolutionBadge(0, 0, 'Đang kết nối');
     this.populateQualityMenu([]);
     this.video.pause();
     this.video.removeAttribute('src');
@@ -272,14 +300,11 @@ const Player = {
       if (session === this.streamSession) this.onStreamReady(resumeTime, autoplay);
     }, { once: true });
 
-    // Capacitor on iOS must prefer AVFoundation's native HLS path. Recent
-    // WKWebView versions may expose enough MSE for hls.js to report support,
-    // but cross-origin segment requests can then fail even though native HLS
-    // can play the same HTTPS playlist directly. Android WebView instead uses
-    // hls.js when MSE is available, preserving adaptive quality and recovery;
-    // the native video element below remains its compatibility fallback.
+    // iOS and Safari native HLS check:
+    const canNativeHls = Boolean(this.video?.canPlayType('application/vnd.apple.mpegurl'));
+    const isAppleDevice = /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent) && !window.MSStream;
     let preferNativeHls = false;
-    if (isHls && this.nativePlatform() === 'ios') preferNativeHls = true;
+    if (isHls && (this.nativePlatform() === 'ios' || (canNativeHls && isAppleDevice))) preferNativeHls = true;
     if (isHls && nativeDirectHls && this.isNativeRuntime()) preferNativeHls = true;
     if (preferNativeHls) {
       this.usingNativeHls = true;

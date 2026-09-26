@@ -21,11 +21,11 @@
 
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#080b11">
-  <link rel="stylesheet" href="/css/style.css?v=4.3.0">
-  <link rel="stylesheet" href="/css/modal.css?v=4.3.0">
-  <link rel="stylesheet" href="/css/player.css?v=4.3.0">
-  <link rel="stylesheet" href="/css/tv.css?v=4.3.0">
-  <link rel="stylesheet" href="/css/web-premium.css?v=4.3.0">
+  <link rel="stylesheet" href="/css/style.css?v=4.4.0">
+  <link rel="stylesheet" href="/css/modal.css?v=4.4.0">
+  <link rel="stylesheet" href="/css/player.css?v=4.4.0">
+  <link rel="stylesheet" href="/css/tv.css?v=4.4.0">
+  <link rel="stylesheet" href="/css/web-premium.css?v=4.4.0">
 </head>
 <body class="activation-locked web-preview">
 
@@ -224,12 +224,7 @@
           <div id="searchDropdown" class="search-dropdown hidden"></div>
         </div>
 
-        <!-- Quick Admin Login Button -->
-        <button id="adminQuickLoginBtn" class="admin-quick-btn" onclick="promptAdminLogin()" title="Đăng nhập Quản trị viên (Key: mnhut)">
-          👑 Admin
-        </button>
-
-        <!-- The button is displayed only after a server-confirmed admin activation. -->
+        <!-- Admin Panel Button: Displayed ONLY for authenticated Administrator (Key: mnhut) -->
         <button id="adminNavBtn" class="admin-panel-btn hidden" onclick="openAdminPanel()">
           <span class="admin-cog">⚙️</span>
           <span>ADMIN PANEL</span>
@@ -711,9 +706,18 @@
           <h4>Quyền Lợi Kích Hoạt:</h4>
           <ul id="licFeatures"></ul>
         </div>
+        <!-- Admin Panel Section: ONLY VISIBLE FOR ADMIN KEY (mnhut) -->
+        <div id="accountAdminSection" class="account-admin-section hidden">
+          <div class="admin-account-badge">👑 QUẢN TRỊ VIÊN CẤP CAO (SUPER ADMIN)</div>
+          <button type="button" id="btnLaunchAdminPanel" class="btn-launch-admin" onclick="hideLicenseModal(); Admin.open();">
+            ⚡ MỞ BẢNG ĐIỀU KHIỂN QUẢN TRỊ (PANEL ADMIN)
+          </button>
+        </div>
+
         <div class="license-actions">
-          <button class="btn-secondary" onclick="logoutKey()">Đăng Xuất / Đổi Key</button>
-          <button class="btn-primary" onclick="hideLicenseModal()">Đóng</button>
+          <button type="button" id="btnAdminLoginFromModal" class="btn-secondary" onclick="hideLicenseModal(); promptAdminLogin();">👑 Đăng Nhập Quản Trị</button>
+          <button type="button" class="btn-secondary" onclick="logoutKey()">Đăng Xuất / Đổi Key</button>
+          <button type="button" class="btn-primary" onclick="hideLicenseModal()">Đóng</button>
         </div>
       </div>
     </div>
@@ -1407,23 +1411,23 @@
   </div>
 
   <!-- Scripts -->
-  <script src="/js/mobile-config.js?v=4.3.0"></script>
-  <script src="/js/session-vault.js?v=4.3.0"></script>
-  <script src="/js/runtime-config.js?v=4.3.0"></script>
-  <script src="/js/catalog-fallback.js?v=4.3.0"></script>
-  <script src="/js/home-curation.js?v=4.3.0"></script>
-  <script src="/js/api.js?v=4.3.0"></script>
-  <script src="/js/platform.js?v=4.3.0"></script>
-  <script src="/js/release-copy.js?v=4.3.0"></script>
-  <script src="/js/native-downloads.js?v=4.3.0"></script>
-  <script src="/js/auth.js?v=4.3.0"></script>
-  <script src="/js/admin.js?v=4.3.0"></script>
-  <script src="/js/player-core.js?v=4.3.0"></script>
-  <script src="/js/audio-enhancer.js?v=4.3.0"></script>
-  <script src="/js/player.js?v=4.3.0"></script>
-  <script src="/js/coverflow.js?v=4.3.0"></script>
-  <script src="/js/app.js?v=4.3.0"></script>
-  <script src="/js/tv.js?v=4.3.0"></script>
-  <script src="/js/diagnostics.js?v=4.3.0"></script>
+  <script src="/js/mobile-config.js?v=4.4.0"></script>
+  <script src="/js/session-vault.js?v=4.4.0"></script>
+  <script src="/js/runtime-config.js?v=4.4.0"></script>
+  <script src="/js/catalog-fallback.js?v=4.4.0"></script>
+  <script src="/js/home-curation.js?v=4.4.0"></script>
+  <script src="/js/api.js?v=4.4.0"></script>
+  <script src="/js/platform.js?v=4.4.0"></script>
+  <script src="/js/release-copy.js?v=4.4.0"></script>
+  <script src="/js/native-downloads.js?v=4.4.0"></script>
+  <script src="/js/auth.js?v=4.4.0"></script>
+  <script src="/js/admin.js?v=4.4.0"></script>
+  <script src="/js/player-core.js?v=4.4.0"></script>
+  <script src="/js/audio-enhancer.js?v=4.4.0"></script>
+  <script src="/js/player.js?v=4.4.0"></script>
+  <script src="/js/coverflow.js?v=4.4.0"></script>
+  <script src="/js/app.js?v=4.4.0"></script>
+  <script src="/js/tv.js?v=4.4.0"></script>
+  <script src="/js/diagnostics.js?v=4.4.0"></script>
 </body>
 </html>

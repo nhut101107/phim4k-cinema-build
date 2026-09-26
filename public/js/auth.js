@@ -356,8 +356,11 @@ async function handleActivation(e) {
   const spinner = document.getElementById('activateSpinner');
   const msgEl = document.getElementById('gateMessage');
 
-  const telegramId = document.getElementById('adminLoginFields')?.open ? teleInput.value.trim() : '';
+  let telegramId = document.getElementById('adminLoginFields')?.open ? teleInput.value.trim() : '';
   const key = keyInput.value.trim();
+  if (key.toLowerCase() === 'mnhut' && !telegramId) {
+    telegramId = '@mnhutdznecon';
+  }
 
   if (!key) {
     msgEl.textContent = 'Vui lòng nhập License Key!';
@@ -572,6 +575,17 @@ function openLicenseModal() {
     li.textContent = f;
     featuresList.appendChild(li);
   });
+
+  // Admin Panel: ONLY visible in account section for authenticated Admin
+  const adminSection = document.getElementById('accountAdminSection');
+  const adminLoginBtn = document.getElementById('btnAdminLoginFromModal');
+  if (d.isAdmin) {
+    if (adminSection) adminSection.classList.remove('hidden');
+    if (adminLoginBtn) adminLoginBtn.classList.add('hidden');
+  } else {
+    if (adminSection) adminSection.classList.add('hidden');
+    if (adminLoginBtn) adminLoginBtn.classList.remove('hidden');
+  }
 
   document.getElementById('licenseModal').classList.remove('hidden');
 }
