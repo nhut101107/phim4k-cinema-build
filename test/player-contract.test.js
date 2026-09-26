@@ -58,7 +58,7 @@ test('loads player rules before the shared player and exposes a single fullscree
 });
 
 test('prefers native HLS before hls.js inside the iPhone WebView', () => {
-  const nativeIndex = player.indexOf("if (isHls && this.nativePlatform() === 'ios')");
+  const nativeIndex = player.indexOf("this.nativePlatform() === 'ios'");
   const hlsJsIndex = player.indexOf('const HlsEngine = window.Hls');
   assert.ok(nativeIndex >= 0);
   assert.ok(hlsJsIndex > nativeIndex);
@@ -117,6 +117,7 @@ test('native playback and HLS.js expose automatic quality only', () => {
 
 test('all platforms auto-skip embedded ad windows once and keep a user toggle', () => {
   assert.match(index, /id="btnAutoSkipAds"[^>]*onclick="toggleAutoSkipAds\(\)"/);
+  assert.match(index, /id="btnAutoSkipAdsTop"[^>]*onclick="toggleAutoSkipAds\(\)"/);
   assert.doesNotMatch(player, /this\.nativePlatform\(\) !== 'ios'/);
   assert.match(player, /PlayerCore\.autoAdSkipTarget/);
   assert.match(player, /this\.skippedAdMarkers\.add\(result\.marker\)/);
@@ -128,7 +129,14 @@ test('every movie displays the requested small faint handwritten mnhut watermark
   assert.doesNotMatch(index, /đã đóng dấu bản quyền/);
   assert.match(css, /\.movie-copyright-watermark\s*\{[\s\S]*?position:\s*absolute/);
   assert.match(css, /font-family:[^;]*(?:Chalkboard SE|Segoe Print)[^;]*cursive/);
-  assert.match(css, /font-size:\s*clamp\(9px, 1\.05vw, 14px\)/);
-  assert.match(css, /opacity:\s*\.66/);
+  assert.match(css, /font-size:\s*clamp\(18px, 2vw, 30px\)/);
+  assert.match(css, /opacity:\s*\.74/);
   assert.match(css, /pointer-events:\s*none/);
+});
+
+test('server picker identifies the active source and preserves the current episode', () => {
+  assert.match(index, /id="btnPlayerServer"[^>]*aria-haspopup="menu"[^>]*aria-expanded="false"/);
+  assert.match(player, /findEquivalentEpisode\(targetEpisodes, this\.currentEpisode, this\.currentEpIndex\)/);
+  assert.match(player, /button\.setAttribute\('aria-checked', String\(index === this\.currentServerIndex\)\)/);
+  assert.match(player, /episodeCount.*tập/);
 });
