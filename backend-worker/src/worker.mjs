@@ -2533,6 +2533,58 @@ function streamCEmbedTarget(value) {
   return target;
 }
 
+function volatileHlsHost(target) {
+  const hostname = String(target?.hostname || "").toLowerCase();
+  return /^(?:[a-z0-9-]+\.)?kkphimplayer\d+\.com$/.test(hostname);
+}
+
+async function probeVolatileHlsPath(manifestText, manifestUrl, request, env, referer = "") {
+  let body = String(manifestText || "");
+  let base = manifestUrl;
+  // A cached master playlist can remain HTTP 200 after its rendition or first
+  // media segment has disappeared. Probe through both levels before issuing a
+  // ticket for the volatile PhimAPI CDN family.
+  for (let depth = 0; depth < 2; depth += 1) {
+    const mediaLine = body.split(/\r?\n/).map((line) => line.trim())
+      .find((line) => line && !line.startsWith("#"));
+    if (!mediaLine) return false;
+    let child;
+    try { child = safePublicHttpsUrl(new URL(mediaLine, base.href).href); } catch (_error) { return false; }
+    if (!child) return false;
+    const childIsHls = /\.m3u8(?:$|[?#])/i.test(child.href);
+    try {
+      const probeRequest = new Request(request.url, { method: "GET", headers: request.headers });
+      const { response } = await fetchProtectedUpstream(
+        child.href,
+        probeRequest,
+        env,
+        childIsHls ? "hls" : "media",
+        4,
+        true,
+        2500,
+        referer,
+      );
+      if (!response.ok && response.status !== 206) {
+        try { await response.body?.cancel(); } catch (_error) {}
+        return false;
+      }
+      if (!childIsHls) {
+        try { await response.body?.cancel(); } catch (_error) {}
+        return true;
+      }
+      const declaredLength = Number.parseInt(response.headers.get("content-length") || "0", 10) || 0;
+      if (declaredLength > MAX_HLS_MANIFEST_BYTES) return false;
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      body = new TextDecoder().decode(bytes);
+      if (bytes.byteLength > MAX_HLS_MANIFEST_BYTES || !body.trimStart().startsWith("#EXTM3U")) return false;
+      base = child;
+    } catch (_error) {
+      return false;
+    }
+  }
+  return false;
+}
+
 function normalizedEpisodeIdentity(value) {
   return String(value || "")
     .normalize("NFD")
@@ -3615,12 +3667,17 @@ async function handleMoviePlayback(request, env) {
       const declaredLength = Number.parseInt(probe.headers.get("content-length") || "0", 10) || 0;
       if (declaredLength > MAX_HLS_MANIFEST_BYTES) continue;
       const bytes = new Uint8Array(await probe.arrayBuffer());
-      if (bytes.byteLength > MAX_HLS_MANIFEST_BYTES || !new TextDecoder().decode(bytes).trimStart().startsWith("#EXTM3U")) {
+      const manifestText = new TextDecoder().decode(bytes);
+      if (bytes.byteLength > MAX_HLS_MANIFEST_BYTES || !manifestText.trimStart().startsWith("#EXTM3U")) {
         // Some providers serve an anti-bot HTML page to Cloudflare but serve
         // the exact same URL normally to the viewer's device.
         if (streamC) continue;
         if (!configuredRelayOrigin(env)) clientDirectFallback = true;
         else continue;
+      }
+      if (!clientDirectFallback && volatileHlsHost(target)
+        && !await probeVolatileHlsPath(manifestText, target, request, env, referer)) {
+        continue;
       }
     } else if (!clientDirectFallback) {
       const contentType = String(probe.headers.get("content-type") || "").toLowerCase();

@@ -112,6 +112,55 @@ test('playback automatically selects a surviving equivalent server', async () =>
   }
 });
 
+test('a stale volatile HLS master is rejected and playback uses the live StreamC backup', async () => {
+  const f = fixture();
+  const originalFetch = globalThis.fetch;
+  const primaryMaster = 'https://v7.kkphimplayer7.com/movie/master.m3u8';
+  const primaryVariant = 'https://v7.kkphimplayer7.com/movie/variant.m3u8';
+  const deadSegment = 'https://v7.kkphimplayer7.com/movie/dead.ts';
+  const embed = 'https://embed2.streamc.xyz/embed.php?hash=cb5e43d4241b2836ec493912121cdf8a';
+  const backupPlaylist = 'https://embed2.streamc.xyz/signed/live.m3u8';
+  const primary = {
+    movie: { slug: 'volatile-movie', name: 'Volatile movie' },
+    episodes: [{ server_name: 'Primary', server_data: [{ name: 'Full', slug: 'full', link_m3u8: primaryMaster }] }],
+  };
+  const backup = { movie: {
+    slug: 'volatile-movie',
+    episodes: [{ server_name: 'Backup', items: [{ name: 'Full', slug: 'full', embed }] }],
+  } };
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(input);
+    if (url.origin === 'https://catalog.example') return new Response(JSON.stringify(primary), { headers: { 'content-type': 'application/json' } });
+    if (url.href === 'https://phim.nguonc.com/api/film/volatile-movie') return new Response(JSON.stringify(backup), { headers: { 'content-type': 'application/json' } });
+    if (url.href === primaryMaster) return new Response('#EXTM3U\nvariant.m3u8', { headers: { 'content-type': 'application/vnd.apple.mpegurl' } });
+    if (url.href === primaryVariant) return new Response('#EXTM3U\n#EXTINF:10,\ndead.ts', { headers: { 'content-type': 'application/vnd.apple.mpegurl' } });
+    if (url.href === deadSegment) return new Response('gone', { status: 404 });
+    if (url.href === embed && init.method === 'POST') {
+      const issuedAt = Math.floor(Date.now() / 1000);
+      return new Response(JSON.stringify({ preissued: {
+        playlist: backupPlaylist,
+        playlistFormat: 'hls',
+        issuedAt,
+        expiresAt: issuedAt + 14400,
+      } }), { headers: { 'content-type': 'application/json' } });
+    }
+    throw new Error(`unexpected upstream: ${url.href}`);
+  };
+  try {
+    const playback = await worker.fetch(viewerRequest('/api/movies/play', {
+      method: 'POST',
+      body: JSON.stringify({ movie: 'volatile-movie', server: 0, episode: 0 }),
+    }), f.env);
+    assert.equal(playback.status, 200);
+    const payload = await playback.json();
+    assert.equal(payload.selectedServer, 1);
+    assert.match(payload.streamUrl, /^https:\/\/example\.workers\.dev\/api\/media\/stream\?t=/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    f.sqlite.close();
+  }
+});
+
 test('a direct HLS backup provider is merged without exposing an ad embed page', async () => {
   const f = fixture();
   const originalFetch = globalThis.fetch;
@@ -358,4 +407,3 @@ test('web playback never returns a native-only StreamC bootstrap', async () => {
     f.sqlite.close();
   }
 });
-

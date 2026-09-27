@@ -35,6 +35,12 @@ test('raw Pages catalogue episodes keep the previously working provider player p
   assert.ok(player.indexOf('const publicWebFallback = !window.Phim4KRuntime?.apiBaseUrl') < player.indexOf("this.showAlert('Server này hiện không có luồng phát"));
 });
 
+test('exhausted servers stop the failed media element instead of buffering forever', () => {
+  assert.match(player, /onVideo\('waiting',[\s\S]*?if \(this\.suppressBuffering\) return/);
+  assert.match(player, /Tất cả server hiện có đều không phản hồi[\s\S]*?this\.suppressBuffering = true;[\s\S]*?this\.video\.removeAttribute\('src'\)/);
+  assert.match(player, /async loadEpisode\(episode, options = \{\}\)[\s\S]*?this\.suppressBuffering = false/);
+});
+
 test('backend accepts every direct stream field exposed by the EnsMovie gateway', () => {
   assert.match(backend, /episode\?\.direct_url \|\| episode\?\.directUrl \|\| episode\?\.playback_url/);
   assert.match(backend, /episode\?\.link_m3u8 \|\| episode\?\.linkM3u8/);

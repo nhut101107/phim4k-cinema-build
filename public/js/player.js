@@ -45,6 +45,7 @@ const Player = {
   activePlayStartedAt: 0,
   autoSkipAdsEnabled: true,
   skippedAdMarkers: new Set(),
+  suppressBuffering: false,
 
   init() {
     if (this.video) return;
@@ -76,10 +77,12 @@ const Player = {
     });
     onVideo('progress', () => this.onProgress());
     onVideo('waiting', () => {
+      if (this.suppressBuffering) return;
       this.showBuffering(true, 'Đang đệm dữ liệu…');
       this.armStallWatchdog('waiting');
     });
     onVideo('stalled', () => {
+      if (this.suppressBuffering) return;
       this.showBuffering(true, 'Luồng phim đang bị nghẽn…');
       this.armStallWatchdog('stalled');
     });
@@ -146,6 +149,7 @@ const Player = {
     this.allServers = Array.isArray(allServers) ? allServers : [];
     this.currentServerIndex = Number.isInteger(serverIndex) ? serverIndex : 0;
     this.failedServerIndexes.clear();
+    this.suppressBuffering = false;
     this.playbackStartLogged = false;
     this.watchedSeconds = 0;
     this.activePlayStartedAt = 0;
@@ -188,6 +192,7 @@ const Player = {
     this.streamSession += 1;
     this.playbackTicketRequest += 1;
     this.activeStreamUrl = '';
+    this.suppressBuffering = true;
     this.closeDropdowns();
     this.clearStallWatchdog();
     this.recoveryInFlight = false;
@@ -225,6 +230,7 @@ const Player = {
   async loadEpisode(episode, options = {}) {
     const requestId = ++this.playbackTicketRequest;
     this.currentEpisode = episode;
+    this.suppressBuffering = false;
 
     // Protected catalog entries resolve through the same backend source into
     // our native video surface. This keeps seek/history/double-tap controls
@@ -616,6 +622,17 @@ const Player = {
     }
     this.showBuffering(false);
     this.showAlert('Tất cả server hiện có đều không phản hồi. Vui lòng thử lại sau.');
+    this.suppressBuffering = true;
+    this.streamSession += 1;
+    this.activeStreamUrl = '';
+    this.clearStallWatchdog();
+    this.destroyHls();
+    if (this.video) {
+      this.video.pause();
+      this.video.removeAttribute('src');
+      this.video.load();
+    }
+    this.showBuffering(false);
     API.trackUsage('playback_error', { ...this.usageContext(), error: 'Tất cả server không phản hồi' });
   },
 
