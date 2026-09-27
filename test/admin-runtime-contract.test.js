@@ -18,6 +18,32 @@ test('maintenance cannot be bypassed by a client-side free-access failsafe', () 
   assert.match(auth, /không tự mở khi chưa kiểm tra bảo trì/i);
 });
 
+test('admin route always receives the current login runtime instead of Safari cache', () => {
+  const worker = read('public/_worker.js');
+  const auth = read('public/js/auth.js');
+  const index = read('public/index.html');
+  const webIndex = read('public/web-index.html');
+
+  assert.ok(auth.includes("window.location.pathname.replace(/\\/+$/, '') === '/admin'"));
+  assert.match(worker, /new URL\('\/web-index\.html', request\.url\)/);
+  assert.match(worker, /headers\.set\('cache-control', 'no-store, max-age=0'\)/);
+  assert.match(index, /\/js\/auth\.js\?v=3\.56\.1/);
+  assert.match(webIndex, /\/js\/auth\.js\?v=3\.56\.1/);
+  assert.doesNotMatch(`${index}\n${webIndex}`, /\/js\/auth\.js\?v=3\.56["']/);
+});
+
+test('viewer-facing access copy does not advertise the service as free', () => {
+  const sources = [
+    read('public/js/auth.js'),
+    read('public/js/coverflow.js'),
+    read('public/_worker.js'),
+    read('backend-worker/src/worker.mjs'),
+  ].join('\n');
+
+  assert.doesNotMatch(sources, /MIỄN PHÍ TOÀN BỘ KHÁN GIẢ|MIỄN KEY|Miễn key/i);
+  assert.match(sources, /MNHUT CINEMA 4K/);
+});
+
 test('admin receives movie reports and can close or reopen a movie', () => {
   const backend = read('backend-worker/src/worker.mjs');
   const admin = read('public/js/admin.js');

@@ -19,7 +19,7 @@ const Admin = {
       toggle.checked = res.freeAccess;
       this.renderMaintenance(res.maintenance);
       toggle.disabled = save.disabled = false;
-      document.getElementById('accessPolicyMessage').textContent = res.freeAccess ? 'Đang miễn key' : 'Đang yêu cầu key · 1 key / 1 máy';
+      document.getElementById('accessPolicyMessage').textContent = res.freeAccess ? 'Đang cho phép truy cập trực tiếp' : 'Đang yêu cầu key · 1 key / 1 máy';
     } catch (_) { document.getElementById('accessPolicyMessage').textContent = 'Không đọc được trạng thái. Bấm thử lại.'; }
   },
 
@@ -29,7 +29,7 @@ const Admin = {
     const message = document.getElementById('accessPolicyMessage');
     const requestedFreeAccess = toggle.checked;
     toggle.disabled = save.disabled = true;
-    message.textContent = requestedFreeAccess ? 'Đang bật chế độ miễn key…' : 'Đang bật lại yêu cầu key…';
+    message.textContent = requestedFreeAccess ? 'Đang bật truy cập trực tiếp…' : 'Đang bật lại yêu cầu key…';
     try {
       const response = await fetch('/api/admin/access-policy', {method:'POST', cache:'no-store', headers:{...this.getAdminHeaders(), 'Content-Type':'application/json'}, body:JSON.stringify({freeAccess:requestedFreeAccess})});
       const result = await response.json();

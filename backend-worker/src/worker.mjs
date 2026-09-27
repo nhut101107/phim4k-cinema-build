@@ -882,7 +882,7 @@ async function authorizeSessionRecord(session, env) {
       deviceId: session.device_id,
       isAdmin: false,
       freeAccess: true,
-      plan: "MIỄN KEY",
+      plan: "MNHUT CINEMA 4K",
       keyHint: "",
       expiresAt: null,
     };
@@ -1487,7 +1487,7 @@ async function activationStatus({ db, key, telegramId, deviceId, request, env, a
     const maintenance = await getMaintenance(db);
     if (maintenance.active) return maintenanceError(maintenance);
     if (!await freeAccessEnabled(db)) return textError('Vui lòng nhập key để tiếp tục.', 401, 'KEY_REQUIRED');
-    return json({success: true, active: true, isAdmin: false, freeAccess: true, plan: 'MIỄN KEY', expiresAt: null, ...await getForceUpdate(db, appVersion(request))});
+    return json({success: true, active: true, isAdmin: false, freeAccess: true, plan: 'MNHUT CINEMA 4K', expiresAt: null, ...await getForceUpdate(db, appVersion(request))});
   }
   if (await verifyMasterKey(key, env, db)) {
     if (!await verifyAdminIdentity(key, telegramId, env, db)) {

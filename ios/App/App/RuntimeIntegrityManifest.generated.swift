@@ -4,7 +4,7 @@ import Foundation
 
 enum RuntimeIntegrityManifest {
     private static let protectedFiles: [String: String] = [
-        "public/_worker.js": "1d7c6f40299ab31147a426aecb5fbb0690c0c091abde1378a28d9bf3d840a71b",
+        "public/_worker.js": "67826d9d949f130c7022f28555c817422129c8240ca9c2c98e067544dc991b68",
         "public/cordova_plugins.js": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         "public/cordova.js": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         "public/css/modal.css": "2dfe6a30ad8b89bf7bad75b2ff282b8de7045f30d07c7bde91b3564387315fc3",
@@ -12,14 +12,14 @@ enum RuntimeIntegrityManifest {
         "public/css/style.css": "c0ee563ff3fce2a32c68e162d8a196571aa011c95232c77e926b7ef66ea54d65",
         "public/css/tv.css": "4ad38e4a9af9696fa99effd05e25e4bcfe05a5ea116b924dc467c71c5f43b192",
         "public/css/web-premium.css": "7b4e52655744695f4a365e2536faeee782438dacecc40a17c7a9d23503da2814",
-        "public/index.html": "b34b7c0f69af8cca623d065ae04e88b09cc2de4b163b1a9578c025e65bb089c2",
-        "public/js/admin.js": "e136a91ed9037b8107efd50a6bb461633074e654245d38680ed621a933c04083",
+        "public/index.html": "6d691fa1fb69a1d35d7f941a8a7e79705e17e855c5bc7201874829bcb1d1fb29",
+        "public/js/admin.js": "0166cf590f0664a776066313c234470001dd280bad0e41e62a4ca9427b5ebfc6",
         "public/js/api.js": "807e15339ae017a5a5b0fae923f1b0b7b13f21b294080ab09afdc1f3090adccc",
         "public/js/app.js": "bbd4f561058ac7f2063ab9d567b60b4549565e32024e0d6fcfab3d867960522a",
         "public/js/audio-enhancer.js": "5e4a54d0cfb9abe0c11b41f63cc96baecbd33b6c34c3228f5e15f9fe1f383915",
-        "public/js/auth.js": "0743654f196b7566e143b67e0aa6ab0775ae38f325fdd1738cd39f554b4a55aa",
+        "public/js/auth.js": "261f0926bc182c8c126ea0d7681d83b2be43244ce55c910b461c2b013c4b9163",
         "public/js/catalog-fallback.js": "8ab81d28b4295c052218cc508239a5f1a6736a425d6ec7d4ffb22582b08523a3",
-        "public/js/coverflow.js": "6b2a4a7eeed8c2cf8cb19262a4951cf4640b5c0d0d8ab1d35fc4d5d5e3884542",
+        "public/js/coverflow.js": "621a8e17df1bfc0f70cc4f5525fcaf758cbffe50d5c21f105d3f0dc3ed01f082",
         "public/js/diagnostics.js": "21a4a9b9f28ad1da3df6b7aed0d8bc0c89962165c369ec913aec6ea0fb9aa120",
         "public/js/home-curation.js": "09a4a59ed29045aa918615a5d107a8d84000cb0c16d878e4be9134678dfdd3e7",
         "public/js/mobile-config.js": "987cc36eec01030a86f9f1c76f753d67f79c6eda256c642fbe8c6f9e8f57647f",
@@ -39,7 +39,7 @@ enum RuntimeIntegrityManifest {
         "public/media/superman_4k.jpg": "9339c63a766caa26647be0b64cacf0c95e3db29859ce4445b5e9db15a05ab7fe",
         "public/media/the_boys_4k.jpg": "572cb16dfb429292bb9fc690a0c5bfa28a8d688ed23588595e396b454067971a",
         "public/vendor/hls.min.js": "afcde07437ec84b072fe8782e772ceb5046eac751b2719f73ae0d83d763bc3f5",
-        "public/web-index.html": "c7635c8f5fe00548ec70dbddb921d9b0e37d7ab8ada19307148b058cefd76e58",
+        "public/web-index.html": "d0d49aefe5b96ffd96ef0de5c8a41317c521711d212bfbd6448e24e138e103cb",
     ]
 
     static func verify(in bundle: Bundle = .main) -> Bool {

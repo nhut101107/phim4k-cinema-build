@@ -85,7 +85,7 @@ const RUNTIME_STATE = {
   deviceRequests: [],
   reportedIssues: [],
   logs: [
-    { action: 'SYSTEM_BOOT', actor: 'SYSTEM', target: 'phim4vipzz', ip: '127.0.0.1', created_at: new Date().toISOString(), detail: 'Cloudflare Pages serverless edge online. Chế độ công khai miễn phí (Free Access) đang kích hoạt.' },
+    { action: 'SYSTEM_BOOT', actor: 'SYSTEM', target: 'phim4vipzz', ip: '127.0.0.1', created_at: new Date().toISOString(), detail: 'Cloudflare Pages serverless edge online. Chế độ truy cập trực tiếp đang kích hoạt.' },
     { action: 'ADMIN_READY', actor: '@mnhutdznecon', target: 'mnhut', ip: '127.0.0.1', created_at: new Date().toISOString(), detail: 'Master administrator key provisioned: mnhut' }
   ],
   stats: {
@@ -644,7 +644,7 @@ export default {
             active: true,
             isAdmin: false,
             freeAccess: true,
-            plan: 'MIỄN PHÍ TOÀN BỘ KHÁN GIẢ (FREE 4K)',
+            plan: 'MNHUT CINEMA 4K',
             tier: 'free',
             keyHint: 'FREE-PUBLIC••••',
             sessionId: `s_free_${Date.now()}`,
@@ -676,7 +676,7 @@ export default {
         active: true,
         isAdmin: isAdminSession,
         freeAccess: RUNTIME_STATE.freeAccess,
-        plan: isAdminSession ? 'SUPER ADMIN MASTER' : (RUNTIME_STATE.freeAccess ? 'MIỄN PHÍ TOÀN BỘ KHÁN GIẢ (FREE 4K)' : 'VIP 4K'),
+        plan: isAdminSession ? 'SUPER ADMIN MASTER' : (RUNTIME_STATE.freeAccess ? 'MNHUT CINEMA 4K' : 'VIP 4K'),
         tier: isAdminSession ? 'admin' : (RUNTIME_STATE.freeAccess ? 'free' : 'vip'),
         expiresAt: null,
         forceUpdate: false,
@@ -1023,7 +1023,11 @@ export default {
     if (url.pathname === '/' || (!url.pathname.includes('.') && wantsHtml)) {
       const previewUrl = new URL('/web-index.html', request.url);
       const preview = await env.ASSETS.fetch(new Request(previewUrl, request));
-      if (preview.ok) return preview;
+      if (preview.ok) {
+        const headers = new Headers(preview.headers);
+        headers.set('cache-control', 'no-store, max-age=0');
+        return new Response(preview.body, { status: preview.status, statusText: preview.statusText, headers });
+      }
     }
 
     return env.ASSETS.fetch(request);

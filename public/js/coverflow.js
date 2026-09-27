@@ -534,7 +534,9 @@ function renderAccountTab() {
   const session = window.Auth?.activeKeyData;
   const isAuthenticated = Boolean(session?.active !== false && window.SessionVault?.hasSession?.());
   const teleId = isAuthenticated ? (session.freeAccess ? 'Không cần key' : session.isAdmin ? 'Quản trị viên đã xác thực' : 'Thiết bị đã xác thực') : 'Chưa đăng nhập';
-  const plan = isAuthenticated ? (session.isAdmin ? 'SUPER ADMIN' : (session.plan || 'VIP')) : 'Chưa kích hoạt';
+  const plan = isAuthenticated
+    ? (session.isAdmin ? 'SUPER ADMIN' : (session.freeAccess ? 'MNHUT CINEMA 4K' : (session.plan || 'VIP')))
+    : 'Chưa kích hoạt';
   const key = session?.freeAccess ? 'Không yêu cầu' : isAuthenticated ? (session.keyHint || 'Phiên an toàn') : 'Chưa có key';
   const isSuperAdmin = Boolean(isAuthenticated && session.isAdmin);
 

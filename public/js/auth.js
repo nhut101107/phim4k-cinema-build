@@ -292,7 +292,7 @@ const Auth = {
     const vipText = document.getElementById('vipPlanText');
     if (vipText) vipText.textContent = keyData.isAdmin ? 'SUPER ADMIN' : (keyData.plan || 'VIP PRO');
 
-    const expiryLabel = keyData.freeAccess ? 'Miễn key trong thời gian Admin cho phép' : this.formatExpiry(keyData.expiresAt);
+    const expiryLabel = keyData.freeAccess ? 'Truy cập trực tiếp do Admin cho phép' : this.formatExpiry(keyData.expiresAt);
     const vipExpiry = document.getElementById('vipExpiryText');
     if (vipExpiry) vipExpiry.textContent = expiryLabel;
 
@@ -310,7 +310,7 @@ const Auth = {
     // Footer info
     const footerTele = document.getElementById('footerTeleBadge');
     if (footerTele) {
-      footerTele.textContent = keyData.freeAccess ? 'Chế độ miễn key' : (keyData.keyOnly ? 'Key gắn với thiết bị này' : keyData.deviceOnly ? 'Thiết bị được Admin duyệt' : (keyData.telegramId || 'Chưa liên kết'));
+      footerTele.textContent = keyData.freeAccess ? 'Truy cập trực tiếp' : (keyData.keyOnly ? 'Key gắn với thiết bị này' : keyData.deviceOnly ? 'Thiết bị được Admin duyệt' : (keyData.telegramId || 'Chưa liên kết'));
     }
     const footerBadge = document.getElementById('footerKeyBadge');
     if (footerBadge) {
@@ -593,7 +593,7 @@ function openLicenseModal() {
   if (!d) return;
 
   document.getElementById('licTelegram').textContent = d.freeAccess
-    ? 'Miễn key'
+    ? 'Truy cập trực tiếp'
     : d.keyOnly
       ? 'Key gắn với thiết bị'
       : d.deviceOnly
