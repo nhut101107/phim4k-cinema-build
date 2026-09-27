@@ -144,6 +144,7 @@ test('a stale volatile HLS master is rejected and playback uses the live StreamC
         expiresAt: issuedAt + 14400,
       } }), { headers: { 'content-type': 'application/json' } });
     }
+    if (url.href === backupPlaylist) return new Response('#EXTM3U\n#EXT-X-ENDLIST', { headers: { 'content-type': 'application/vnd.apple.mpegurl' } });
     throw new Error(`unexpected upstream: ${url.href}`);
   };
   try {
@@ -316,13 +317,13 @@ test('a StreamC backup is resolved server-side and disguised segments are relaye
     assert.equal(bootstrapPosts, 1);
     assert.equal(embedWarmups, 0);
     assert.equal(deadPrimaryProbes, 2);
-    assert.equal(playlistFetches, 0);
+    assert.equal(playlistFetches, 2);
     assert.ok(timeoutValues.includes(12000), `missing backup-detail timeout: ${timeoutValues.join(',')}`);
     assert.ok(timeoutValues.includes(25000), `missing StreamC bootstrap timeout: ${timeoutValues.join(',')}`);
 
     const manifestResponse = await worker.fetch(new Request(playbackJson.streamUrl), f.env);
     assert.equal(manifestResponse.status, 200);
-    assert.equal(playlistFetches, 1);
+    assert.equal(playlistFetches, 3);
     const protectedSegment = (await manifestResponse.text()).split('\n').find((line) => line.startsWith('https://example.workers.dev/api/media/stream'));
     assert.ok(protectedSegment);
     const segmentResponse = await worker.fetch(new Request(protectedSegment), f.env);

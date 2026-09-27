@@ -3625,6 +3625,31 @@ async function handleMoviePlayback(request, env) {
   const streamChoicePromise = Promise.any(candidates.filter((source) => source.embed).map(async (source) => {
     const resolvedSource = await resolveStreamCPlaylist(source.embed, slug);
     if (!resolvedSource) throw new Error("STREAMC_UNAVAILABLE");
+    // Bootstrap success alone is insufficient: StreamC can mint a playlist
+    // that is already denied at the edge. Verify the signed manifest with the
+    // same iPhone headers/referrer used by the real relay before issuing it.
+    const probeRequest = new Request(request.url, { method: "GET", headers: request.headers });
+    const { response: manifestProbe } = await fetchProtectedUpstream(
+      resolvedSource.target.href,
+      probeRequest,
+      env,
+      "hls",
+      4,
+      false,
+      8000,
+      resolvedSource.referer || "",
+    );
+    if (!manifestProbe.ok) {
+      try { await manifestProbe.body?.cancel(); } catch (_error) {}
+      throw new Error("STREAMC_PLAYLIST_UNAVAILABLE");
+    }
+    const declaredLength = Number.parseInt(manifestProbe.headers.get("content-length") || "0", 10) || 0;
+    if (declaredLength > MAX_HLS_MANIFEST_BYTES) throw new Error("STREAMC_PLAYLIST_TOO_LARGE");
+    const manifestBytes = new Uint8Array(await manifestProbe.arrayBuffer());
+    const manifestText = new TextDecoder().decode(manifestBytes);
+    if (manifestBytes.byteLength > MAX_HLS_MANIFEST_BYTES || !manifestText.trimStart().startsWith("#EXTM3U")) {
+      throw new Error("STREAMC_PLAYLIST_INVALID");
+    }
     return { ...source, ...resolvedSource, clientDirectFallback: false };
   })).catch(() => null);
   const nativeBootstrapCandidate = candidates.find((source) => source.embed) || null;
