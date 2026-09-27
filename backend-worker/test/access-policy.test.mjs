@@ -191,10 +191,10 @@ test('verified admin on an outdated iPhone is directed to the current iOS releas
     assert.equal(iosAdmin.isAdmin,true);
     assert.equal(iosAdmin.active,false);
     assert.equal(iosAdmin.forceUpdate,true);
-    assert.equal(iosAdmin.latestVersion,'3.55');
-    assert.equal(iosAdmin.minVersion,'3.55');
+    assert.equal(iosAdmin.latestVersion,'3.56');
+    assert.equal(iosAdmin.minVersion,'3.56');
     assert.match(iosAdmin.downloadUrl,/^https:\/\/drive\.usercontent\.google\.com\/download/);
-    assert.equal(iosAdmin.downloadSha256,'43b3b432d14f1a404cb5a840518c38a27212870de2242724672ae5e7cae932b7');
+    assert.equal(iosAdmin.downloadSha256,'94959219094d568eb8722db148fceac88f66d1c297a1f6d562f579ca51ab99c0');
 
     const windowsAdmin=await (await f.request('/api/auth/status',undefined,{
       ...f.admin,

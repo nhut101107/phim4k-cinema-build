@@ -54,30 +54,14 @@ const Auth = {
   },
 
   async init() {
-    // Default to free public access immediately so UI never locks viewers out
-    if (!this.activeKeyData) {
-      this.activeKeyData = {
-        success: true,
-        active: true,
-        isAdmin: false,
-        freeAccess: true,
-        plan: 'MIỄN PHÍ TOÀN BỘ KHÁN GIẢ (FREE 4K)',
-        tier: 'free',
-        keyHint: 'FREE-PUBLIC••••'
-      };
-    }
+    const adminRoute = window.location.pathname.replace(/\/+$/, '') === '/admin';
+    document.body.classList.toggle('admin-login-route', adminRoute);
     const initialGate = document.getElementById('activationGate');
     if (initialGate) {
-      initialGate.classList.add('hidden');
-      initialGate.style.setProperty('display', 'none', 'important');
+      initialGate.classList.remove('hidden');
+      initialGate.style.removeProperty('display');
+      initialGate.style.display = 'flex';
     }
-
-    // FAILSAFE: If init takes too long or any step fails, force-unlock after 4 seconds.
-    // This prevents users from being stuck on the key gate forever.
-    const failsafeTimer = window.setTimeout(() => {
-      console.warn('[Auth] Failsafe triggered: unlocking app after timeout');
-      this.unlockApp({ active: true, freeAccess: true, plan: 'MIỄN PHÍ TOÀN BỘ (FREE 4K)', tier: 'free', keyHint: 'FREE-PUBLIC••••' });
-    }, 4000);
 
     try {
       try { await SessionVault.init(); } catch (_e) {}
@@ -115,18 +99,14 @@ const Auth = {
         return false;
       };
 
-      // 1. If an Admin session is saved, restore it immediately
+      // Restore only a server-verified session. /admin never accepts a viewer session.
       if (SessionVault.hasSession()) {
         try {
-          const session = SessionVault.current();
-          if (session && session.isAdmin) {
-            this.unlockApp(session);
-            this.startHeartbeat();
-            clearTimeout(failsafeTimer);
-            return;
-          }
-          if (await restore(await API.checkStatus('', '', deviceId))) {
-            clearTimeout(failsafeTimer);
+          const status = await API.checkStatus('', '', deviceId);
+          if (adminRoute && status?.active && status?.isAdmin !== true) {
+            await SessionVault.clear();
+          } else if (await restore(status)) {
+            if (adminRoute) window.setTimeout(() => window.Admin?.open?.(), 150);
             return;
           }
         } catch (_error) {}
@@ -135,65 +115,46 @@ const Auth = {
       if (savedKey) {
         try {
           if (await restore(await API.activate(savedKey, savedTeleId, deviceId))) {
-            clearTimeout(failsafeTimer);
             return;
           }
         } catch (_error) {}
       }
 
-      // 2. Check access policy (Maintenance or Restricted mode)
-      try {
-        const policy = await this.getAccessPolicy();
-        if (policy?.maintenance?.active === true) {
-          this.showMaintenance(policy.maintenance);
-          clearTimeout(failsafeTimer);
-          return;
-        }
-        if (policy && policy.freeAccess === false) {
-          this.triggerLock();
-          clearTimeout(failsafeTimer);
-          return;
-        }
-      } catch (_error) {}
-
-      // 3. DIRECT PUBLIC WATCH: Unlock app IMMEDIATELY! NO KEY GATE!
-      const defaultPublicSession = {
-        success: true,
-        active: true,
-        isAdmin: false,
-        freeAccess: true,
-        plan: 'MIỄN PHÍ TOÀN BỘ KHÁN GIẢ (FREE 4K)',
-        tier: 'free',
-        keyHint: 'FREE-PUBLIC••••'
-      };
-      this.unlockApp(defaultPublicSession);
-
-      // Asynchronously obtain access token in background
-      API.activate('', '', deviceId).then(res => {
-        if (res?.active) {
-          this.activeKeyData = res;
-          try { SessionVault.save(res); } catch (_e) {}
-        }
-      }).catch(() => {});
-
-      if (window.location.hash === '#admin') {
-        window.setTimeout(() => window.promptAdminLogin?.(), 400);
+      if (adminRoute) {
+        this.triggerLock('Đăng nhập quản trị để mở Panel Admin.');
+        const adminFields = document.getElementById('adminLoginFields');
+        if (adminFields) adminFields.open = true;
+        const buttonText = document.querySelector('#btnActivate .btn-text');
+        if (buttonText) buttonText.textContent = 'ĐĂNG NHẬP QUẢN TRỊ';
+        return;
       }
+
+      const policy = await this.getAccessPolicy();
+      if (policy?.maintenance?.active === true) {
+        this.showMaintenance(policy.maintenance);
+        return;
+      }
+      if (policy?.freeAccess === false) {
+        this.triggerLock();
+        return;
+      }
+      const publicSession = await API.activate('', '', deviceId);
+      if (publicSession?.code === 'MAINTENANCE_MODE' || publicSession?.maintenance?.active) {
+        this.showMaintenance(publicSession.maintenance || { active: true, message: publicSession.message });
+        return;
+      }
+      if (!publicSession?.active || !publicSession?.accessToken || !publicSession?.refreshToken) {
+        throw new Error(publicSession?.message || 'Không thể xác minh quyền truy cập.');
+      }
+      await SessionVault.save(publicSession);
+      this.unlockApp(publicSession);
     } catch (fatalError) {
-      // ABSOLUTE FAILSAFE: If anything throws, still unlock the app for free viewing
-      console.error('[Auth] Fatal error during init, force-unlocking:', fatalError);
-      this.unlockApp({ active: true, freeAccess: true, plan: 'MIỄN PHÍ TOÀN BỘ (FREE 4K)', tier: 'free', keyHint: 'FREE-PUBLIC••••' });
-    } finally {
-      clearTimeout(failsafeTimer);
+      console.error('[Auth] Server authority unavailable:', fatalError);
+      this.triggerLock('Không thể xác minh trạng thái máy chủ. Vui lòng thử lại; hệ thống không tự mở khi chưa kiểm tra bảo trì.');
     }
   },
 
   triggerLock(errorMessage = '') {
-    // If freeAccess is currently active on system, NEVER lock viewers out unless maintenance is active!
-    if (this.activeKeyData?.freeAccess && (!errorMessage || !errorMessage.includes('bảo trì'))) {
-      return;
-    }
-
     if (window.Player && window.Player.close) {
       window.Player.close();
     }
@@ -255,7 +216,7 @@ const Auth = {
         : 'Admin sẽ mở lại ngay khi nâng cấp hoàn tất.';
     }
     const adminFields = document.getElementById('adminLoginFields');
-    if (adminFields) adminFields.open = true;
+    if (adminFields && window.location.pathname.replace(/\/+$/, '') === '/admin') adminFields.open = true;
     const buttonText = document.querySelector('#btnActivate .btn-text');
     if (buttonText) buttonText.textContent = 'ĐĂNG NHẬP QUẢN TRỊ';
   },
@@ -377,8 +338,6 @@ const Auth = {
   startHeartbeat() {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     this.heartbeatTimer = setInterval(async () => {
-      // Free public viewers are never subject to heartbeat expiry checks
-      if (this.activeKeyData?.freeAccess) return;
       if (!SessionVault.hasSession()) return;
 
       try {
@@ -477,6 +436,7 @@ async function handleActivation(e) {
       msgEl.classList.remove('hidden');
       
       setTimeout(() => {
+        if (res.isAdmin === true && window.location.pathname !== '/admin') history.replaceState({}, '', '/admin');
         Auth.unlockApp(res);
         if (res.isAdmin === true) {
           setTimeout(() => Admin.open(), 400);
@@ -712,12 +672,17 @@ window.promptAdminLogin = async function() {
     if (window.Admin?.open) window.Admin.open();
     return;
   }
+  if (window.location.pathname.replace(/\/+$/, '') !== '/admin') {
+    window.location.assign('/admin');
+    return;
+  }
   const key = prompt('🔑 NHẬP KEY QUẢN TRỊ VIÊN (ADMIN MASTER KEY):', '');
   if (!key) return;
   try {
     const res = await API.activate(key.trim(), '@mnhutdznecon', Auth.getDeviceId());
     if (res.success && res.isAdmin) {
       await SessionVault.save(res);
+      history.replaceState({}, '', '/admin');
       Auth.unlockApp(res);
       alert('👑 Xin chào Super Admin mnhut! Xác thực thành công.');
       if (window.Admin?.open) window.Admin.open();
@@ -730,27 +695,27 @@ window.promptAdminLogin = async function() {
 };
 
 window.enterFreeViewerMode = async function() {
-  const gate = document.getElementById('activationGate');
-  if (gate) {
-    gate.classList.remove('maintenance-active');
-    gate.classList.add('hidden');
-    gate.style.setProperty('display', 'none', 'important');
-  }
-  document.body.classList.remove('activation-locked');
-  const app = document.getElementById('appContainer');
-  if (app) {
-    app.classList.remove('hidden');
-    app.style.removeProperty('display');
-  }
   try {
+    const policy = await Auth.getAccessPolicy();
+    if (policy?.maintenance?.active) {
+      Auth.showMaintenance(policy.maintenance);
+      return;
+    }
+    if (policy?.freeAccess === false) {
+      Auth.triggerLock('Hệ thống hiện yêu cầu License Key.');
+      return;
+    }
     const res = await API.activate('', '', Auth.getDeviceId());
-    if (res?.active) {
+    if (res?.active && res?.accessToken && res?.refreshToken) {
       await SessionVault.save(res);
       Auth.unlockApp(res);
       return;
     }
-  } catch (e) {}
-  Auth.unlockApp({ active: true, freeAccess: true, plan: 'MIỄN PHÍ TOÀN BỘ KHÁN GIẢ (FREE 4K)', tier: 'free', keyHint: 'FREE-PUBLIC••••' });
+    if (res?.maintenance?.active) Auth.showMaintenance(res.maintenance);
+    else Auth.triggerLock(res?.message || 'Không thể xác minh quyền truy cập.');
+  } catch (error) {
+    Auth.triggerLock('Không thể xác minh trạng thái máy chủ. Vui lòng thử lại.');
+  }
 };
 
 window.reportCurrentMovieIssue = async function(customReason = '') {
@@ -767,9 +732,8 @@ window.reportCurrentMovieIssue = async function(customReason = '') {
   if (!reason) return;
 
   try {
-    const res = await fetch('/api/movies/report-issue', {
+    const res = await API.request('/api/movies/report-issue', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         movieName,
         movieSlug,
@@ -779,9 +743,9 @@ window.reportCurrentMovieIssue = async function(customReason = '') {
         timestamp: new Date().toISOString()
       })
     });
-    alert('✅ Cảm ơn bạn! Báo lỗi đã được chuyển đến Admin mnhut để kiểm tra và khắc phục.');
+    alert(`✅ ${res.message || 'Báo lỗi đã được chuyển đến Admin mnhut để kiểm tra.'}`);
   } catch (err) {
-    alert('✅ Đã ghi nhận báo lỗi phim! Cảm ơn bạn.');
+    alert(`❌ Chưa gửi được báo lỗi: ${err.message || 'Mất kết nối máy chủ.'}`);
   }
 };
 

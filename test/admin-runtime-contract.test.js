@@ -1,0 +1,42 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+
+const read = (path) => fs.readFileSync(path, 'utf8');
+
+test('Pages delegates persistent auth and admin state to the D1 backend', () => {
+  const worker = read('public/_worker.js');
+  assert.match(worker, /url\.pathname\.startsWith\('\/api\/auth\/'\)/);
+  assert.match(worker, /url\.pathname\.startsWith\('\/api\/admin\/'\)/);
+  assert.match(worker, /return proxyTo\(request, LICENSE_ORIGIN/);
+});
+
+test('maintenance cannot be bypassed by a client-side free-access failsafe', () => {
+  const auth = read('public/js/auth.js');
+  assert.doesNotMatch(auth, /Failsafe triggered|ABSOLUTE FAILSAFE|force-unlocking/);
+  assert.match(auth, /const adminRoute = window\.location\.pathname/);
+  assert.match(auth, /không tự mở khi chưa kiểm tra bảo trì/i);
+});
+
+test('admin receives movie reports and can close or reopen a movie', () => {
+  const backend = read('backend-worker/src/worker.mjs');
+  const admin = read('public/js/admin.js');
+  const html = read('public/index.html');
+  assert.match(backend, /CREATE TABLE IF NOT EXISTS movie_reports/);
+  assert.match(backend, /CREATE TABLE IF NOT EXISTS closed_movies/);
+  assert.match(backend, /\/api\/admin\/movie-availability/);
+  assert.match(admin, /loadMovieReports\(\)/);
+  assert.match(admin, /Đóng phim để sửa/);
+  assert.match(admin, /Mở phim lại/);
+  assert.match(html, /id="movieReportsList"/);
+});
+
+test('protected playback keeps native controls, history and regional server labels', () => {
+  const player = read('public/js/player.js');
+  assert.match(player, /API\.getPlaybackTicket\(episode\.stream_ref\)/);
+  assert.match(player, /this\.setAspectRatio\('contain'/);
+  assert.match(player, /void this\.enterCinemaFullscreen\(\)/);
+  assert.match(player, /'Sài Gòn' : 'Đà Nẵng'/);
+  assert.match(player, /PlayerCore\.doubleTapSeek/);
+  assert.match(player, /ContinueWatching\.saveItem/);
+});

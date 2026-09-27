@@ -1,6 +1,16 @@
 // Shared Phim4K player. It stays inside the Capacitor WebView so custom controls,
 // subtitles and the selected server keep their context on every platform.
 
+function formatMovieServerName(server, index = 0, movie = null) {
+  const raw = `${server?.server_name || ''} ${movie?.lang || ''}`.toLocaleLowerCase('vi');
+  const language = /lồng tiếng|long tieng/.test(raw) ? 'Lồng tiếng'
+    : /thuyết minh|thuyet minh/.test(raw) ? 'Thuyết minh'
+      : /vietsub|việt sub|phụ đề|phu de/.test(raw) ? 'Vietsub' : '';
+  const city = Number(index) % 2 === 0 ? 'Sài Gòn' : 'Đà Nẵng';
+  return language ? `${city} · ${language}` : city;
+}
+window.formatMovieServerName = formatMovieServerName;
+
 const Player = {
   video: null,
   hls: null,
@@ -155,10 +165,11 @@ const Player = {
     this.closeDropdowns();
     this.modal.classList.remove('hidden');
     document.body.classList.add('player-open');
-    this.applyPreferredAspect();
+    this.setAspectRatio('contain', { silent: true });
     this.loadEpisode(episode, { resumeTime: this.getSavedWatchTime(), autoplay: true });
     this.startProgressSaveTimer();
     this.resetInactivityTimer();
+    void this.enterCinemaFullscreen();
   },
 
   close() {
@@ -215,101 +226,36 @@ const Player = {
     const requestId = ++this.playbackTicketRequest;
     this.currentEpisode = episode;
 
-    // PRIMARY ENSMOVIE EMBED PLAYBACK:
-    // Resolves provider's embed player (JWPlayer Netflix skin) to eliminate CORS, 404 hangs and buffering stalls.
-    let embedUrl = episode?.link_embed || '';
-    if (!embedUrl && episode?.link_m3u8) {
-      embedUrl = `https://player.phimapi.com/player/?url=${encodeURIComponent(episode.link_m3u8)}`;
-    }
-
-    if (embedUrl) {
-      this.playEmbedStream(embedUrl);
-      return;
-    }
-
-    // Direct stream fallback only if no embed can be resolved
-    const directStreamUrl = episode?.link_m3u8 || episode?.m3u8 || episode?.stream_url || episode?.url || '';
-    if (directStreamUrl) {
-      this.showBuffering(true, 'Đang mở luồng phát…');
-      this.setResolutionBadge(0, 0, '4K Ultra HD');
-      this.loadStream(directStreamUrl, { ...options, isHls: true, nativeDirectHls: false });
-      return;
+    // Protected catalog entries resolve through the same backend source into
+    // our native video surface. This keeps seek/history/double-tap controls
+    // working without changing the provider selected by the user.
+    if (episode?.stream_ref) {
+      this.showBuffering(true, 'Đang kết nối server phát…');
+      try {
+        const ticket = await API.getPlaybackTicket(episode.stream_ref);
+        if (requestId !== this.playbackTicketRequest) return;
+        if (ticket?.streamUrl) {
+          this.video?.classList.remove('hidden');
+          document.getElementById('playerEmbed')?.classList.add('hidden');
+          this.wrapper?.classList.remove('embed-active');
+          document.getElementById('playerControls')?.classList.remove('hidden');
+          document.getElementById('btnCenterPlayPause')?.classList.remove('hidden');
+          this.loadStream(ticket.streamUrl, {
+            ...options,
+            isHls: ticket.isHls !== false,
+            nativeDirectHls: false,
+          });
+          return;
+        }
+      } catch (error) {
+        if (requestId !== this.playbackTicketRequest) return;
+        console.warn('Protected playback resolution failed:', error);
+      }
     }
 
     this.showBuffering(false);
     this.showAlert('Server này hiện không có luồng phát. Đang thử server khác…');
     this.fallbackToNextServer();
-  },
-
-  playEmbedStream(embedUrl) {
-    if (typeof embedUrl === 'string' && embedUrl.startsWith('http://')) {
-      embedUrl = embedUrl.replace(/^http:\/\//i, 'https://');
-    }
-    this.destroyHls();
-    this.clearStallWatchdog();
-    if (this.stallWatchdogTimer) {
-      clearTimeout(this.stallWatchdogTimer);
-      this.stallWatchdogTimer = null;
-    }
-    if (this.video) {
-      this.video.pause();
-      this.video.removeAttribute('src');
-      this.video.classList.add('hidden');
-    }
-
-    // Hide native custom controls, center play button, and buffering overlay in embed mode
-    const buffering = document.getElementById('playerBuffering');
-    if (buffering) buffering.classList.add('hidden');
-
-    const centerPlay = document.getElementById('btnCenterPlayPause');
-    if (centerPlay) centerPlay.classList.add('hidden');
-
-    const controls = document.getElementById('playerControls');
-    if (controls) controls.classList.add('hidden');
-
-    const wrapper = document.getElementById('playerWrapper');
-    if (wrapper) wrapper.classList.add('embed-active');
-
-    const iframe = document.getElementById('playerEmbed');
-    if (iframe) {
-      iframe.src = embedUrl;
-      iframe.classList.remove('hidden');
-    }
-
-    this.showBuffering(false);
-    this.setResolutionBadge(0, 0, 'EnsMovie 4K');
-  },
-
-  toggleEmbedMode() {
-    const iframe = document.getElementById('playerEmbed');
-    const isEmbed = iframe && !iframe.classList.contains('hidden');
-    if (isEmbed) {
-      if (this.currentEpisode?.link_m3u8) {
-        if (iframe) {
-          iframe.src = 'about:blank';
-          iframe.classList.add('hidden');
-        }
-        this.wrapper?.classList.remove('embed-active');
-        this.video?.classList.remove('hidden');
-        document.getElementById('playerControls')?.classList.remove('hidden');
-        document.getElementById('btnCenterPlayPause')?.classList.remove('hidden');
-        this.loadStream(this.currentEpisode.link_m3u8, { resumeTime: 0, autoplay: true, isHls: true });
-        this.showAlert('Đã chuyển sang trình phát trực tiếp.');
-      } else {
-        this.showAlert('Không có luồng phát trực tiếp cho tập này.');
-      }
-    } else {
-      let embedUrl = this.currentEpisode?.link_embed || '';
-      if (!embedUrl && this.currentEpisode?.link_m3u8) {
-        embedUrl = `https://player.phimapi.com/player/?url=${encodeURIComponent(this.currentEpisode.link_m3u8)}`;
-      }
-      if (embedUrl) {
-        this.playEmbedStream(embedUrl);
-        this.showAlert('Đã chuyển sang trình phát EnsMovie.');
-      } else {
-        this.showAlert('Không có luồng nhúng cho tập này.');
-      }
-    }
   },
 
   loadStream(streamUrl, options = {}) {
@@ -410,10 +356,6 @@ const Player = {
           return;
         }
         console.warn('HLS stream fatal error:', data);
-        if (this.currentEpisode?.link_embed) {
-          this.playEmbedStream(this.currentEpisode.link_embed);
-          return;
-        }
         this.showBuffering(false);
         void this.recoverPlayback('hls_fatal');
       });
@@ -597,12 +539,12 @@ const Player = {
       button.setAttribute('aria-checked', String(index === this.currentServerIndex));
       button.classList.toggle('active', index === this.currentServerIndex);
       const episodeCount = Array.isArray(server?.server_data) ? server.server_data.length : 0;
-      button.textContent = `${index === this.currentServerIndex ? '✓ ' : ''}${server.server_name || `Server ${index + 1}`} · ${episodeCount} tập`;
+      button.textContent = `${index === this.currentServerIndex ? '✓ ' : ''}${formatMovieServerName(server, index, this.currentMovie)} · ${episodeCount} tập`;
       button.onclick = () => this.switchServer(index);
       menu.appendChild(button);
     });
     if (trigger) {
-      const activeName = this.allServers[this.currentServerIndex]?.server_name || `Server ${this.currentServerIndex + 1}`;
+      const activeName = formatMovieServerName(this.allServers[this.currentServerIndex], this.currentServerIndex, this.currentMovie);
       trigger.textContent = `📡 ${activeName}`;
       trigger.title = `Đang phát bằng ${activeName}. Bấm để chọn server khác.`;
     }
@@ -633,7 +575,7 @@ const Player = {
     this.renderInPlayerServerMenu();
     this.updateNextEpisodeButton();
     this.closeDropdowns();
-    this.showAlert(`${automatic ? 'Tự chuyển' : 'Đã đổi'}: ${targetServer.server_name || `Server ${newServerIndex + 1}`}`);
+    this.showAlert(`${automatic ? 'Tự chuyển' : 'Đã đổi'}: ${formatMovieServerName(targetServer, newServerIndex, this.currentMovie)}`);
     API.trackUsage('server_change', { ...this.usageContext(), entry: automatic ? 'automatic' : 'manual' });
     this.loadEpisode(match.episode, { resumeTime, autoplay });
   },
@@ -642,7 +584,7 @@ const Player = {
     this.failedServerIndexes.add(this.currentServerIndex);
     const nextIndex = this.allServers.findIndex((_server, index) => !this.failedServerIndexes.has(index));
     if (nextIndex >= 0) {
-      this.showAlert(`Server hiện tại không phát được. Đang thử ${this.allServers[nextIndex].server_name || `server ${nextIndex + 1}`}…`);
+      this.showAlert(`Server hiện tại không phát được. Đang thử ${formatMovieServerName(this.allServers[nextIndex], nextIndex, this.currentMovie)}…`);
       this.switchServer(nextIndex, { automatic: true });
       return;
     }
@@ -956,7 +898,7 @@ const Player = {
     this.modal?.classList.toggle('cinema-fullscreen', enabled);
     document.body.classList.toggle('player-cinema-fullscreen', enabled);
     this.syncFullscreenViewport();
-    this.applyPreferredAspect();
+    this.setAspectRatio(this.aspectMode, { silent: true });
     const button = document.getElementById('btnCinemaFullscreen');
     if (button) {
       button.classList.toggle('active', enabled);

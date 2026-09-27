@@ -834,9 +834,13 @@ const App = {
   resolveDirectImageUrl(path) {
     const value = String(path || '').trim();
     if (!value) return this.posterFallbackUrl();
-    if (value.startsWith('http://') || value.startsWith('https://') || value.startsWith('//') || value.startsWith('/')) {
-      return value;
-    }
+    if (value === this.posterFallbackUrl() || value.startsWith('/media/')) return value;
+    try {
+      const url = new URL(value, window.location?.href || 'https://local.invalid');
+      const apiOrigin = new URL(window.Phim4KRuntime?.apiBaseUrl || window.location?.origin || url.origin).origin;
+      const ticket = url.pathname === '/api/media/image' && /^[A-Za-z0-9_-]{24,}$/.test(url.searchParams.get('t') || '');
+      if (ticket && url.origin === apiOrigin) return url.href;
+    } catch (_error) {}
     return this.posterFallbackUrl();
   },
 
@@ -1202,7 +1206,7 @@ const App = {
     episodes.forEach((server, idx) => {
       const btn = document.createElement('button');
       btn.className = `server-tab ${idx === this.activeServerIndex ? 'active' : ''}`;
-      btn.textContent = server.server_name || `Server #${idx + 1}`;
+      btn.textContent = window.formatMovieServerName?.(server, idx, this.activeMovieDetail?.movie) || server.server_name || `Server #${idx + 1}`;
       btn.onclick = () => {
         this.activeServerIndex = idx;
         this.renderServerTabs(episodes);

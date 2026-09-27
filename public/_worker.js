@@ -511,6 +511,20 @@ export default {
       return proxyTo(request, ENS_ORIGIN);
     }
 
+    // Authentication and every administrator mutation are server-authoritative.
+    // Keep them on the D1-backed license Worker so maintenance, logs, device
+    // approvals and movie reports survive Cloudflare Pages isolate restarts.
+    const authoritativeApi = url.pathname.startsWith('/api/auth/')
+      || url.pathname.startsWith('/api/admin/')
+      || ['/api/app/access-policy', '/api/app/downloads', '/api/app/check-update', '/api/app/version', '/api/app/announcement', '/api/telemetry', '/api/watch-progress', '/api/movies/report-issue', '/api/movies/play'].includes(url.pathname);
+    if (authoritativeApi) {
+      return proxyTo(request, LICENSE_ORIGIN, {
+        'x-forwarded-host': url.host,
+        'x-forwarded-proto': 'https',
+        'x-app-runtime': request.headers.get('x-app-runtime') || 'web'
+      });
+    }
+
     // Access Policy: Always grant free direct access unless maintenance is explicitly active
     if (url.pathname === '/api/app/access-policy') {
       return Response.json({

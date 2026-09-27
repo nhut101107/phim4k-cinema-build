@@ -36,7 +36,11 @@
     const cinema = recent.filter(m => m.chieurap === true).sort(ranked);
     const hot = recent.filter(m => interest(m) > 0).sort(ranked);
     const releases = [...recent].sort(newest);
-    const hero = unique([...cinema.slice(0, 5), ...hot, ...releases]).slice(0, 10);
+    // Hero is intentionally strict: only current cinema releases or current
+    // titles with a real TMDB/IMDb interest signal. Generic/old catalogue
+    // entries remain available in rails but never take the premium banner.
+    const promoted = unique([...cinema, ...hot]);
+    const hero = unique(promoted.length ? promoted : releases).slice(0, 10);
     const recentYear = recent[0]?.year || year;
     return { policy: POLICY, updatedAt, offline, rankingBasis: 'release-year + recent-catalog-update + TMDB/IMDb vote-count proxy',
       hero,

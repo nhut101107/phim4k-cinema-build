@@ -251,13 +251,15 @@
   else apply();
 })();
 
-// Download metadata is release-authoritative. Native builds query GitHub's
-// latest published release directly, cache it briefly, and merge it over the
-// backend list. This prevents an old D1 row from sending users to stale builds.
+// Download metadata is server-authoritative. The backend only publishes
+// verified Google Drive artifacts, so clients never replace them with a
+// GitHub release URL.
 (() => {
   if (!window.API?.fetchJson) return;
-
-  const RELEASE_API = 'https://api.github.com/repos/nhut101107/phim4k-cinema-build/releases/latest';
+  try { localStorage.removeItem('phim4k_release_manifest_v2'); } catch (_error) {}
+  return;
+  /* Legacy GitHub release merger retained below as unreachable migration code. */
+  const RELEASE_API = '';
   const CACHE_KEY = 'phim4k_release_manifest_v2';
   const CACHE_TTL = 10 * 60 * 1000;
   const platformMatchers = {

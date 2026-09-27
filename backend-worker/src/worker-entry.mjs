@@ -11,8 +11,7 @@ const RETRYABLE_RELAY_STATUSES = new Set([502, 503, 504]);
 let relayHealth = { origin: '', checkedAt: 0, healthy: true };
 let relayHealthCheck = null;
 
-// Final 3.56 public release manifest. Mobile builds use public Drive files;
-// Windows uses the public GitHub release asset because the installer exceeds the Drive connector transfer limit.
+// Public release manifest. Every user-facing download stays on Google Drive.
 const PUBLIC_RELEASES = Object.freeze({
   android: Object.freeze({
     url: 'https://drive.usercontent.google.com/download?id=1cIKz4nVb1ODD5TFqRx_yxc6bn02QB8pS&export=download&confirm=t',
@@ -36,10 +35,10 @@ const PUBLIC_RELEASES = Object.freeze({
     signer: 'github-actions[bot]',
   }),
   windows: Object.freeze({
-    url: 'https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.56/4K-Cinema-Windows-3.56-x64.exe',
-    version: '3.56',
-    sha256: 'ec1fc094ca880b412b175db973187cb37af4f71100a15e3c1463b8fc159c0e84',
-    sizeBytes: 120969742,
+    url: 'https://drive.usercontent.google.com/download?id=1uOmdX9AwTPVHFYQsTlQp0ifyvNmSYU4_&export=download&confirm=t',
+    version: '3.55',
+    sha256: '1b2721c02e442c4abb4c48da854b153df24876d85f3fae72920adb2ecdb49f31',
+    sizeBytes: 120964411,
     signer: 'github-actions[bot]',
   }),
 });
@@ -200,7 +199,11 @@ async function mergedDownloads(request, env, executionContext) {
 
   const merged = {};
   for (const platform of ['android', 'android_tv', 'ios', 'windows']) {
-    merged[platform] = live[platform]?.url ? live[platform] : payload?.[platform];
+    const configured = payload?.[platform];
+    const bundled = live[platform];
+    merged[platform] = configured?.url && compareVersions(configured.version, bundled?.version) > 0
+      ? configured
+      : (bundled?.url ? bundled : configured);
   }
   return jsonResponse(normalizeLegacyFields(merged));
 }

@@ -106,7 +106,11 @@
 
   body.web-preview .nav-right {
     flex: 0 1 auto;
-    gap: 8px;
+    gap: 9px;
+    padding: 6px;
+    border: 1px solid rgba(255,255,255,.06);
+    border-radius: 16px;
+    background: rgba(255,255,255,.018);
   }
 
   body.web-preview .search-box {
@@ -131,8 +135,8 @@
   body.web-preview .nav-download-btn,
   body.web-preview .nav-key-btn,
   body.web-preview .admin-panel-btn {
-    min-height: 38px;
-    padding: 0 11px;
+    min-height: 42px;
+    padding: 0 13px;
     border: 1px solid rgba(255,255,255,.075);
     border-radius: 10px;
     background: rgba(255,255,255,.035);
@@ -156,6 +160,53 @@
     border: 1px solid rgba(139,148,255,.15);
     background: rgba(139,148,255,.055);
     border-radius: 12px;
+  }
+
+  /* Web action groups use equal, comfortable hit targets instead of a
+     collection of narrow buttons with unrelated widths. */
+  body.web-preview .account-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  body.web-preview .account-actions > button {
+    width: 100%;
+    min-height: 48px;
+    margin: 0;
+    border-radius: 12px;
+  }
+
+  body.web-preview .account-actions > p,
+  body.web-preview .account-actions > .gate-message {
+    grid-column: 1 / -1;
+    margin: 0;
+  }
+
+  body.web-preview .admin-quick-actions {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px !important;
+  }
+
+  body.web-preview .admin-quick-actions button {
+    width: 100%;
+    min-height: 48px;
+    margin: 0;
+    padding: 10px 14px !important;
+    line-height: 1.3;
+  }
+
+  body.web-preview .download-cards-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    align-items: stretch;
+  }
+
+  body.web-preview .download-card .btn-download-action {
+    width: 100%;
+    min-height: 44px;
+    margin-top: auto;
+    justify-content: center;
   }
 
   /* Hero: wide editorial split instead of a narrow phone-style stack. */
@@ -586,6 +637,11 @@
   body.web-preview .nav-download-btn,
   body.web-preview .nav-key-btn {
     display: none;
+  }
+
+  body.web-preview .admin-quick-actions,
+  body.web-preview .download-cards-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   body.web-preview .coverflow-section {
@@ -1957,6 +2013,34 @@ body {
 }
 
 /* ABSOLUTE OVERRIDE FOR HIDDEN ELEMENTS */
+body:not(.admin-login-route) #adminLoginFields { display: none !important; }
+body.admin-login-route #btnEnterFreeGate,
+body.admin-login-route #btnRequestDeviceAccess,
+body.admin-login-route .license-field-label small { display: none !important; }
+body.admin-login-route .license-entry-head h2::after { content: " · Admin"; color: #facc15; }
+
+.telegram-contact-fab {
+  position: fixed;
+  right: max(14px, env(safe-area-inset-right));
+  bottom: max(84px, calc(env(safe-area-inset-bottom) + 72px));
+  z-index: 85000;
+  display: inline-flex;
+  align-items: center;
+  min-height: 42px;
+  padding: 0 15px;
+  border: 1px solid rgba(56, 189, 248, .48);
+  border-radius: 999px;
+  background: rgba(3, 105, 161, .94);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+  box-shadow: 0 10px 30px rgba(2, 132, 199, .32);
+  backdrop-filter: blur(12px);
+}
+.telegram-contact-fab::before { content: "✈"; margin-right: 7px; }
+body.player-open .telegram-contact-fab { display: none; }
+
 #activationGate.hidden,
 .gate-overlay.hidden,
 div#activationGate.hidden,
@@ -1966,4 +2050,3 @@ div#activationGate.hidden,
   opacity: 0 !important;
   pointer-events: none !important;
 }
-

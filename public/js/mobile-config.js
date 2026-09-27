@@ -5,5 +5,5 @@
  */
 window.PHIM4K_MOBILE_CONFIG = Object.freeze({
   // Empty uses the current origin for normal web deployment (Cloudflare Pages phim4vipzz.pages.dev)
-  apiBaseUrl: ""
+  apiBaseUrl: "https://phim4vipzz.pages.dev"
 });

@@ -34,6 +34,7 @@ const ADMIN_BOOTSTRAP_CONSUMED_SETTING = "admin_key_bootstrap_vip4_consumed";
 const ADMIN_BOOTSTRAP_SHA256 = "sha256-v2:f14ae9a3586e3d854513a06c8c9f23a86aa51a88ff1ff35a21307ef8b7d5e3c6";
 const ANNOUNCEMENT_SETTING = "global_announcement_v1";
 const MAINTENANCE_SETTING = "maintenance_mode_v1";
+const MOVIE_REPORT_LIMIT = 300;
 const MAX_ANNOUNCEMENT_MINUTES = 30 * 24 * 60;
 const MAX_MAINTENANCE_MINUTES = 7 * 24 * 60;
 const TELEMETRY_ACTIONS = new Set([
@@ -58,19 +59,19 @@ const RATE_LIMITS = Object.freeze({
 
 const INSTALLER_RELEASES = Object.freeze({
   "/download/android": {
-    filename: "4K-Cinema-Android-3.55.apk",
+    filename: "4K-Cinema-Android-3.56.apk",
     contentType: "application/vnd.android.package-archive",
-    url: "https://drive.usercontent.google.com/download?id=1CMxjT0LyFnrwD2T8N2-ggbwuZJ0zvy0A&export=download&confirm=t",
+    url: "https://drive.usercontent.google.com/download?id=1cIKz4nVb1ODD5TFqRx_yxc6bn02QB8pS&export=download&confirm=t",
   },
   "/download/android-tv": {
-    filename: "4K-Cinema-Android-TV-3.55.apk",
+    filename: "4K-Cinema-Android-TV-3.56.apk",
     contentType: "application/vnd.android.package-archive",
-    url: "https://drive.usercontent.google.com/download?id=1C6ZxnWeEdEi3h1fTPYRnX8TRgHe1if8g&export=download&confirm=t",
+    url: "https://drive.usercontent.google.com/download?id=132cxRcOetx_AsOm6m9vgDFoVJCZOwWhs&export=download&confirm=t",
   },
   "/download/ios": {
-    filename: "4K-Cinema-iOS-3.55-unsigned.ipa",
+    filename: "4K-Cinema-iOS-3.56-unsigned.ipa",
     contentType: "application/octet-stream",
-    url: "https://drive.usercontent.google.com/download?id=1Qv25YSevfJmhvBX3hYqbk5jGFH_VVVr_&export=download&confirm=t",
+    url: "https://drive.usercontent.google.com/download?id=14AOZdrCewKFU2Rn52oySmgXNqQiWzNW_&export=download&confirm=t",
   },
   "/download/windows": {
     filename: "4K-Cinema-Windows-3.55-x64.exe",
@@ -82,23 +83,23 @@ const INSTALLER_RELEASES = Object.freeze({
 const PUBLIC_RELEASES = Object.freeze({
   android: Object.freeze({
     url: INSTALLER_RELEASES["/download/android"].url,
-    version: "3.55",
-    sha256: "c1cc73cb504ab90c7c7d8cbedf73f00c0484e13ab3d499b02d6aa37a4e1d44b4",
-    sizeBytes: 3959616,
+    version: "3.56",
+    sha256: "78e0a673bf61f61bb78d5971e3a3c6986bd199fedacc89a5f24c5aded5f56325",
+    sizeBytes: 3967808,
     signer: "github-actions[bot]",
   }),
   android_tv: Object.freeze({
     url: INSTALLER_RELEASES["/download/android-tv"].url,
-    version: "3.55",
-    sha256: "db161b95b46b5728ad8a4cdf53b1a3f4bdb3ec14802fa65882ed3671336a1df0",
-    sizeBytes: 3959616,
+    version: "3.56",
+    sha256: "5d8335f77144aebbaf882992351b7a059857a932e781c335d0375769dcf148a8",
+    sizeBytes: 3967808,
     signer: "github-actions[bot]",
   }),
   ios: Object.freeze({
     url: INSTALLER_RELEASES["/download/ios"].url,
-    version: "3.55",
-    sha256: "43b3b432d14f1a404cb5a840518c38a27212870de2242724672ae5e7cae932b7",
-    sizeBytes: 4411895,
+    version: "3.56",
+    sha256: "94959219094d568eb8722db148fceac88f66d1c297a1f6d562f579ca51ab99c0",
+    sizeBytes: 4424082,
     signer: "github-actions[bot]",
   }),
   windows: Object.freeze({
@@ -343,7 +344,7 @@ async function handleInstallerDownload(request, pathname) {
   if (!release || !["GET", "HEAD"].includes(request.method)) {
     return textError("Không tìm thấy bản cài đặt.", 404, "INSTALLER_NOT_FOUND");
   }
-  const upstreamHeaders = new Headers({ "user-agent": "4K-Cinema-Release/3.55" });
+  const upstreamHeaders = new Headers({ "user-agent": "4K-Cinema-Release/3.56" });
   const range = request.headers.get("range");
   if (range && /^bytes=\d*-\d*$/.test(range)) upstreamHeaders.set("range", range);
   const upstream = await fetch(release.url, {
@@ -1294,6 +1295,86 @@ export function normalizeMaintenanceSetting(raw, timestamp = Date.now()) {
 async function getMaintenance(db) {
   const row = await queryOne(db, "SELECT setting_value FROM app_settings WHERE setting_key = ?", MAINTENANCE_SETTING);
   return normalizeMaintenanceSetting(row?.setting_value);
+}
+
+async function ensureMovieReportSchema(db) {
+  await db.prepare("CREATE TABLE IF NOT EXISTS movie_reports (id TEXT PRIMARY KEY, movie_slug TEXT NOT NULL, movie_name TEXT NOT NULL, episode TEXT, reason TEXT NOT NULL, device_id TEXT, status TEXT NOT NULL DEFAULT 'open', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)").bind().run();
+  await db.prepare("CREATE TABLE IF NOT EXISTS closed_movies (movie_slug TEXT PRIMARY KEY, movie_name TEXT, reason TEXT, closed_at TEXT NOT NULL, closed_by TEXT)").bind().run();
+}
+
+async function closedMovieSlugs(db) {
+  try {
+    await ensureMovieReportSchema(db);
+    const result = await db.prepare("SELECT movie_slug FROM closed_movies").bind().all();
+    return new Set((result.results || []).map((row) => String(row.movie_slug || "")).filter(Boolean));
+  } catch (_error) {
+    // Lightweight test/local adapters may not implement DDL. Production D1
+    // does; catalog availability must not fail if the optional inbox cannot initialize.
+    return new Set();
+  }
+}
+
+function excludeClosedMovies(items, closed) {
+  return (Array.isArray(items) ? items : []).filter((item) => !closed.has(catalogSlug(item?.slug)));
+}
+
+async function reportMovieIssue(request, env) {
+  const identity = await verifyTelemetryViewer(request, env);
+  if (identity.error) return identity.error;
+  const body = await parseBody(request);
+  const movieSlug = catalogSlug(body.movieSlug);
+  const movieName = cleanProgressText(body.movieName || "Phim chưa xác định", 180);
+  const reason = cleanProgressText(body.reason || "Phim không phát được", 600);
+  if (!movieSlug || !reason) return textError("Thông tin báo lỗi phim không hợp lệ.", 400, "INVALID_MOVIE_REPORT");
+  await ensureMovieReportSchema(env.DB);
+  const timestamp = now();
+  const id = crypto.randomUUID();
+  await env.DB.prepare("INSERT INTO movie_reports (id, movie_slug, movie_name, episode, reason, device_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?)")
+    .bind(id, movieSlug, movieName, cleanProgressText(body.episode, 120), reason, cleanProgressText(body.deviceId, 160), timestamp, timestamp).run();
+  await env.DB.prepare("DELETE FROM movie_reports WHERE id NOT IN (SELECT id FROM movie_reports ORDER BY created_at DESC LIMIT ?)").bind(MOVIE_REPORT_LIMIT).run();
+  await logEvent(env.DB, "movie_reported", { detail: JSON.stringify({ id, movieSlug, movieName }) });
+  return json({ success: true, id, message: "Đã chuyển báo lỗi đến hộp thư Admin." });
+}
+
+async function listMovieReports(request, env) {
+  const denied = await requireVerifiedAdmin(request, env);
+  if (denied) return denied;
+  await ensureMovieReportSchema(env.DB);
+  const [reports, closed] = await Promise.all([
+    env.DB.prepare("SELECT * FROM movie_reports ORDER BY created_at DESC LIMIT ?").bind(MOVIE_REPORT_LIMIT).all(),
+    env.DB.prepare("SELECT * FROM closed_movies ORDER BY closed_at DESC").all(),
+  ]);
+  return json({ success: true, reports: reports.results || [], closedMovies: closed.results || [] });
+}
+
+async function decideMovieReport(request, env) {
+  const denied = await requireVerifiedAdmin(request, env);
+  if (denied) return denied;
+  const body = await parseBody(request);
+  const id = String(body.id || "").trim();
+  const status = String(body.status || "").trim();
+  if (!id || !["open", "resolved"].includes(status)) return textError("Trạng thái báo lỗi không hợp lệ.", 400, "INVALID_REPORT_STATUS");
+  await ensureMovieReportSchema(env.DB);
+  await env.DB.prepare("UPDATE movie_reports SET status = ?, updated_at = ? WHERE id = ?").bind(status, now(), id).run();
+  await logEvent(env.DB, "admin_movie_report_updated", { actorTelegramId: requestTelegram(request), detail: JSON.stringify({ id, status }) });
+  return json({ success: true, message: status === "resolved" ? "Đã đánh dấu báo lỗi là đã xử lý." : "Đã mở lại báo lỗi." });
+}
+
+async function setMovieAvailability(request, env) {
+  const denied = await requireVerifiedAdmin(request, env);
+  if (denied) return denied;
+  const body = await parseBody(request);
+  const slug = catalogSlug(body.movieSlug);
+  if (!slug || typeof body.closed !== "boolean") return textError("Phim hoặc trạng thái không hợp lệ.", 400, "INVALID_MOVIE_STATE");
+  await ensureMovieReportSchema(env.DB);
+  if (body.closed) {
+    await env.DB.prepare("INSERT INTO closed_movies (movie_slug, movie_name, reason, closed_at, closed_by) VALUES (?, ?, ?, ?, ?) ON CONFLICT(movie_slug) DO UPDATE SET movie_name = excluded.movie_name, reason = excluded.reason, closed_at = excluded.closed_at, closed_by = excluded.closed_by")
+      .bind(slug, cleanProgressText(body.movieName, 180), cleanProgressText(body.reason || "Đang sửa lỗi phát", 300), now(), requestTelegram(request)).run();
+  } else {
+    await env.DB.prepare("DELETE FROM closed_movies WHERE movie_slug = ?").bind(slug).run();
+  }
+  await logEvent(env.DB, body.closed ? "admin_movie_closed" : "admin_movie_reopened", { actorTelegramId: requestTelegram(request), detail: JSON.stringify({ slug }) });
+  return json({ success: true, closed: body.closed, message: body.closed ? "Đã tạm đóng phim khỏi kho người xem." : "Đã mở lại phim cho người xem." });
 }
 
 function maintenanceError(maintenance) {
@@ -3300,13 +3381,16 @@ async function fetchEnsMovieStyleHomeCatalog(env) {
 async function handleProtectedMovieCatalog(request, env, executionContext) {
   const identity = await verifyTelemetryViewer(request, env);
   if (identity.error) return identity.error;
+  const maintenance = await getMaintenance(env.DB);
+  if (maintenance.active && !identity.isAdmin) return maintenanceError(maintenance);
+  const closed = await closedMovieSlugs(env.DB);
   const url = new URL(request.url);
   const { pathname } = url;
 
   if (pathname === "/api/movies/home") {
     const resolved = await fetchEnsMovieStyleHomeCatalog(env);
     if (!resolved.items.length) return textError("Nguồn danh mục tạm thời không khả dụng.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
-    const payload = HomeCuration.build(resolved.items);
+    const payload = HomeCuration.build(excludeClosedMovies(resolved.items, closed));
     payload.sources = resolved.sources;
     return json(await protectCatalogImages(payload, request, env));
   }
@@ -3324,7 +3408,7 @@ async function handleProtectedMovieCatalog(request, env, executionContext) {
     return json({
       title: "Toàn bộ kho phim",
       sources: resolved.sources,
-      items: await protectCatalogImages(resolved.items, request, env),
+      items: await protectCatalogImages(excludeClosedMovies(resolved.items, closed), request, env),
       pagination,
     });
   }
@@ -3341,7 +3425,7 @@ async function handleProtectedMovieCatalog(request, env, executionContext) {
       : genre ? `/v1/api/the-loai/${genre}?page=${page}&limit=48` : `/v1/api/quoc-gia/${country}?page=${page}&limit=48`;
     if (country && genre) target += `&country=${encodeURIComponent(country)}`;
     const data = await fetchProtectedCatalogJson(target, env);
-    return json({ filters: { genre, country }, items: await protectCatalogImages(normalizedCatalogItems(data, env), request, env), pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1, totalItems: 0 } });
+    return json({ filters: { genre, country }, items: await protectCatalogImages(excludeClosedMovies(normalizedCatalogItems(data, env), closed), request, env), pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1, totalItems: 0 } });
   }
 
   const categoryMatch = pathname.match(/^\/api\/movies\/category\/([a-z0-9-]+)$/);
@@ -3355,7 +3439,7 @@ async function handleProtectedMovieCatalog(request, env, executionContext) {
     return json({
       title: category,
       sources: resolved.sources,
-      items: await protectCatalogImages(resolved.items, request, env),
+      items: await protectCatalogImages(excludeClosedMovies(resolved.items, closed), request, env),
       pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1 },
     });
   }
@@ -3369,7 +3453,7 @@ async function handleProtectedMovieCatalog(request, env, executionContext) {
     return json({
       query,
       sources: resolved.sources,
-      items: await protectCatalogImages(resolved.items, request, env),
+      items: await protectCatalogImages(excludeClosedMovies(resolved.items, closed), request, env),
       pagination: data.data?.params?.pagination || data.pagination || { currentPage: page, totalPages: 1 },
     });
   }
@@ -3378,6 +3462,7 @@ async function handleProtectedMovieCatalog(request, env, executionContext) {
   if (detailMatch) {
     const slug = catalogSlug(detailMatch[1]);
     if (!slug) return textError("Mã phim không hợp lệ.", 400, "INVALID_MOVIE_SLUG");
+    if (closed.has(slug)) return textError("Phim đang tạm đóng để Admin sửa nguồn phát.", 423, "MOVIE_TEMPORARILY_CLOSED");
     const entries = await resolveEnsMovieStyleSources(slug, env);
     const data = mergeResolvedMovieSources(entries);
     if (!data) return textError("Chưa tải được thông tin phim từ các nguồn.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
@@ -3397,6 +3482,8 @@ async function handleProtectedMovieCatalog(request, env, executionContext) {
 async function handleMoviePlayback(request, env) {
   const identity = await verifyTelemetryViewer(request, env);
   if (identity.error) return identity.error;
+  const maintenance = await getMaintenance(env.DB);
+  if (maintenance.active && !identity.isAdmin) return maintenanceError(maintenance);
   const body = await parseBody(request);
   const slug = catalogSlug(body?.movie);
   const serverIndex = Number(body?.server);
@@ -3404,6 +3491,7 @@ async function handleMoviePlayback(request, env) {
   if (!slug || !Number.isInteger(serverIndex) || serverIndex < 0 || serverIndex > 50 || !Number.isInteger(episodeIndex) || episodeIndex < 0 || episodeIndex > 5000) {
     return textError("Tham chiếu tập phim không hợp lệ.", 400, "INVALID_STREAM_REFERENCE");
   }
+  if ((await closedMovieSlugs(env.DB)).has(slug)) return textError("Phim đang tạm đóng để Admin sửa nguồn phát.", 423, "MOVIE_TEMPORARILY_CLOSED");
   const entries = await resolveEnsMovieStyleSources(slug, env);
   const data = mergeResolvedMovieSources(entries);
   if (!data) return textError("Chưa kết nối được các nguồn phim. Vui lòng thử lại.", 503, "MOVIE_UPSTREAM_UNAVAILABLE");
@@ -3785,6 +3873,7 @@ export default {
       }
       if (request.method === "GET" && pathname === "/api/media/image") return await handleProtectedMovieImage(request, env, executionContext);
       if (request.method === "GET" && pathname === "/api/media/stream") return await handleMovieStream(request, env);
+      if (request.method === "POST" && pathname === "/api/movies/report-issue") return await reportMovieIssue(request, env);
       if (request.method === "POST" && pathname === "/api/movies/play") return await handleMoviePlayback(request, env);
       if (request.method === "GET" && pathname.startsWith("/api/movies/")) return await handleProtectedMovieCatalog(request, env, executionContext);
       const missing = dbUnavailable(env);
@@ -3836,6 +3925,9 @@ export default {
       if (request.method === "GET" && pathname === "/api/admin/keys") return await listKeys(request, env);
       if (request.method === "GET" && pathname === "/api/admin/device-access-requests") return await listDeviceAccessRequests(request, env);
       if (request.method === "POST" && pathname === "/api/admin/device-access-decision") return await decideDeviceAccess(request, env);
+      if (request.method === "GET" && pathname === "/api/admin/reports") return await listMovieReports(request, env);
+      if (request.method === "POST" && pathname === "/api/admin/report-decision") return await decideMovieReport(request, env);
+      if (request.method === "POST" && pathname === "/api/admin/movie-availability") return await setMovieAvailability(request, env);
       if (request.method === "POST" && pathname === "/api/admin/rotate-master-key") return await rotateMasterKey(request, env);
       if (request.method === "POST" && pathname === "/api/admin/create-key") return await createKey(request, env);
       if (request.method === "POST" && pathname === "/api/admin/renew-key") return await updateKey(request, env, "renew");

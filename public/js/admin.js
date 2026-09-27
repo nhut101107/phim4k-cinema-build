@@ -170,7 +170,7 @@ const Admin = {
     }
     if (tab === 'users') this.loadUsers();
     if (tab === 'downloads') return Promise.all([this.loadDownloadsConfig(), this.loadAccessPolicy()]);
-    if (tab === 'content') return Promise.all([this.loadContentStatus(), this.loadAnnouncementEditor()]);
+    if (tab === 'content') return Promise.all([this.loadContentStatus(), this.loadAnnouncementEditor(), this.loadMovieReports()]);
     if (tab === 'logs') {
       const loading = this.loadLogs();
       this.startLogAutoRefresh();
@@ -257,7 +257,96 @@ const Admin = {
   },
 
   getAdminHeaders() {
-    return { 'Content-Type': 'application/json' };
+    const token = window.SessionVault?.current?.()?.accessToken;
+    return { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+  },
+
+  async loadMovieReports() {
+    const container = document.getElementById('movieReportsList');
+    if (!container) return;
+    container.innerHTML = '<p class="admin-desc">Đang tải hộp thư báo lỗi…</p>';
+    try {
+      const response = await fetch('/api/admin/reports', { cache: 'no-store', headers: this.getAdminHeaders() });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || data.error || `HTTP ${response.status}`);
+      container.replaceChildren();
+      const closed = new Map((data.closedMovies || []).map((item) => [item.movie_slug, item]));
+      const reports = Array.isArray(data.reports) ? data.reports : [];
+      if (!reports.length && !closed.size) {
+        container.innerHTML = '<p class="admin-desc">Chưa có báo lỗi phim nào.</p>';
+        return;
+      }
+      reports.forEach((report) => {
+        const card = document.createElement('article');
+        card.className = `device-request-card status-${report.status || 'open'}`;
+        const info = document.createElement('div');
+        info.className = 'device-request-info';
+        const title = document.createElement('strong');
+        title.textContent = `${report.movie_name || report.movie_slug}${report.episode ? ` · ${report.episode}` : ''}`;
+        const reason = document.createElement('span');
+        reason.textContent = report.reason || 'Không có mô tả';
+        const meta = document.createElement('small');
+        meta.textContent = `${report.status === 'resolved' ? 'Đã xử lý' : 'Đang chờ'} · ${new Date(report.created_at).toLocaleString('vi-VN')}`;
+        info.append(title, reason, meta);
+        const actions = document.createElement('div');
+        actions.className = 'device-request-actions';
+        const isClosed = closed.has(report.movie_slug);
+        const availability = document.createElement('button');
+        availability.type = 'button';
+        availability.className = `btn-action-mini ${isClosed ? 'btn-unban' : 'btn-delete'}`;
+        availability.textContent = isClosed ? 'Mở phim lại' : 'Đóng phim để sửa';
+        availability.onclick = () => this.setMovieAvailability(report, !isClosed);
+        const resolve = document.createElement('button');
+        resolve.type = 'button';
+        resolve.className = 'btn-action-mini btn-time';
+        resolve.textContent = report.status === 'resolved' ? 'Mở lại báo lỗi' : 'Đã sửa xong';
+        resolve.onclick = () => this.decideMovieReport(report.id, report.status === 'resolved' ? 'open' : 'resolved');
+        actions.append(availability, resolve);
+        card.append(info, actions);
+        container.appendChild(card);
+      });
+      for (const item of closed.values()) {
+        if (reports.some((report) => report.movie_slug === item.movie_slug)) continue;
+        const card = document.createElement('article');
+        card.className = 'device-request-card status-rejected';
+        const info = document.createElement('div');
+        info.className = 'device-request-info';
+        const title = document.createElement('strong');
+        title.textContent = item.movie_name || item.movie_slug;
+        const meta = document.createElement('span');
+        meta.textContent = 'Đang đóng khỏi kho người xem';
+        info.append(title, meta);
+        const reopen = document.createElement('button');
+        reopen.className = 'btn-action-mini btn-unban';
+        reopen.textContent = 'Mở phim lại';
+        reopen.onclick = () => this.setMovieAvailability({ movie_slug: item.movie_slug, movie_name: item.movie_name }, false);
+        card.append(info, reopen);
+        container.appendChild(card);
+      }
+    } catch (error) {
+      container.replaceChildren();
+      const message = document.createElement('p');
+      message.className = 'gate-message error';
+      message.textContent = `Không đọc được hộp thư báo lỗi: ${String(error.message || error)}`;
+      container.appendChild(message);
+    }
+  },
+
+  async decideMovieReport(id, status) {
+    await API.request('/api/admin/report-decision', { method: 'POST', body: JSON.stringify({ id, status }) });
+    await this.loadMovieReports();
+  },
+
+  async setMovieAvailability(report, closed) {
+    const movieSlug = report.movie_slug || report.movieSlug;
+    const movieName = report.movie_name || report.movieName || movieSlug;
+    if (closed && !confirm(`Tạm đóng phim [${movieName}] khỏi toàn bộ kho để sửa?`)) return;
+    await API.request('/api/admin/movie-availability', {
+      method: 'POST',
+      body: JSON.stringify({ movieSlug, movieName, closed, reason: report.reason || 'Đang sửa lỗi phát' }),
+    });
+    window.API?.clearMovieCache?.();
+    await this.loadMovieReports();
   },
 
   async rotateMasterKey(event) {
@@ -1283,6 +1372,15 @@ const Admin = {
     const windowsVersion = document.getElementById('adminVersionExeInput').value.trim();
 
     try {
+      const tvUrl = document.getElementById('adminDownloadTvInput').value.trim();
+      const isDrive = (value) => {
+        if (!value) return true;
+        try { return ['drive.google.com', 'drive.usercontent.google.com'].includes(new URL(value).hostname.toLowerCase()); }
+        catch (_error) { return false; }
+      };
+      if (![androidUrl, iosUrl, windowsUrl, tvUrl].every(isDrive)) {
+        throw new Error('Tất cả link tải phải là link Google Drive công khai.');
+      }
       const res = await fetch('/api/admin/update-downloads', {
         method: 'POST',
         headers: this.getAdminHeaders(),
@@ -1296,7 +1394,7 @@ const Admin = {
           windowsUrl, windowsVersion,
           windowsSha256: document.getElementById('adminSha256ExeInput').value.trim(),
           windowsSizeBytes: Number(document.getElementById('adminSizeExeInput').value || 0),
-          android_tvUrl: document.getElementById('adminDownloadTvInput').value.trim(),
+          android_tvUrl: tvUrl,
           android_tvVersion: document.getElementById('adminVersionTvInput').value.trim(),
           android_tvSha256: document.getElementById('adminSha256TvInput').value.trim(),
           android_tvSizeBytes: Number(document.getElementById('adminSizeTvInput').value || 0)
