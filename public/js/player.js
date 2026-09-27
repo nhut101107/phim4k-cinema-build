@@ -253,6 +253,32 @@ const Player = {
       }
     }
 
+    // The public Pages catalogue uses the provider's original playback
+    // contract. This was the stable path before protected stream references
+    // were added, and remains required whenever detail responses contain raw
+    // link_embed/link_m3u8 fields instead of stream_ref.
+    const publicWebFallback = !window.Phim4KRuntime?.apiBaseUrl;
+    const embedUrl = publicWebFallback ? (episode?.link_embed || '') : '';
+    if (embedUrl) {
+      this.playEmbedStream(embedUrl);
+      return;
+    }
+
+    const directStreamUrl = publicWebFallback
+      ? (episode?.link_m3u8 || episode?.m3u8 || episode?.stream_url || episode?.url || '')
+      : '';
+    if (directStreamUrl) {
+      this.video?.classList.remove('hidden');
+      document.getElementById('playerEmbed')?.classList.add('hidden');
+      this.wrapper?.classList.remove('embed-active');
+      document.getElementById('playerControls')?.classList.remove('hidden');
+      document.getElementById('btnCenterPlayPause')?.classList.remove('hidden');
+      this.showBuffering(true, 'Đang mở luồng phát…');
+      this.setResolutionBadge(0, 0, '4K Ultra HD');
+      this.loadStream(directStreamUrl, { ...options, isHls: true, nativeDirectHls: false });
+      return;
+    }
+
     this.showBuffering(false);
     this.showAlert('Server này hiện không có luồng phát. Đang thử server khác…');
     this.fallbackToNextServer();

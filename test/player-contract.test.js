@@ -27,6 +27,14 @@ test('web fallback episodes use the native EnsMovie playback identity contract',
   assert.match(player, /API\.getPlaybackTicket\(episode\.stream_ref\)/);
 });
 
+test('raw Pages catalogue episodes keep the previously working provider player path', () => {
+  assert.match(app, /episode\?\.link_embed \|\| episode\?\.link_m3u8/);
+  assert.match(player, /const publicWebFallback = !window\.Phim4KRuntime\?\.apiBaseUrl/);
+  assert.match(player, /episode\?\.link_embed \|\| ''/);
+  assert.match(player, /episode\?\.link_m3u8 \|\| episode\?\.m3u8/);
+  assert.ok(player.indexOf('const publicWebFallback = !window.Phim4KRuntime?.apiBaseUrl') < player.indexOf("this.showAlert('Server này hiện không có luồng phát"));
+});
+
 test('backend accepts every direct stream field exposed by the EnsMovie gateway', () => {
   assert.match(backend, /episode\?\.direct_url \|\| episode\?\.directUrl \|\| episode\?\.playback_url/);
   assert.match(backend, /episode\?\.link_m3u8 \|\| episode\?\.linkM3u8/);
