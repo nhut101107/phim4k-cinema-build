@@ -144,7 +144,7 @@ const Coverflow = {
     if (this.movies.length === 0) return;
     const cur = this.movies[this.currentIndex];
     if (cur && cur.slug) {
-      App.openMovieDetail(cur.slug, true);
+      App.openMovieDetail(cur.slug);
     }
   },
 
@@ -152,7 +152,7 @@ const Coverflow = {
     if (this.movies.length === 0) return;
     const cur = this.movies[this.currentIndex];
     if (cur && cur.slug) {
-      App.openMovieDetail(cur.slug, false);
+      App.openMovieDetail(cur.slug);
     }
   },
 
@@ -467,7 +467,7 @@ const ContinueWatching = {
     items.forEach(item => {
       const card = document.createElement('div');
       card.className = 'cw-card';
-      card.onclick = () => App.openMovieDetail(item.slug, true);
+      card.onclick = () => App.openMovieDetail(item.slug);
 
       const posterSource = this.posterSource(item);
       const posterUrl = App.resolveImageUrl(posterSource);

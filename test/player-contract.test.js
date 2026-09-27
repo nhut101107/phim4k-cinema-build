@@ -5,8 +5,34 @@ const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
 const player = fs.readFileSync(path.join(root, 'public/js/player.js'), 'utf8');
+const app = fs.readFileSync(path.join(root, 'public/js/app.js'), 'utf8');
+const coverflow = fs.readFileSync(path.join(root, 'public/js/coverflow.js'), 'utf8');
 const index = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'public/css/player.css'), 'utf8');
+const backend = fs.readFileSync(path.join(root, 'backend-worker/src/worker.mjs'), 'utf8');
+
+test('tapping any movie opens its description before playback', () => {
+  assert.match(app, /async openMovieDetail\(slug\)/);
+  assert.doesNotMatch(app, /openMovieDetail\(slug, autoPlay/);
+  assert.doesNotMatch(coverflow, /openMovieDetail\([^)]*,\s*true\)/);
+  assert.match(index, /id="movieModal"/);
+  assert.match(index, /class="btn-play-large"[^>]*onclick="playCurrentFirstEpisode\(\)"/);
+});
+
+test('web fallback episodes use the native EnsMovie playback identity contract', () => {
+  assert.match(app, /withPlaybackReference\(episode, server, serverIndex, episodeIndex\)/);
+  for (const field of ['sourceMovieSlug', 'serverName', 'episodeSlug', 'episodeName', 'episodeFilename']) {
+    assert.match(app, new RegExp(`${field}:`));
+  }
+  assert.match(player, /API\.getPlaybackTicket\(episode\.stream_ref\)/);
+});
+
+test('backend accepts every direct stream field exposed by the EnsMovie gateway', () => {
+  assert.match(backend, /episode\?\.direct_url \|\| episode\?\.directUrl \|\| episode\?\.playback_url/);
+  assert.match(backend, /episode\?\.link_m3u8 \|\| episode\?\.linkM3u8/);
+  assert.match(backend, /episode\?\.link_embed \|\| episode\?\.linkEmbed/);
+  assert.match(backend, /rawHeaders\.referer \|\| rawHeaders\.Referer/);
+});
 
 test('player exposes only subtitle-safe contain and explicit fullscreen fill modes', () => {
   assert.match(player, /removeItem\('phim4k-player-fit'\)/);

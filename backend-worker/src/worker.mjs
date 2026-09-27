@@ -2502,11 +2502,28 @@ async function recordMovieAvailability(env, slug, status, reason = "", { insertO
 }
 
 function directStreamTarget(episode) {
-  const hls = safePublicHttpsUrl(episode?.link_m3u8);
-  const embedded = safePublicHttpsUrl(episode?.link_embed);
+  // EnsMovie's native gateway can return either the provider-shaped
+  // link_m3u8 field or a normalized direct_url/directUrl/playback_url field.
+  // Accept the complete native contract while keeping every URL server-side.
+  const normalizedDirect = safePublicHttpsUrl(
+    episode?.direct_url || episode?.directUrl || episode?.playback_url || episode?.playbackUrl,
+  );
+  const hls = safePublicHttpsUrl(episode?.link_m3u8 || episode?.linkM3u8)
+    || (normalizedDirect && (String(episode?.format || "").toLowerCase() === "hls"
+      || /\.m3u8(?:$|[?#])/i.test(normalizedDirect.href)) ? normalizedDirect : null);
+  const embedded = safePublicHttpsUrl(episode?.link_embed || episode?.linkEmbed);
   const directEmbed = embedded && /\.(?:m3u8|mp4|m4v|mov)(?:$|[?#])/i.test(embedded.href) ? embedded : null;
-  const target = hls || directEmbed;
-  return target ? { target, isHls: Boolean(hls) || /\.m3u8(?:$|[?#])/i.test(target.href) } : null;
+  const target = hls || normalizedDirect || directEmbed;
+  if (!target) return null;
+  const rawHeaders = episode?.headers && typeof episode.headers === "object" ? episode.headers : {};
+  const referer = safePublicHttpsUrl(
+    rawHeaders.referer || rawHeaders.Referer || episode?.referer || episode?.referrer,
+  );
+  return {
+    target,
+    isHls: Boolean(hls) || String(episode?.format || "").toLowerCase() === "hls" || /\.m3u8(?:$|[?#])/i.test(target.href),
+    referer: referer?.href || "",
+  };
 }
 
 function streamCEmbedTarget(value) {
@@ -3293,6 +3310,7 @@ async function protectMovieDetail(data, request, env, slug) {
           serverName: sourceServerName,
           episodeSlug: cleanProgressText(episode?.slug, 160),
           episodeName: cleanProgressText(episode?.name, 120),
+          episodeFilename: cleanProgressText(episode?.filename, 160),
           episodeNumber: episodeOrdinalHint(episode),
         },
       })),

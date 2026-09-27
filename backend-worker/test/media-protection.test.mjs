@@ -80,6 +80,7 @@ test('catalog detail strips raw media links and playback uses encrypted Worker c
       serverName: 'Server A',
       episodeSlug: 'tap-1',
       episodeName: 'Tập 1',
+      episodeFilename: 'tap-1',
       episodeNumber: 1,
     });
 

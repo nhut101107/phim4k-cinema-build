@@ -1096,7 +1096,7 @@ const App = {
   // =================================================
   // 4. MOVIE DETAIL MODAL & EPISODES
   // =================================================
-  async openMovieDetail(slug, autoPlay = false) {
+  async openMovieDetail(slug) {
     const requestId = ++this.detailRequestId;
     const modal = document.getElementById('movieModal');
     modal.classList.remove('hidden');
@@ -1123,9 +1123,6 @@ const App = {
       this.activeServerIndex = 0;
       this.renderDetailModalContent(data);
       API.trackUsage('movie_open', { movie: data.movie?.name || slug });
-      if (autoPlay) {
-        this.playCurrentFirstEpisode();
-      }
     } catch (err) {
       if (requestId !== this.detailRequestId) return;
       document.getElementById('detailName').textContent = 'Không thể tải chi tiết phim';
@@ -1226,10 +1223,43 @@ const App = {
       epBtn.textContent = ep.name || `Tập ${epIdx + 1}`;
       epBtn.title = ep.filename || ep.name;
       epBtn.onclick = () => {
-        Player.open(this.activeMovieDetail.movie, ep, epList, epIdx, this.activeMovieDetail.episodes, this.activeServerIndex);
+        Player.open(
+          this.activeMovieDetail.movie,
+          this.withPlaybackReference(ep, currentServer, this.activeServerIndex, epIdx),
+          epList.map((item, index) => this.withPlaybackReference(item, currentServer, this.activeServerIndex, index)),
+          epIdx,
+          this.activeMovieDetail.episodes.map((server, serverIndex) => ({
+            ...server,
+            server_data: (server.server_data || []).map((item, index) => this.withPlaybackReference(item, server, serverIndex, index)),
+          })),
+          this.activeServerIndex
+        );
       };
       listContainer.appendChild(epBtn);
     });
+  },
+
+  // EnsMovie resolves an episode by movie + source + server + episode identity.
+  // The authoritative API already supplies stream_ref. The same reference is
+  // reconstructed here when the web catalogue fallback returned raw provider
+  // metadata, so the client never tries to play an exposed provider URL.
+  withPlaybackReference(episode, server, serverIndex, episodeIndex) {
+    if (episode?.stream_ref) return episode;
+    const movie = this.activeMovieDetail?.movie || {};
+    return {
+      ...episode,
+      stream_ref: {
+        movie: movie.slug,
+        server: serverIndex,
+        episode: episodeIndex,
+        source: server?.source_id || server?._source_id || '',
+        sourceMovieSlug: server?._source_movie_slug || movie.slug,
+        serverName: server?._source_server_name || server?.server_name || '',
+        episodeSlug: episode?.slug || '',
+        episodeName: episode?.name || '',
+        episodeFilename: episode?.filename || '',
+      },
+    };
   },
 
   playCurrentFirstEpisode() {
@@ -1237,8 +1267,14 @@ const App = {
     const episodes = this.activeMovieDetail.episodes || [];
     if (episodes.length > 0 && episodes[0].server_data?.length > 0) {
       const currentServer = episodes[this.activeServerIndex] || episodes[0];
-      const epList = currentServer.server_data;
-      Player.open(this.activeMovieDetail.movie, epList[0], epList, 0, this.activeMovieDetail.episodes, this.activeServerIndex);
+      const epList = currentServer.server_data.map((episode, index) =>
+        this.withPlaybackReference(episode, currentServer, this.activeServerIndex, index));
+      const allServers = this.activeMovieDetail.episodes.map((server, serverIndex) => ({
+        ...server,
+        server_data: (server.server_data || []).map((episode, index) =>
+          this.withPlaybackReference(episode, server, serverIndex, index)),
+      }));
+      Player.open(this.activeMovieDetail.movie, epList[0], epList, 0, allServers, this.activeServerIndex);
     }
   },
 
