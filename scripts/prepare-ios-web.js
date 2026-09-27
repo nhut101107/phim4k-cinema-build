@@ -15,6 +15,7 @@ if (!fs.statSync(source).isDirectory()) {
 // the legacy standalone page so the native integrity manifest matches the
 // exact production bundle shipped to users.
 const productionExcludes = new Set([
+  '_worker.js',
   'standalone.html',
   'media/qa-original.mp4',
   'media/qa-seek.mp4',

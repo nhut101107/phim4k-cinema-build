@@ -4,7 +4,6 @@ import Foundation
 
 enum RuntimeIntegrityManifest {
     private static let protectedFiles: [String: String] = [
-        "public/_worker.js": "67826d9d949f130c7022f28555c817422129c8240ca9c2c98e067544dc991b68",
         "public/cordova_plugins.js": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         "public/cordova.js": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         "public/css/modal.css": "2dfe6a30ad8b89bf7bad75b2ff282b8de7045f30d07c7bde91b3564387315fc3",

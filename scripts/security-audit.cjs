@@ -57,7 +57,11 @@ function files(directory) {
 
 const findings = [];
 const allFiles = [...new Set(repositoryRoots.flatMap(files))];
-const clientFiles = [...new Set(clientRoots.flatMap(files))];
+const clientFiles = [...new Set(clientRoots.flatMap(files))].filter((file) => {
+  // Cloudflare Pages executes public/_worker.js server-side; it is not a
+  // browser asset. Native packaging excludes it separately.
+  return path.relative(root, file).split(path.sep).join('/') !== 'public/_worker.js';
+});
 for (const file of allFiles) {
   const value = fs.readFileSync(file, 'utf8');
   for (const [label, rule] of secretRules) {
