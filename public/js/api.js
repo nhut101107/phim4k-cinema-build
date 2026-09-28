@@ -200,13 +200,20 @@ const API = {
     const current = this.getSession();
     if (!current?.refreshToken) return null;
     this.refreshPromise = (async () => {
+      const rotate = async () => {
+        const latest = await SessionVault.reload?.() || this.getSession();
+        if (!latest?.refreshToken) return null;
+        // Another tab may already have rotated the token while this tab was
+        // waiting for the browser lock. Reuse the fresh envelope instead of
+        // presenting the consumed token and revoking the whole admin family.
+        if (latest.refreshToken !== current.refreshToken) return { ...latest, active: true };
       try {
-        const proof = await SessionVault.proofHeaders('POST', '/api/auth/refresh', current.refreshToken);
+        const proof = await SessionVault.proofHeaders('POST', '/api/auth/refresh', latest.refreshToken);
         const response = await this.fetchWithTimeout('/api/auth/refresh', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-refresh-token': current.refreshToken,
+            'x-refresh-token': latest.refreshToken,
             'x-device-id': this.getDeviceId(),
             'x-app-version': this.getVersion(),
             ...proof
@@ -222,6 +229,12 @@ const API = {
         return payload;
       } catch (_error) {
         return null;
+      }
+      };
+      try {
+        return navigator.locks?.request
+          ? await navigator.locks.request('phim4k-session-refresh', rotate)
+          : await rotate();
       } finally {
         this.refreshPromise = null;
       }
@@ -243,7 +256,8 @@ const API = {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'x-app-version': this.getVersion()
+          'x-app-version': this.getVersion(),
+          'x-device-id': deviceId
         },
         body: JSON.stringify({ key, telegramId, deviceId, devicePublicKey })
       }, 15000);
@@ -279,7 +293,7 @@ const API = {
       return payload;
     } catch (err) {}
 
-    return { active: false, isAdmin: false, plan: 'OFFLINE' };
+    return { active: false, isAdmin: false, plan: 'OFFLINE', code: 'STATUS_UNAVAILABLE', transient: true };
   },
 
   async logout() {
