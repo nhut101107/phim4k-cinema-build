@@ -36,9 +36,9 @@ const PUBLIC_RELEASES = Object.freeze({
   }),
   windows: Object.freeze({
     url: 'https://drive.usercontent.google.com/download?id=1uOmdX9AwTPVHFYQsTlQp0ifyvNmSYU4_&export=download&confirm=t',
-    version: '3.55',
-    sha256: '1b2721c02e442c4abb4c48da854b153df24876d85f3fae72920adb2ecdb49f31',
-    sizeBytes: 120964411,
+    version: '3.56',
+    sha256: '5bd381fb5f9a4b329b3ddd9c83fddef50e4be12a5475db87a691c3ceea14156b',
+    sizeBytes: 120999359,
     signer: 'github-actions[bot]',
   }),
 });
