@@ -6,3 +6,4 @@
 2026-09-28 MNHUT rebuild #10: verify packaged Windows provider surface without runner codec dependency
 2026-09-28 MNHUT rebuild #11: align Windows smoke with direct-entry app state and preserve diagnostics
 2026-09-28 MNHUT rebuild #12: verify the packaged Windows close control with its real selector
+2026-09-28 MNHUT rebuild #13: align Android device smoke with the direct-entry app state

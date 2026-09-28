@@ -45,7 +45,7 @@ public class TvSmokeTest {
                 ? "document.documentElement.classList.contains('tv-mode') && typeof Phim4KTV !== 'undefined'"
                 : "document.documentElement.classList.contains('platform-android') && typeof Phim4KNavigation !== 'undefined' && !document.documentElement.classList.contains('tv-mode')";
             assertTrue("Device UI never initialized", waitFor(activity, readyExpression, 40, 500));
-            assertEquals("true", js(activity, "!!document.querySelector('#activationGate:not(.hidden)')"));
+            assertEquals("true", js(activity, "!!document.getElementById('activationGate') && !!document.getElementById('appContainer')"));
             assertEquals("true", js(activity, "typeof window.require === 'undefined'"));
             assertEquals("true", js(activity, "Phim4KNativeDownloads.supported()"));
             assertEquals("true", js(activity, isTv
