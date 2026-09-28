@@ -1609,6 +1609,9 @@ div#activationGate.hidden {
 }
 
 .movie-section {
+  content-visibility: auto;
+  contain-intrinsic-size: 460px;
+  contain: layout paint style;
   margin-bottom: 52px;
 }
 
