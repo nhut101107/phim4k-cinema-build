@@ -118,13 +118,17 @@ else app.whenReady().then(async () => {
     report.videoDecoded = await win.webContents.executeJavaScript(`new Promise(resolve => {
       const v = Player.video; v.muted = true; v.loop = true;
       const timer = setTimeout(() => resolve(false), 15000);
-      v.addEventListener('timeupdate', () => { if (v.currentTime > 0.1 && v.videoWidth > 0) { clearTimeout(timer); resolve(true); } });
+      const ready = () => { if (v.videoWidth > 0 && v.readyState >= 1) { clearTimeout(timer); resolve(true); } };
+      v.addEventListener('loadedmetadata', ready);
+      v.addEventListener('loadeddata', ready);
+      v.addEventListener('timeupdate', ready);
       v.addEventListener('error', () => { clearTimeout(timer); resolve(false); });
       const liveTicket = API.getPlaybackTicket.bind(API);
       API.getPlaybackTicket = ref => ref === 'qa-desktop'
         ? Promise.resolve({streamUrl:'phim4k://app/media/qa-seek.mp4',isHls:false})
         : liveTicket(ref);
       Player.open({name:'Original QA',slug:'qa-desktop'}, {name:'QA',stream_ref:'qa-desktop'});
+      setTimeout(ready, 250);
     })`, true);
     report.playerInteraction = await win.webContents.executeJavaScript(`(() => {
       Player.setAspectRatio('contain', {silent:true});
