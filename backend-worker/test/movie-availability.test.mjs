@@ -4,6 +4,11 @@ import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 import worker from '../src/worker.mjs';
 
+test('movie availability audit is scheduled continuously', () => {
+  const config = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8');
+  assert.match(config, /\[triggers\][\s\S]*?crons\s*=\s*\["\*\/10 \* \* \* \*"\]/);
+});
+
 function fixture() {
   const sqlite = new DatabaseSync(':memory:');
   sqlite.exec(readFileSync(new URL('../schema.sql', import.meta.url), 'utf8'));
