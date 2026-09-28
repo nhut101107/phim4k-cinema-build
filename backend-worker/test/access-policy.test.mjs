@@ -204,7 +204,7 @@ test('verified admin on an outdated iPhone is directed to the current iOS releas
     })).json();
     assert.equal(windowsAdmin.active,false);
     assert.equal(windowsAdmin.forceUpdate,true);
-    assert.equal(windowsAdmin.latestVersion,'3.55');
+    assert.equal(windowsAdmin.latestVersion,'3.56');
     assert.match(windowsAdmin.downloadUrl,/^https:\/\/drive\.usercontent\.google\.com\/download/);
 
     f.seed('P4K-REGULAR-KEY');
