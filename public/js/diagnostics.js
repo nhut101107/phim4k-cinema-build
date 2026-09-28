@@ -151,6 +151,11 @@
     this.video.addEventListener('timeupdate', () => this.notePlaybackProgress());
     this.video.addEventListener('waiting', () => this.scheduleStallRecovery('waiting'));
     this.video.addEventListener('stalled', () => {
+      // The native video element is deliberately emptied and hidden while the
+      // provider iframe is active. Safari can emit a late `stalled` event for
+      // that detached source; never cover a healthy EnsMovie embed with a
+      // false relay warning.
+      if (this.suppressBuffering || this.wrapper?.classList.contains('embed-active') || !this.activeStreamUrl) return;
       this.showBuffering(true, 'Luồng đang bị gián đoạn…');
       this.scheduleStallRecovery('stalled', 9000);
     });

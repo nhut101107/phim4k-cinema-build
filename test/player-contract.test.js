@@ -45,6 +45,11 @@ test('web playback restores the EnsMovie embed before any relay ticket', () => {
   assert.match(pagesWorker, /usesBrowserPlayer && request\.method === 'GET' && url\.pathname\.startsWith\('\/api\/movies\/'\)[\s\S]*?fetchDirectMovieCatalog\(url\.pathname, url\.searchParams\)/);
 });
 
+test('hidden native video cannot cover an active EnsMovie embed with a false stall warning', () => {
+  const diagnostics = fs.readFileSync(path.join(root, 'public/js/diagnostics.js'), 'utf8');
+  assert.match(diagnostics, /if \(this\.suppressBuffering \|\| this\.wrapper\?\.classList\.contains\('embed-active'\) \|\| !this\.activeStreamUrl\) return;/);
+});
+
 test('exhausted servers stop the failed media element instead of buffering forever', () => {
   assert.match(player, /onVideo\('waiting',[\s\S]*?if \(this\.suppressBuffering\) return/);
   assert.match(player, /Tất cả server hiện có đều không phản hồi[\s\S]*?this\.suppressBuffering = true;[\s\S]*?this\.video\.removeAttribute\('src'\)/);
