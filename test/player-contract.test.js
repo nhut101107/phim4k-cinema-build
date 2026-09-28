@@ -35,12 +35,13 @@ test('all clients keep the previously working provider player path', () => {
   assert.doesNotMatch(player, /publicWebPlayback/);
 });
 
-test('web playback restores the EnsMovie embed before any relay ticket', () => {
-  const embed = player.indexOf('this.playEmbedStream(providerEmbedUrl)');
+test('desktop playback resolves the protected EnsMovie path before the raw embed fallback', () => {
+  const embed = player.lastIndexOf('this.playEmbedStream(providerEmbedUrl)');
   const ticket = player.indexOf('API.getPlaybackTicket(episode.stream_ref)');
-  assert.ok(embed >= 0 && ticket >= 0 && embed < ticket);
+  assert.ok(embed >= 0 && ticket >= 0 && ticket < embed);
+  assert.match(player, /preferProtectedPlayer = runtime === 'web' \|\| runtime === 'windows'/);
   assert.match(player, /playEmbedStream\(embedUrl\)[\s\S]*?iframe\.src = safeEmbedUrl/);
-  assert.match(pagesWorker, /request\.method === 'GET' && url\.pathname\.startsWith\('\/api\/movies\/detail\/'\)[\s\S]*?fetchDirectMovieCatalog\(url\.pathname, url\.searchParams\)/);
+  assert.match(pagesWorker, /url\.pathname\.startsWith\('\/api\/movies\/detail\/'\)[\s\S]*?return proxyTo\(request, LICENSE_ORIGIN/);
   assert.doesNotMatch(pagesWorker, /usesBrowserPlayer/);
   assert.match(player, /resolutionBadge\.className = 'badge-real-res hidden'/);
 });
