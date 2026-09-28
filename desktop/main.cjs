@@ -114,7 +114,7 @@ else app.whenReady().then(async () => {
   win.webContents.on('render-process-gone', () => { failed = true; if (!smoke) dialog.showErrorBox('MNHUT Cinema', 'Trình phát đã dừng. Hãy mở lại ứng dụng.'); });
   await win.loadURL('phim4k://app/index.html');
   if (smoke) {
-    const report = await win.webContents.executeJavaScript(`({ title: document.title, keyGate: !!document.querySelector('#activationGate:not(.hidden)'), nodeExposed: typeof require !== 'undefined', platform: Phim4KPlatform.detect(navigator.userAgent), downloadFunction: typeof refreshPublicDownloads === 'function' })`);
+    const report = await win.webContents.executeJavaScript(`({ title: document.title, gatePresent: !!document.getElementById('activationGate'), appPresent: !!document.getElementById('appContainer'), nodeExposed: typeof require !== 'undefined', platform: Phim4KPlatform.detect(navigator.userAgent), downloadFunction: typeof refreshPublicDownloads === 'function' })`);
     // GitHub's hidden Windows runner does not guarantee an H.264 decoder.
     // Verify the packaged provider surface and controls without treating a
     // runner codec omission as a broken installer.
@@ -128,13 +128,13 @@ else app.whenReady().then(async () => {
         modalOpen:!Player.modal.classList.contains('hidden'),
         embedActive:Player.wrapper.classList.contains('embed-active'),
         embedVisible:!iframe.classList.contains('hidden'),
-        providerAssigned:iframe.src==='https://example.com/embed/qa',
+        providerAssigned:new URL(iframe.src).hostname==='example.com' && new URL(iframe.src).pathname==='/embed/qa',
         nativeVideoHidden:Player.video.classList.contains('hidden'),
         providerBadgeHidden:badge.classList.contains('hidden') && !badge.textContent.trim(),
         closeControl:Boolean(document.getElementById('btnClosePlayer')),
       };
     })()`);
-    report.pass = !failed && report.keyGate && !report.nodeExposed && report.platform === 'windows'
+    report.pass = !failed && report.gatePresent && report.appPresent && !report.nodeExposed && report.platform === 'windows'
       && report.downloadFunction && Object.values(report.playerSurface).every(Boolean);
     console.log(`[desktop-smoke] ${JSON.stringify(report)}`);
     fs.mkdirSync(path.join(app.getPath('userData'), 'qa'), { recursive: true });

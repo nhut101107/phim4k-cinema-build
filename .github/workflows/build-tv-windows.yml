@@ -25,9 +25,13 @@ jobs:
       - run: npm run desktop:verify
       - shell: pwsh
         run: |
-          $p = Start-Process -FilePath '.\builds\windows-3.56\win-unpacked\MNHUT Cinema.exe' -ArgumentList '--smoke-test' -WindowStyle Hidden -PassThru
+          $stdout = Join-Path $env:RUNNER_TEMP 'desktop-smoke.stdout.log'
+          $stderr = Join-Path $env:RUNNER_TEMP 'desktop-smoke.stderr.log'
+          $p = Start-Process -FilePath '.\builds\windows-3.56\win-unpacked\MNHUT Cinema.exe' -ArgumentList '--smoke-test' -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
           if (!$p.WaitForExit(60000)) { $p.Kill(); throw 'Desktop smoke timed out' }
-          if ($p.ExitCode -ne 0) { throw 'Desktop smoke failed' }
+          if (Test-Path $stdout) { Get-Content $stdout }
+          if (Test-Path $stderr) { Get-Content $stderr }
+          if ($p.ExitCode -ne 0) { throw "Desktop smoke failed with exit code $($p.ExitCode)" }
       - uses: actions/upload-artifact@v4
         with:
           name: 4K-Cinema-Windows-3.56
