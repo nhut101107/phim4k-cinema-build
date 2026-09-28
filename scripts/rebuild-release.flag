@@ -3,3 +3,4 @@
 2026-09-28 MNHUT rebuild #7: publish false-stall fix and stabilize packaged Windows verification
 2026-09-28 MNHUT rebuild #8: validate packaged Windows video surface without headless codec timing
 2026-09-28 MNHUT rebuild #9: sync stable web playback to every client and rotate admin credentials
+2026-09-28 MNHUT rebuild #10: verify packaged Windows provider surface without runner codec dependency
