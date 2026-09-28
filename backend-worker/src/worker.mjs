@@ -512,6 +512,20 @@ function getClientIp(request) {
   return String(request.headers.get("cf-connecting-ip") || "unknown").slice(0, 64);
 }
 
+function requestDeviceName(request) {
+  const userAgent = String(request.headers.get("user-agent") || "").slice(0, 300);
+  const runtime = requestRuntime(request);
+  if (/iPad/i.test(userAgent)) return "iPad";
+  if (/iPhone/i.test(userAgent)) return "iPhone";
+  if (/Phim4KTV|Android TV|TV;/i.test(userAgent)) return "Android TV";
+  const androidModel = userAgent.match(/Android[^;)]*;\s*([^;)]+?)(?:\s+Build\/|[;)])/i)?.[1]?.trim();
+  if (androidModel) return `Android · ${androidModel}`.slice(0, 100);
+  if (/Android/i.test(userAgent)) return "Android";
+  if (/Windows/i.test(userAgent)) return "Windows";
+  if (/Macintosh|Mac OS X/i.test(userAgent)) return "macOS";
+  return runtime === "web" ? "Trình duyệt web" : runtime;
+}
+
 function ratePolicy(pathname) {
   if (pathname === "/api/auth/activate" || pathname === "/api/auth/request-device-access") return RATE_LIMITS.authActivate;
   if (pathname === "/api/auth/status" || pathname === "/api/auth/device-status") return RATE_LIMITS.authStatus;
@@ -728,6 +742,17 @@ async function ensureMultiDeviceSchema(db) {
     "CREATE TABLE IF NOT EXISTS license_devices (license_key TEXT NOT NULL, device_id TEXT NOT NULL, slot INTEGER NOT NULL, created_at TEXT NOT NULL, last_seen_at TEXT NOT NULL, approved_by TEXT, PRIMARY KEY (license_key, device_id), UNIQUE (license_key, slot), FOREIGN KEY (license_key) REFERENCES license_keys(license_key) ON DELETE CASCADE)",
   ).bind().run();
   await db.prepare("CREATE INDEX IF NOT EXISTS idx_license_devices_device ON license_devices(device_id)").bind().run();
+  for (const statement of [
+    "ALTER TABLE license_devices ADD COLUMN last_ip TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE license_devices ADD COLUMN device_name TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE license_devices ADD COLUMN user_agent TEXT NOT NULL DEFAULT ''",
+  ]) {
+    try { await db.prepare(statement).bind().run(); } catch (_error) { /* column already exists */ }
+  }
+  await db.prepare(
+    "CREATE TABLE IF NOT EXISTS security_bans (scope TEXT NOT NULL CHECK(scope IN ('device', 'ip')), value TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (scope, value))",
+  ).bind().run();
+  await db.prepare("CREATE INDEX IF NOT EXISTS idx_security_bans_value ON security_bans(value)").bind().run();
   await db.prepare(
     "INSERT OR IGNORE INTO license_limits (license_key, max_devices, updated_at) SELECT license_key, 1, updated_at FROM license_keys",
   ).bind().run();
@@ -739,6 +764,34 @@ async function ensureMultiDeviceSchema(db) {
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_sessions_active_user_device ON auth_sessions(license_key, device_id) WHERE role = 'user' AND revoked_at IS NULL",
   ).bind().run();
   multiDeviceSchemaReady.add(db);
+}
+
+async function recordDeviceObservation(db, request, licenseKey, deviceId) {
+  if (!db || !licenseKey || !deviceId) return;
+  try {
+    await ensureMultiDeviceSchema(db);
+    await db.prepare(
+      "UPDATE license_devices SET last_seen_at = ?, last_ip = ?, device_name = ?, user_agent = ? WHERE license_key = ? AND device_id = ?",
+    ).bind(now(), getClientIp(request), requestDeviceName(request), String(request.headers.get("user-agent") || "").slice(0, 300), licenseKey, deviceId).run();
+  } catch (_error) { /* observations must never interrupt playback */ }
+}
+
+async function securityBanForRequest(request, env) {
+  if (!env.DB) return null;
+  try {
+    await ensureMultiDeviceSchema(env.DB);
+    const deviceId = normalizeDeviceId(request.headers.get("x-device-id"));
+    const ip = getClientIp(request);
+    if (deviceId) {
+      const deviceBan = await queryOne(env.DB, "SELECT reason FROM security_bans WHERE scope = 'device' AND value = ?", deviceId);
+      if (deviceBan) return textError("Thiết bị đã bị Admin khóa.", 403, "DEVICE_BANNED");
+    }
+    if (ip && ip !== "unknown") {
+      const ipBan = await queryOne(env.DB, "SELECT reason FROM security_bans WHERE scope = 'ip' AND value = ?", ip);
+      if (ipBan) return textError("Mạng này đã bị Admin khóa.", 403, "NETWORK_BANNED");
+    }
+  } catch (_error) { /* fail open if a migration is still propagating */ }
+  return null;
 }
 
 async function licenseDeviceState(db, key) {
@@ -989,11 +1042,18 @@ async function handleTelemetry(request, env) {
   const identity = await verifyTelemetryViewer(request, env);
   if (identity.error) return identity.error;
   const body = await parseBody(request);
+  if (identity.licenseKey) await recordDeviceObservation(env.DB, request, identity.licenseKey, identity.deviceId);
   const events = normalizeTelemetryEvents(body.events);
   if (!events.length) return textError("Không có hoạt động hợp lệ để ghi.", 400, "INVALID_TELEMETRY");
   const device = maskedValue(identity.deviceId, 6);
   for (const event of events) {
-    const context = { device, version: String(appVersion(request)).slice(0, 24), ...event.context };
+    const context = {
+      device,
+      deviceName: requestDeviceName(request),
+      ip: getClientIp(request),
+      version: String(appVersion(request)).slice(0, 24),
+      ...event.context,
+    };
     // Preserve valid JSON rather than slicing a serialized object mid-field.
     for (const key of Object.keys(event.context).reverse()) {
       if (JSON.stringify(context).length <= 490) break;
@@ -1537,8 +1597,7 @@ async function activationStatus({ db, key, telegramId, deviceId, request, env, a
       deviceCount: deviceState.deviceCount,
     }, 403);
   }
-  await db.prepare("UPDATE license_devices SET last_seen_at = ? WHERE license_key = ? AND device_id = ?")
-    .bind(now(), key, deviceId).run();
+  await recordDeviceObservation(db, request, key, deviceId);
 
   const bound = await queryOne(db, 'SELECT * FROM license_keys WHERE license_key = ?', key);
   if (!bound?.active || isExpired(bound.expires_at)) return textError('Key không còn hiệu lực.', 403, 'KEY_DISABLED');
@@ -1972,13 +2031,16 @@ async function listUsers(request, env) {
   const missing = dbUnavailable(env);
   if (missing) return missing;
   await ensureMultiDeviceSchema(env.DB);
-  const [rows, deviceRows, limitRows] = await Promise.all([
+  const [rows, deviceRows, limitRows, securityRows] = await Promise.all([
     env.DB.prepare(
       "SELECT license_keys.*, bans.telegram_id AS banned_telegram_id, bans.reason AS ban_reason FROM license_keys LEFT JOIN bans ON bans.telegram_id = COALESCE(license_keys.activated_telegram_id, license_keys.assigned_telegram_id) ORDER BY license_keys.updated_at DESC",
     ).bind().all(),
-    env.DB.prepare("SELECT license_key, device_id, slot, last_seen_at FROM license_devices ORDER BY license_key, slot").bind().all(),
+    env.DB.prepare("SELECT license_key, device_id, slot, last_seen_at, last_ip, device_name FROM license_devices ORDER BY license_key, slot").bind().all(),
     env.DB.prepare("SELECT license_key, max_devices FROM license_limits").bind().all(),
+    env.DB.prepare("SELECT scope, value FROM security_bans").bind().all(),
   ]);
+  const bannedDevices = new Set((securityRows.results || []).filter((item) => item.scope === "device").map((item) => item.value));
+  const bannedIps = new Set((securityRows.results || []).filter((item) => item.scope === "ip").map((item) => item.value));
   const devicesByKey = new Map();
   for (const item of (deviceRows.results || [])) {
     if (!devicesByKey.has(item.license_key)) devicesByKey.set(item.license_key, []);
@@ -1986,6 +2048,10 @@ async function listUsers(request, env) {
       deviceId: item.device_id,
       slot: Number(item.slot || 0),
       lastSeenAt: item.last_seen_at || "",
+      lastIp: item.last_ip || "",
+      deviceName: item.device_name || "",
+      deviceBanned: bannedDevices.has(item.device_id),
+      ipBanned: Boolean(item.last_ip) && bannedIps.has(item.last_ip),
     });
   }
   const limits = new Map((limitRows.results || []).map((item) => [item.license_key, Number(item.max_devices || 1)]));
@@ -2003,6 +2069,10 @@ async function listUsers(request, env) {
       status: !record.active ? "Đã bị ban" : (isExpired(record.expires_at) ? "Hết hạn" : "Bình thường"),
       expiresAt: record.expires_at || null,
       boundDeviceId: devices[0]?.deviceId || record.device_id || "",
+      lastIp: devices[0]?.lastIp || "",
+      deviceName: devices[0]?.deviceName || "",
+      deviceBanned: Boolean(devices[0]?.deviceBanned),
+      ipBanned: Boolean(devices[0]?.ipBanned),
       devices,
       deviceCount: devices.length,
       maxDevices: Math.min(20, Math.max(1, limits.get(record.license_key) || 1)),
@@ -2020,6 +2090,27 @@ async function setBan(request, env, banned) {
   const key = normalizeKey(body.key || body.licenseKey);
   const deviceId = normalizeDeviceId(body.deviceId);
   const telegramId = normalizeId(body.telegramId);
+  const scope = ["device", "ip"].includes(body.scope) ? body.scope : "user";
+  const scopeValue = scope === "device" ? deviceId : scope === "ip" ? String(body.ip || "").trim().slice(0, 64) : "";
+
+  if (scope !== "user") {
+    if (!scopeValue || (scope === "ip" && scopeValue === "unknown")) return textError("Mục tiêu khóa không hợp lệ.", 400, "INVALID_BAN_TARGET");
+    await ensureMultiDeviceSchema(env.DB);
+    const timestamp = now();
+    if (banned) {
+      await env.DB.prepare(
+        "INSERT INTO security_bans (scope, value, reason, created_at, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(scope, value) DO UPDATE SET reason = excluded.reason, updated_at = excluded.updated_at",
+      ).bind(scope, scopeValue, String(body.reason || "").slice(0, 300), timestamp, timestamp).run();
+      if (scope === "device") await env.DB.prepare("UPDATE auth_sessions SET revoked_at = ?, updated_at = ? WHERE device_id = ? AND revoked_at IS NULL").bind(timestamp, timestamp, scopeValue).run();
+    } else {
+      await env.DB.prepare("DELETE FROM security_bans WHERE scope = ? AND value = ?").bind(scope, scopeValue).run();
+    }
+    await logEvent(env.DB, `${scope}_${banned ? "banned" : "unbanned"}`, {
+      actorTelegramId: requestTelegram(request),
+      detail: `${scope}=${maskedValue(scopeValue, scope === "ip" ? 3 : 6)} ${String(body.reason || "").slice(0, 160)}`.trim(),
+    });
+    return json({ success: true, message: `${banned ? "Đã khóa" : "Đã mở khóa"} ${scope === "ip" ? "IP mạng" : "thiết bị"}.` });
+  }
 
   let license = null;
   if (key && validKey(key)) {
@@ -3968,6 +4059,14 @@ export default {
       }
       if ((request.method === "GET" || request.method === "HEAD") && INSTALLER_RELEASES[pathname]) {
         return await handleInstallerDownload(request, pathname);
+      }
+      // Media segments can be requested many times per second. Their signed,
+      // short-lived ticket already binds the session, so do the database ban
+      // lookup on auth/catalog/playback requests instead of adding D1 latency
+      // to every segment and poster.
+      if (!pathname.startsWith("/api/admin/") && !pathname.startsWith("/api/media/") && pathname !== "/api/health") {
+        const blocked = await securityBanForRequest(request, env);
+        if (blocked) return blocked;
       }
       if (request.method === "GET" && pathname === "/api/media/image") return await handleProtectedMovieImage(request, env, executionContext);
       if (request.method === "GET" && pathname === "/api/media/stream") return await handleMovieStream(request, env);

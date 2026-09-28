@@ -30,12 +30,25 @@ CREATE TABLE IF NOT EXISTS license_devices (
   created_at TEXT NOT NULL,
   last_seen_at TEXT NOT NULL,
   approved_by TEXT,
+  last_ip TEXT NOT NULL DEFAULT '',
+  device_name TEXT NOT NULL DEFAULT '',
+  user_agent TEXT NOT NULL DEFAULT '',
   PRIMARY KEY (license_key, device_id),
   UNIQUE (license_key, slot),
   FOREIGN KEY (license_key) REFERENCES license_keys(license_key) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_license_devices_device ON license_devices(device_id);
+
+CREATE TABLE IF NOT EXISTS security_bans (
+  scope TEXT NOT NULL CHECK(scope IN ('device', 'ip')),
+  value TEXT NOT NULL,
+  reason TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (scope, value)
+);
+CREATE INDEX IF NOT EXISTS idx_security_bans_value ON security_bans(value);
 
 CREATE TABLE IF NOT EXISTS auth_sessions (
   session_id TEXT PRIMARY KEY,

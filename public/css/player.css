@@ -73,7 +73,7 @@
 
 .movie-copyright-watermark {
   position: absolute;
-  z-index: 28;
+  z-index: 45;
   top: max(clamp(52px, 6vh, 72px), calc(env(safe-area-inset-top) + 48px));
   right: max(clamp(70px, 7vw, 140px), calc(env(safe-area-inset-right) + 42px));
   color: rgba(255, 255, 255, .72);
@@ -88,6 +88,16 @@
   opacity: .74;
   pointer-events: none;
   user-select: none;
+  transform: translateZ(1px);
+}
+
+/* The player is already a full-screen black surface. Stop expensive catalogue
+   painting behind it so playback gets the compositor budget on low-end phones. */
+body.player-open #mainContent,
+body.player-open #navbar,
+body.player-open #bottomTabBar {
+  content-visibility: hidden;
+  pointer-events: none;
 }
 
 @media (orientation: portrait) {
@@ -233,7 +243,9 @@ video::cue {
   min-height: 62px;
   box-sizing: border-box;
   display: grid;
-  grid-template-columns: minmax(110px, 1fr) minmax(0, 1.5fr) minmax(110px, 1fr);
+  /* Let the action group keep its real width. Fractional outer columns made
+     wide landscape controls spill left over the centred movie title. */
+  grid-template-columns: auto minmax(0, 1fr) max-content;
   align-items: center;
   gap: 10px;
   padding: max(9px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) 9px max(14px, env(safe-area-inset-left));
@@ -568,6 +580,50 @@ video::cue {
   .aspect-mode-control .ctrl-btn-text { padding-inline: 9px; }
   .volume-slider { display: none; }
   #btnQuality { display: none; }
+}
+
+/* Phones report very different CSS viewport heights across Safari, installed
+   PWAs and native WebViews. Cover the taller landscape viewports too, while
+   preserving every important action instead of letting controls overlap. */
+@media (orientation: landscape) and (max-height: 760px) and (max-width: 1600px) {
+  .player-top-bar {
+    grid-template-columns: 42px minmax(0, 1fr) max-content;
+    gap: 6px;
+    min-height: 48px;
+    padding: max(5px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) 5px max(10px, env(safe-area-inset-left));
+  }
+  .btn-back {
+    width: 38px;
+    min-width: 38px;
+    min-height: 36px;
+    padding: 7px;
+    font-size: 0;
+  }
+  .player-title-info h3 { font-size: 13px; }
+  .player-title-info span,
+  .badge-real-res,
+  .player-noads-pill,
+  .player-top-actions #btnAutoSkipAdsTop { display: none !important; }
+  .player-top-actions { gap: 5px; }
+  .btn-player-server {
+    max-width: 152px;
+    min-height: 36px;
+    padding: 5px 9px;
+    overflow: hidden;
+    font-size: 11px;
+    text-overflow: ellipsis;
+  }
+  .player-top-actions .btn-player-report {
+    min-height: 36px !important;
+    padding: 5px 9px !important;
+    font-size: 11px !important;
+    white-space: nowrap !important;
+  }
+  .btn-close-player {
+    width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+  }
 }
 
 @media (orientation: landscape) and (max-width: 640px) {

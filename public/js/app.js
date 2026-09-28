@@ -26,6 +26,7 @@ const App = {
   activeMovieDetail: null,
   activeServerIndex: 0,
   searchDebounceTimer: null,
+  searchRequestId: 0,
   scrollFrame: 0,
   detailRequestId: 0,
 
@@ -105,7 +106,6 @@ const App = {
 
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden && this.currentCategory === 'home') {
-        API.clearMovieCache();
         this.loadHomeFeed({ silent: true });
         this.loadAnnouncement();
       }
@@ -179,10 +179,7 @@ const App = {
 
     try {
       const data = await API.getHomeFeed();
-      if (renderedBundledCatalog) {
-        await this.preloadHomeArtwork(data);
-        // A slow image host must not keep yesterday's movie metadata on screen.
-      }
+      if (renderedBundledCatalog) void this.preloadHomeArtwork(data);
       const signature = this.catalogSignature(data);
       if (!silent || signature !== this.homeFeedSignature) this.applyHomeFeed(data);
       else this.updateLiveFeedLabel();
@@ -204,7 +201,18 @@ const App = {
 
   catalogSignature(data) {
     const sections = Array.isArray(data?.sections) ? data.sections : [];
-    return JSON.stringify({ hero: data?.hero, sections });
+    const movieKey = (movie) => [
+      movie?.slug || movie?.name || '', movie?.year || '', movie?.episode_current || '',
+      movie?.quality || '', movie?.lang || '', movie?.modified?.time || movie?.updated_at || ''
+    ];
+    return JSON.stringify({
+      hero: (Array.isArray(data?.hero) ? data.hero : []).map(movieKey),
+      sections: sections.map((section) => ({
+        id: section?.id || section?.title || '',
+        title: section?.title || '',
+        items: (Array.isArray(section?.items) ? section.items : []).map(movieKey),
+      })),
+    });
   },
 
   updateLiveFeedLabel() {
@@ -213,7 +221,7 @@ const App = {
     });
   },
 
-  preloadHomeArtwork(data, timeoutMs = 5000) {
+  preloadHomeArtwork(data, timeoutMs = 1200) {
     const sections = Array.isArray(data?.sections) ? data.sections : [];
     const candidates = this.uniqueMovies([
       ...(Array.isArray(data?.hero) ? data.hero : []),
@@ -254,6 +262,12 @@ const App = {
   },
 
   applyHomeFeed(data) {
+    const railPositions = new Map(
+      [...document.querySelectorAll('#dynamicSections [data-section-id]')].map((section) => [
+        section.dataset.sectionId,
+        section.querySelector('.cinema-rail')?.scrollLeft || 0,
+      ])
+    );
     let sections = Array.isArray(data?.sections) ? data.sections : [];
     if (!sections.some((section) => Array.isArray(section?.items) && section.items.length > 0)) {
       if (data?.policy !== Phim4KHome.POLICY) {
@@ -289,6 +303,13 @@ const App = {
     }
 
     this.renderHomeCatalog();
+    requestAnimationFrame(() => {
+      document.querySelectorAll('#dynamicSections [data-section-id]').forEach((section) => {
+        const previous = railPositions.get(section.dataset.sectionId);
+        const rail = section.querySelector('.cinema-rail');
+        if (rail && Number.isFinite(previous) && previous > 0) rail.scrollLeft = previous;
+      });
+    });
     this.renderSchedule();
   },
 
@@ -563,8 +584,13 @@ const App = {
     const requestId = reset ? ++this.filterRequestId : this.filterRequestId;
     const page = reset ? 1 : this.filterPagination.currentPage + 1;
     if (reset) {
-      this.filterResults = [];
-      this.filterPagination = { currentPage: 0, totalPages: 0, totalItems: 0 };
+      const localResults = this.browseAllMode ? this.homeCatalog : this.moviesMatching();
+      this.filterResults = localResults;
+      this.filterPagination = {
+        currentPage: localResults.length ? 1 : 0,
+        totalPages: localResults.length ? 1 : 0,
+        totalItems: localResults.length,
+      };
     }
     this.filterLoading = true;
     this.filterError = '';
@@ -578,7 +604,9 @@ const App = {
         }, page);
       if (requestId !== this.filterRequestId) return;
       const incoming = this.enrichMovies(Array.isArray(data.items) ? data.items : []);
-      this.filterResults = reset ? incoming : this.uniqueMovies([...this.filterResults, ...incoming]);
+      this.filterResults = reset
+        ? this.uniqueMovies([...incoming, ...this.filterResults])
+        : this.uniqueMovies([...this.filterResults, ...incoming]);
       this.filterPagination = {
         currentPage: Number(data.pagination?.currentPage || page),
         totalPages: Number(data.pagination?.totalPages || page),
@@ -657,15 +685,16 @@ const App = {
     // The Worker reads the public catalogue directly, so frequent metadata
     // refreshes need no VPS or always-on PC. Pause while hidden or playing to
     // avoid wasting bandwidth and disrupting playback.
-    }, isTv ? 60000 : 20000);
+    }, isTv ? 90000 : 60000);
   },
 
   startAnnouncementRefresh() {
     clearInterval(this.announcementRefreshTimer);
     void this.loadAnnouncement();
     this.announcementRefreshTimer = setInterval(() => {
-      if (!document.hidden) void this.loadAnnouncement();
-    }, 30000);
+      const playerOpen = !document.getElementById('playerModal')?.classList.contains('hidden');
+      if (!document.hidden && !playerOpen) void this.loadAnnouncement();
+    }, 10000);
   },
 
   async loadAnnouncement() {
@@ -824,7 +853,7 @@ const App = {
 
     card.innerHTML = `
       <div class="card-poster-wrapper">
-        <img class="card-poster" src="${this.escapeHtml(posterUrl)}" alt="${this.escapeHtml(movie.name || 'Poster phim')}" loading="lazy" decoding="async" width="300" height="450" />
+        <img class="card-poster" src="${this.escapeHtml(posterUrl)}" alt="${this.escapeHtml(movie.name || 'Poster phim')}" loading="${railIndex !== null && railIndex < 2 ? 'eager' : 'lazy'}" fetchpriority="${railIndex !== null && railIndex < 2 ? 'high' : 'auto'}" decoding="async" width="300" height="450" />
         ${railIndex !== null ? `<span class="card-rail-number" aria-hidden="true">${String(railIndex + 1).padStart(2, '0')}</span>` : ''}
         <span class="card-badge-quality">${this.escapeHtml(movie.quality || 'FHD')}</span>
         ${epCurrent ? `<span class="card-badge-ep">${this.escapeHtml(epCurrent)}</span>` : ''}
@@ -1034,8 +1063,15 @@ const App = {
   // =================================================
   async performInstantSearch(query) {
     const dropdown = document.getElementById('searchDropdown');
+    const requestId = ++this.searchRequestId;
+    const normalized = this.normalizeFilterValue(query);
+    const localItems = this.homeCatalog.filter((movie) => this.normalizeFilterValue([
+      movie?.name, movie?.origin_name, movie?.year
+    ].filter(Boolean).join(' ')).includes(normalized)).slice(0, 6);
+    if (localItems.length) this.renderInstantSearch(localItems);
     try {
       const data = await API.search(query, 1);
+      if (requestId !== this.searchRequestId) return;
       const items = (data.items || []).slice(0, 6);
       if (items.length === 0) {
         dropdown.innerHTML = '<div style="padding: 14px; text-align: center; color: var(--text-dim); font-size: 13px;">Không tìm thấy phim phù hợp</div>';
@@ -1043,6 +1079,14 @@ const App = {
         return;
       }
 
+      this.renderInstantSearch(items);
+    } catch (err) {
+      if (!localItems.length && requestId === this.searchRequestId) dropdown.classList.add('hidden');
+    }
+  },
+
+  renderInstantSearch(items = []) {
+      const dropdown = document.getElementById('searchDropdown');
       dropdown.innerHTML = '';
       items.forEach(movie => {
         const item = document.createElement('div');
@@ -1066,9 +1110,6 @@ const App = {
       });
 
       dropdown.classList.remove('hidden');
-    } catch (err) {
-      dropdown.classList.add('hidden');
-    }
   },
 
   hideSearchDropdown() {

@@ -80,6 +80,13 @@ test('fullscreen follows the live visual viewport after native rotation', () => 
   assert.match(css, /height: var\(--player-viewport-height, 100%\)/);
 });
 
+test('landscape player header keeps server and report actions clear of the title', () => {
+  assert.match(css, /grid-template-columns: auto minmax\(0, 1fr\) max-content/);
+  assert.match(css, /orientation: landscape\) and \(max-height: 760px\) and \(max-width: 1600px/);
+  assert.match(css, /\.player-top-actions \.btn-player-report\s*\{[\s\S]*?white-space: nowrap !important/);
+  assert.match(css, /env\(safe-area-inset-right\)[\s\S]*?env\(safe-area-inset-left\)/);
+});
+
 test('admin owns a block scroll layout so horizontal tabs cannot flex-shrink away', () => {
   const modal=fs.readFileSync(path.join(root,'public/css/modal.css'),'utf8');
   assert.match(modal,/\.admin-dialog\s*\{[^}]*display:\s*block/);

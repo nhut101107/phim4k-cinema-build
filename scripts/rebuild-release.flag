@@ -9,3 +9,4 @@
 2026-09-28 MNHUT rebuild #13: align Android device smoke with the direct-entry app state
 2026-09-28 MNHUT rebuild #14: remove stale iOS document scroll locks across web and apps
 2026-09-28 MNHUT rebuild #15: stabilize Android phone device test on the supported API 31 image
+2026-09-28 MNHUT rebuild #16: keep every player action visible in phone landscape mode

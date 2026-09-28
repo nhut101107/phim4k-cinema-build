@@ -1040,6 +1040,31 @@
   color: #f87171;
 }
 
+/* Readable audit cards: identity and technical context no longer run together
+   in one terminal line on phones. */
+.terminal-body .log-line {
+  display: grid;
+  gap: 9px;
+  padding: 12px;
+  background: rgba(15, 23, 42, .58);
+  border: 1px solid rgba(148, 163, 184, .12);
+  border-radius: 10px;
+}
+.log-card-header,
+.log-identity-row { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.log-card-header .log-action { margin-right: auto; font-size: 13px; }
+.log-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.log-detail-grid > span { min-width: 0; padding: 7px 8px; background: rgba(255,255,255,.035); border-radius: 7px; }
+.log-detail-grid b { display: block; color: #7dd3fc; font-family: inherit; font-size: 9px; font-weight: 700; line-height: 1.2; text-transform: uppercase; letter-spacing: .04em; }
+.log-detail-grid em { display: block; margin-top: 3px; overflow-wrap: anywhere; color: #dbe4f0; font-style: normal; line-height: 1.35; }
+.log-identity-row { padding-top: 2px; border-top: 1px solid rgba(255,255,255,.05); }
+
+@media (max-width: 600px) {
+  .terminal-body { padding: 10px !important; }
+  .log-detail-grid { grid-template-columns: 1fr; }
+  .log-card-header .log-time { flex-basis: 100%; }
+}
+
 .log-dim {
   color: #64748b;
 }

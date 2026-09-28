@@ -9,8 +9,14 @@ const Coverflow = {
 
   init(movies = []) {
     if (!movies || movies.length === 0) return;
+    const currentSlug = this.movies[this.currentIndex]?.slug || '';
     this.movies = movies;
-    this.currentIndex = 0;
+    const preservedIndex = currentSlug
+      ? this.movies.findIndex((movie) => movie?.slug === currentSlug)
+      : -1;
+    this.currentIndex = preservedIndex >= 0
+      ? preservedIndex
+      : Math.min(this.currentIndex, Math.max(this.movies.length - 1, 0));
     this.renderCards();
     this.updateDetails();
     this.setupGestures();

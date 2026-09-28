@@ -178,7 +178,7 @@ test('iOS entry point cache-busts every bundled script and stylesheet', () => {
   const html = read('../public/index.html');
   const localAssets = [...html.matchAll(/(?:src|href)="\/(?:js|css|vendor)\/[^"?]+(?:\?[^" ]+)?"/g)].map(match => match[0]);
   assert.ok(localAssets.length >= 20);
-  assert.ok(localAssets.every(asset => asset.includes('?v=3.56.8')), localAssets.join('\n'));
+  assert.ok(localAssets.every(asset => asset.includes('?v=3.56.10')), localAssets.join('\n'));
   assert.match(html, /MNHUT Cinema 3\.56[^<]*BẢN ĐỒNG BỘ ĐA THIẾT BỊ/);
 });
 
@@ -434,7 +434,7 @@ test('home refreshes near real time without rebuilding unchanged cards and suppo
   const index = read('../public/index.html');
   const worker = read('../backend-worker/src/worker.mjs');
   assert.match(api, /cachedMovieRequest\('\/api\/movies\/home', 12000\)/);
-  assert.match(app, /\}, 30000\);/);
+  assert.match(app, /\}, 10000\);/);
   assert.match(app, /catalogSignature/);
   assert.match(app, /signature !== this\.homeFeedSignature/);
   assert.match(app, /window\.addEventListener\('online'/);

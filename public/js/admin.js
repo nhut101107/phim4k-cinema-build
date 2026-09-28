@@ -7,6 +7,7 @@ const Admin = {
   logCursor: null,
   loadedLogs: [],
   logRefreshTimer: null,
+  userRefreshTimer: null,
   logLoading: false,
 
   async loadAccessPolicy() {
@@ -149,12 +150,14 @@ const Admin = {
 
   close() {
     this.stopLogAutoRefresh();
+    this.stopUserAutoRefresh();
     document.getElementById('adminModal').classList.add('hidden');
   },
 
   switchTab(tab) {
     this.currentTab = tab;
     this.stopLogAutoRefresh();
+    this.stopUserAutoRefresh();
 
     // Tabs navigation buttons
     ['keys', 'users', 'downloads', 'content', 'logs'].forEach(t => {
@@ -168,7 +171,10 @@ const Admin = {
       this.loadKeys();
       this.loadDeviceRequests();
     }
-    if (tab === 'users') this.loadUsers();
+    if (tab === 'users') {
+      this.loadUsers();
+      this.startUserAutoRefresh();
+    }
     if (tab === 'downloads') return Promise.all([this.loadDownloadsConfig(), this.loadAccessPolicy()]);
     if (tab === 'content') return Promise.all([this.loadContentStatus(), this.loadAnnouncementEditor(), this.loadMovieReports()]);
     if (tab === 'logs') {
@@ -690,13 +696,13 @@ const Admin = {
   // ====================================================
   async loadUsers() {
     const tbody = document.getElementById('usersTableBody');
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px;">Đang tải danh sách người dùng...</td></tr>';
+    if (!tbody.children.length) tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 20px;">Đang tải danh sách người dùng...</td></tr>';
 
     try {
       const data = await API.request('/api/admin/users', { cache: 'no-store' });
       this.renderUsersTable(data.users || []);
     } catch (err) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #f87171; padding: 20px;">Lỗi tải danh sách người dùng!</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #f87171; padding: 20px;">Lỗi tải danh sách người dùng!</td></tr>';
     }
   },
 
@@ -709,7 +715,7 @@ const Admin = {
     if (!users.length) {
       const row = document.createElement('tr');
       const cell = document.createElement('td');
-      cell.colSpan = 7;
+      cell.colSpan = 9;
       cell.textContent = 'Chưa có tài khoản nào được ghi nhận.';
       cell.style.cssText = 'text-align:center;color:var(--text-dim);padding:20px;';
       row.appendChild(cell);
@@ -738,6 +744,8 @@ const Admin = {
       const key = String(user.key || '');
       const deviceId = String(user.boundDeviceId || '');
       row.appendChild(makeCell(deviceId || 'Chưa gắn thiết bị', true));
+      row.appendChild(makeCell(user.deviceName || 'Chưa nhận diện'));
+      row.appendChild(makeCell(user.lastIp || 'Chưa ghi nhận', true));
       row.appendChild(makeCell(key, true));
       row.appendChild(makeCell(user.plan || 'VIP'));
       row.appendChild(makeCell(user.expiresAt ? new Date(user.expiresAt).toLocaleDateString('vi-VN') : 'Vĩnh viễn'));
@@ -758,6 +766,8 @@ const Admin = {
       } else {
         actions.appendChild(makeButton('Ban user', 'btn-ban', () => this.banUser(key, deviceId)));
       }
+      if (deviceId) actions.appendChild(makeButton(user.deviceBanned ? 'Mở thiết bị' : 'Ban thiết bị', user.deviceBanned ? 'btn-unban' : 'btn-ban', () => this.setSecurityBan('device', deviceId, !user.deviceBanned)));
+      if (user.lastIp && user.lastIp !== 'unknown') actions.appendChild(makeButton(user.ipBanned ? 'Mở IP' : 'Ban IP', user.ipBanned ? 'btn-unban' : 'btn-ban', () => this.setSecurityBan('ip', user.lastIp, !user.ipBanned)));
       actions.appendChild(makeButton('Nhật ký', 'btn-time', () => this.viewAccountLogs(deviceId || key)));
       actionCell.appendChild(actions);
       row.appendChild(actionCell);
@@ -795,6 +805,35 @@ const Admin = {
     }
   },
 
+  async setSecurityBan(scope, value, banned) {
+    const label = scope === 'ip' ? 'IP mạng' : 'thiết bị';
+    const reason = banned ? prompt(`Lý do khóa ${label} [${value}]:`, 'Vi phạm điều khoản sử dụng') : '';
+    if (banned && reason === null) return;
+    if (!confirm(`${banned ? 'Khóa' : 'Mở khóa'} ${label} này?`)) return;
+    try {
+      const data = await API.request(`/api/admin/${banned ? 'ban-user' : 'unban-user'}`, {
+        method: 'POST',
+        body: JSON.stringify({ scope, deviceId: scope === 'device' ? value : '', ip: scope === 'ip' ? value : '', reason: reason || '' })
+      });
+      alert(`✔ ${data.message}`);
+      await this.loadUsers();
+    } catch (error) {
+      alert(`❌ ${error.message}`);
+    }
+  },
+
+  startUserAutoRefresh() {
+    this.stopUserAutoRefresh();
+    this.userRefreshTimer = window.setInterval(() => {
+      if (this.currentTab === 'users' && !document.hidden) void this.loadUsers();
+    }, 10000);
+  },
+
+  stopUserAutoRefresh() {
+    if (this.userRefreshTimer) window.clearInterval(this.userRefreshTimer);
+    this.userRefreshTimer = null;
+  },
+
   viewAccountLogs(telegramId) {
     this.logAccountFilter = telegramId;
     const filter = document.getElementById('logAccountFilter');
@@ -823,7 +862,7 @@ const Admin = {
     this.stopLogAutoRefresh();
     this.logRefreshTimer = window.setInterval(() => {
       if (this.currentTab === 'logs' && !document.hidden) this.loadLogs();
-    }, 20000);
+    }, 10000);
   },
 
   stopLogAutoRefresh() {
@@ -1083,6 +1122,7 @@ const Admin = {
       seconds: 'Vị trí', duration: 'Thời lượng', watched: 'Đã xem', error: 'Lỗi', entry: 'Cách vào', version: 'Phiên bản',
       session: 'Phiên', runtime: 'Nền tảng', screen: 'Màn hình', language: 'Ngôn ngữ', network: 'Mạng',
       viewport: 'Vùng hiển thị', visibility: 'Hiển thị', uptime: 'Thời gian mở (giây)', buffered: 'Đệm (giây)', readyState: 'Trạng thái video', eventAt: 'Giờ thiết bị', device: 'Thiết bị (đã che)', os: 'Hệ điều hành', browser: 'Trình duyệt'
+      , deviceName: 'Tên thiết bị', ip: 'IP mạng'
     };
 
     logs.forEach(l => {
@@ -1099,30 +1139,44 @@ const Admin = {
       if (l.type === 'USER') typeClass = 'log-tag-user';
       if (l.type === 'SECURITY') typeClass = 'log-tag-ddos';
 
-      const append = (className, value) => {
+      const header = document.createElement('div');
+      header.className = 'log-card-header';
+      const append = (parent, className, value) => {
         const span = document.createElement('span');
         span.className = className;
         span.textContent = value;
-        line.appendChild(span);
+        parent.appendChild(span);
       };
-      append('log-time', time);
-      append(`log-tag ${typeClass}`, `[${l.type || 'INFO'}]`);
-      append('log-action', `${actionNames[l.action] || l.action || 'Sự kiện'}:`);
+      append(header, 'log-time', time);
+      append(header, `log-tag ${typeClass}`, l.type || 'INFO');
+      append(header, 'log-action', actionNames[l.action] || l.action || 'Sự kiện');
+      line.appendChild(header);
       const context = l.context && typeof l.context === 'object' ? l.context : {};
-      const details = Object.entries(context)
-        .filter(([key]) => key !== 'device')
-        .map(([key, value]) => `${contextLabels[key] || key}: ${value}`)
-        .join(' · ');
-      append('log-text', details || l.details || 'Không có chi tiết');
-      if (l.account?.telegramId) append('log-account', `TG:${l.account.telegramId}`);
-      if (l.account?.deviceHash) append('log-account', `DEV:${l.account.deviceHash}`);
+      const details = document.createElement('div');
+      details.className = 'log-detail-grid';
+      Object.entries(context).forEach(([key, value]) => {
+        const item = document.createElement('span');
+        const label = document.createElement('b');
+        label.textContent = contextLabels[key] || key;
+        const content = document.createElement('em');
+        content.textContent = String(value);
+        item.append(label, content);
+        details.appendChild(item);
+      });
+      if (!details.children.length) append(details, 'log-text', l.details || 'Không có chi tiết');
+      line.appendChild(details);
+      const identity = document.createElement('div');
+      identity.className = 'log-identity-row';
+      if (l.account?.telegramId) append(identity, 'log-account', `Telegram ${l.account.telegramId}`);
+      if (l.account?.deviceHash) append(identity, 'log-account', `Thiết bị ${l.account.deviceHash}`);
+      if (identity.children.length) line.appendChild(identity);
 
       container.appendChild(line);
     });
 
     document.getElementById('logLoadedCount').textContent = String(logs.length);
     document.getElementById('logViewerCount').textContent = String(logs.filter((log) => log.type === 'USER').length);
-    document.getElementById('logUserCount').textContent = String(new Set(logs.map((log) => log.account?.telegramId).filter(Boolean)).size);
+    document.getElementById('logUserCount').textContent = String(new Set(logs.map((log) => log.account?.telegramId || log.account?.deviceHash).filter(Boolean)).size);
     document.getElementById('logErrorCount').textContent = String(logs.filter((log) => log.action === 'usage_playback_error').length);
     document.getElementById('logSessionCount').textContent = String(new Set(logs.map((log) => log.context?.session).filter(Boolean)).size);
     const watchedSeconds = logs.reduce((sum, log) => sum + (Number(log.context?.watched) || 0), 0);

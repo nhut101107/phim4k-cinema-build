@@ -35,6 +35,18 @@ test('Admin UI can configure and inspect multiple devices per key', () => {
   assert.match(admin, /maxDevices/);
 });
 
+test('Admin can inspect and independently block a device or network address', () => {
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS security_bans/);
+  assert.match(schema, /last_ip TEXT NOT NULL DEFAULT/);
+  assert.match(schema, /device_name TEXT NOT NULL DEFAULT/);
+  assert.match(worker, /securityBanForRequest/);
+  assert.match(worker, /DEVICE_BANNED/);
+  assert.match(worker, /NETWORK_BANNED/);
+  assert.match(admin, /setSecurityBan\('device'/);
+  assert.match(admin, /setSecurityBan\('ip'/);
+  assert.match(admin, /startUserAutoRefresh/);
+});
+
 test('device is remembered through a secure session instead of persisting the raw key', () => {
   assert.match(auth, /SessionVault\.save\(res\)/);
   assert.match(auth, /localStorage\.removeItem\('phim4k_key'\)/);
