@@ -232,6 +232,16 @@ const Player = {
     this.currentEpisode = episode;
     this.suppressBuffering = false;
 
+    // Web uses the same provider embed player that powered the stable
+    // EnsMovie build. Do this before stream_ref resolution so an authenticated
+    // browser never gets routed back through our expiring relay ticket.
+    const publicWebPlayback = !window.Phim4KRuntime?.apiBaseUrl;
+    const providerEmbedUrl = publicWebPlayback ? (episode?.link_embed || '') : '';
+    if (providerEmbedUrl) {
+      this.playEmbedStream(providerEmbedUrl);
+      return;
+    }
+
     // Protected catalog entries resolve through the same backend source into
     // our native video surface. This keeps seek/history/double-tap controls
     // working without changing the provider selected by the user.
@@ -263,14 +273,7 @@ const Player = {
     // contract. This was the stable path before protected stream references
     // were added, and remains required whenever detail responses contain raw
     // link_embed/link_m3u8 fields instead of stream_ref.
-    const publicWebFallback = !window.Phim4KRuntime?.apiBaseUrl;
-    const embedUrl = publicWebFallback ? (episode?.link_embed || '') : '';
-    if (embedUrl) {
-      this.playEmbedStream(embedUrl);
-      return;
-    }
-
-    const directStreamUrl = publicWebFallback
+    const directStreamUrl = publicWebPlayback
       ? (episode?.link_m3u8 || episode?.m3u8 || episode?.stream_url || episode?.url || '')
       : '';
     if (directStreamUrl) {
@@ -288,6 +291,42 @@ const Player = {
     this.showBuffering(false);
     this.showAlert('Server này hiện không có luồng phát. Đang thử server khác…');
     this.fallbackToNextServer();
+  },
+
+  playEmbedStream(embedUrl) {
+    let safeEmbedUrl = '';
+    try {
+      const parsed = new URL(String(embedUrl || '').replace(/^http:\/\//i, 'https://'));
+      if (parsed.protocol === 'https:' && !parsed.username && !parsed.password) safeEmbedUrl = parsed.href;
+    } catch (_error) {}
+    if (!safeEmbedUrl) {
+      this.showAlert('Nguồn phát ENSMOVIE không hợp lệ. Đang thử server khác…');
+      this.fallbackToNextServer();
+      return;
+    }
+
+    this.activeStreamUrl = '';
+    this.suppressBuffering = true;
+    this.destroyHls();
+    this.clearStallWatchdog();
+    this.releaseAudioVideo();
+    if (this.video) {
+      this.video.pause();
+      this.video.removeAttribute('src');
+      this.video.load();
+      this.video.classList.add('hidden');
+    }
+    document.getElementById('playerBuffering')?.classList.add('hidden');
+    document.getElementById('btnCenterPlayPause')?.classList.add('hidden');
+    document.getElementById('playerControls')?.classList.add('hidden');
+    this.wrapper?.classList.add('embed-active');
+    const iframe = document.getElementById('playerEmbed');
+    if (iframe) {
+      iframe.src = safeEmbedUrl;
+      iframe.classList.remove('hidden');
+    }
+    this.showBuffering(false);
+    this.setResolutionBadge(0, 0, 'ENSMOVIE');
   },
 
   loadStream(streamUrl, options = {}) {

@@ -991,7 +991,27 @@ export default {
       }, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
     }
 
-    // 6. All Other Movie & Backend APIs -> Proxy to Upstream with fallback
+    // 6. Browser movie catalogue/playback comes from the provider contract
+    // used by the stable EnsMovie player. Resolve it before the licensed API:
+    // authenticated web sessions must keep link_embed/link_m3u8 and must not
+    // be converted into an expiring relay stream_ref.
+    const movieRequestRuntime = String(request.headers.get('x-app-runtime') || 'web').toLowerCase();
+    const usesBrowserPlayer = movieRequestRuntime === 'web' || movieRequestRuntime === 'pwa';
+    if (usesBrowserPlayer && request.method === 'GET' && url.pathname.startsWith('/api/movies/')) {
+      const movieCache = globalThis.caches?.default;
+      const movieCacheKey = publicMovieCacheRequest(url);
+      if (movieCache && movieCacheKey) {
+        const cached = await movieCache.match(movieCacheKey);
+        if (cached) return cached;
+      }
+      const direct = await fetchDirectMovieCatalog(url.pathname, url.searchParams);
+      if (direct) {
+        if (movieCache && movieCacheKey) ctx?.waitUntil(movieCache.put(movieCacheKey, direct.clone()));
+        return direct;
+      }
+    }
+
+    // 7. All Other Movie & Backend APIs -> Proxy to Upstream with fallback
     if (url.pathname.startsWith('/api/')) {
       const canCacheMovie = request.method === 'GET' && url.pathname.startsWith('/api/movies/');
       const movieCache = canCacheMovie ? globalThis.caches?.default : null;
@@ -1018,7 +1038,7 @@ export default {
       return response;
     }
 
-    // 7. Single-page application route: HTML requests get web-index.html
+    // 8. Single-page application route: HTML requests get web-index.html
     const wantsHtml = request.method === 'GET' && (request.headers.get('accept') || '').includes('text/html');
     if (url.pathname === '/' || (!url.pathname.includes('.') && wantsHtml)) {
       const previewUrl = new URL('/web-index.html', request.url);

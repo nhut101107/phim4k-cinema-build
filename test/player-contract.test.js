@@ -10,6 +10,7 @@ const coverflow = fs.readFileSync(path.join(root, 'public/js/coverflow.js'), 'ut
 const index = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'public/css/player.css'), 'utf8');
 const backend = fs.readFileSync(path.join(root, 'backend-worker/src/worker.mjs'), 'utf8');
+const pagesWorker = fs.readFileSync(path.join(root, 'public/_worker.js'), 'utf8');
 
 test('tapping any movie opens its description before playback', () => {
   assert.match(app, /async openMovieDetail\(slug\)/);
@@ -29,10 +30,19 @@ test('web fallback episodes use the native EnsMovie playback identity contract',
 
 test('raw Pages catalogue episodes keep the previously working provider player path', () => {
   assert.match(app, /episode\?\.link_embed \|\| episode\?\.link_m3u8/);
-  assert.match(player, /const publicWebFallback = !window\.Phim4KRuntime\?\.apiBaseUrl/);
+  assert.match(player, /const publicWebPlayback = !window\.Phim4KRuntime\?\.apiBaseUrl/);
   assert.match(player, /episode\?\.link_embed \|\| ''/);
   assert.match(player, /episode\?\.link_m3u8 \|\| episode\?\.m3u8/);
-  assert.ok(player.indexOf('const publicWebFallback = !window.Phim4KRuntime?.apiBaseUrl') < player.indexOf("this.showAlert('Server này hiện không có luồng phát"));
+  assert.ok(player.indexOf('const publicWebPlayback = !window.Phim4KRuntime?.apiBaseUrl') < player.indexOf("this.showAlert('Server này hiện không có luồng phát"));
+});
+
+test('web playback restores the EnsMovie embed before any relay ticket', () => {
+  const embed = player.indexOf('this.playEmbedStream(providerEmbedUrl)');
+  const ticket = player.indexOf('API.getPlaybackTicket(episode.stream_ref)');
+  assert.ok(embed >= 0 && ticket >= 0 && embed < ticket);
+  assert.match(player, /playEmbedStream\(embedUrl\)[\s\S]*?iframe\.src = safeEmbedUrl/);
+  assert.match(pagesWorker, /const usesBrowserPlayer = movieRequestRuntime === 'web' \|\| movieRequestRuntime === 'pwa'/);
+  assert.match(pagesWorker, /usesBrowserPlayer && request\.method === 'GET' && url\.pathname\.startsWith\('\/api\/movies\/'\)[\s\S]*?fetchDirectMovieCatalog\(url\.pathname, url\.searchParams\)/);
 });
 
 test('exhausted servers stop the failed media element instead of buffering forever', () => {

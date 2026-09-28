@@ -11,7 +11,7 @@ enum RuntimeIntegrityManifest {
         "public/css/style.css": "c0ee563ff3fce2a32c68e162d8a196571aa011c95232c77e926b7ef66ea54d65",
         "public/css/tv.css": "4ad38e4a9af9696fa99effd05e25e4bcfe05a5ea116b924dc467c71c5f43b192",
         "public/css/web-premium.css": "7b4e52655744695f4a365e2536faeee782438dacecc40a17c7a9d23503da2814",
-        "public/index.html": "dd583fdaf3f66c04a7a00ab54b1dbda8c3af559082569d58c8549b6bd3be07d0",
+        "public/index.html": "5c5ffe2829eab8f71f0ad8138b0166400776d13ba6ddaf43322bd656681df67d",
         "public/js/admin.js": "0166cf590f0664a776066313c234470001dd280bad0e41e62a4ca9427b5ebfc6",
         "public/js/api.js": "807e15339ae017a5a5b0fae923f1b0b7b13f21b294080ab09afdc1f3090adccc",
         "public/js/app.js": "dccefa34187bce1186c0a01560b69ddb86a33fcb3d0bbf0f86bf0042cd795a2f",
@@ -25,7 +25,7 @@ enum RuntimeIntegrityManifest {
         "public/js/native-downloads.js": "961f0e9c23b4271d373db2e55015ebd272228cc699cfe771de0adcef6f658814",
         "public/js/platform.js": "6dfb516cd395d03f2199d4d881b219f4f626237084856f3335d9447c03842fcb",
         "public/js/player-core.js": "9f8750318082163793065a81830435cf8fcf2426228c9fafabce9bf33550821e",
-        "public/js/player.js": "e066986c60e47f088df5c2c0e0b23bcb61ff5d0d122df664fce3621cb9965dcc",
+        "public/js/player.js": "269cd64ca005eebdffaa5f076d8882e01e55dafa224c5bb1429989b3dd645321",
         "public/js/release-copy.js": "d72075a12d7661c14b5929aebabe52d99923fdc161552b773db1f4988b73d1d6",
         "public/js/runtime-config.js": "70b624cb7eb3bd4a5d03d3e0ac68378199be801d5395a1754a3c7c55bfc3fc97",
         "public/js/session-vault.js": "78378fa00591fd2c977566fd5848ad6b5bf52f0ba0c8b3c2621cc6def4827ab3",
@@ -38,7 +38,7 @@ enum RuntimeIntegrityManifest {
         "public/media/superman_4k.jpg": "9339c63a766caa26647be0b64cacf0c95e3db29859ce4445b5e9db15a05ab7fe",
         "public/media/the_boys_4k.jpg": "572cb16dfb429292bb9fc690a0c5bfa28a8d688ed23588595e396b454067971a",
         "public/vendor/hls.min.js": "afcde07437ec84b072fe8782e772ceb5046eac751b2719f73ae0d83d763bc3f5",
-        "public/web-index.html": "f9ddee0a1c6ce2184833ba65f903cca9ef4aa49f6efaeccf8054702b240da6bf",
+        "public/web-index.html": "8a1ec10fe5064264f5df5858222273d7460a28761e4536918574c162f5f928cd",
     ]
 
     static func verify(in bundle: Bundle = .main) -> Bool {
