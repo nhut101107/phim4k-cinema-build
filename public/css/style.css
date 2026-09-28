@@ -43,9 +43,13 @@ body {
  * them can leave an iOS WebView permanently unscrollable after dismissal.
  */
 body.activation-locked {
-  overflow: hidden;
-  height: 100dvh;
-  touch-action: none;
+  /* The fixed activation overlay owns its own scrolling. Keeping a document
+     lock here can survive an iOS Safari class/style repaint and freeze the
+     home feed after the overlay is hidden. */
+  overflow-y: auto;
+  min-height: 100%;
+  height: auto;
+  touch-action: pan-y pinch-zoom;
 }
 
 /* Custom Scrollbar */

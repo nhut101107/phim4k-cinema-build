@@ -178,7 +178,7 @@ test('iOS entry point cache-busts every bundled script and stylesheet', () => {
   const html = read('../public/index.html');
   const localAssets = [...html.matchAll(/(?:src|href)="\/(?:js|css|vendor)\/[^"?]+(?:\?[^" ]+)?"/g)].map(match => match[0]);
   assert.ok(localAssets.length >= 20);
-  assert.ok(localAssets.every(asset => asset.includes('?v=3.56.7')), localAssets.join('\n'));
+  assert.ok(localAssets.every(asset => asset.includes('?v=3.56.8')), localAssets.join('\n'));
   assert.match(html, /MNHUT Cinema 3\.56[^<]*BẢN ĐỒNG BỘ ĐA THIẾT BỊ/);
 });
 
@@ -198,6 +198,11 @@ test('only the activation screen can lock document scrolling', () => {
 
   assert.match(index, /<body class="activation-locked">/);
   assert.match(styles, /body\.activation-locked/);
+  assert.match(styles, /body\.activation-locked[\s\S]*?touch-action: pan-y pinch-zoom/);
+  assert.doesNotMatch(styles, /body\.activation-locked\s*\{[^}]*overflow:\s*hidden/);
+  assert.match(app, /new MutationObserver\(\(\) => this\.syncPageScrollLock\(\)\)/);
+  assert.match(app, /getComputedStyle\(gate\)\.display !== 'none'/);
+  assert.match(app, /element\.style\.removeProperty\('touch-action'\)/);
   assert.doesNotMatch(styles, /body\.locked/);
   assert.doesNotMatch(app, /classList\.add\('locked'/);
   assert.doesNotMatch(player, /classList\.add\('locked'/);

@@ -32,6 +32,11 @@ const App = {
   init() {
     this.bindEvents();
     this.bindTouchFeedback();
+    const activationGate = document.getElementById('activationGate');
+    if (activationGate && typeof MutationObserver !== 'undefined') {
+      this.activationGateObserver = new MutationObserver(() => this.syncPageScrollLock());
+      this.activationGateObserver.observe(activationGate, { attributes: true, attributeFilter: ['class', 'style'] });
+    }
     this.syncPageScrollLock();
     this.loadHomeFeed();
     this.startHomeFeedRefresh();
@@ -113,11 +118,24 @@ const App = {
   },
 
   syncPageScrollLock() {
-    const gateOpen = !document.getElementById('activationGate')?.classList.contains('hidden');
+    const gate = document.getElementById('activationGate');
+    const gateOpen = Boolean(gate
+      && !gate.classList.contains('hidden')
+      && gate.style.display !== 'none'
+      && getComputedStyle(gate).display !== 'none');
     // Modal/player overlays are fixed and manage their own scroll. Do not
     // lock the document for them: iOS WebView may retain that lock after an
     // overlay closes, making the home feed look frozen.
     document.body.classList.toggle('activation-locked', Boolean(gateOpen));
+    if (!gateOpen) {
+      for (const element of [document.documentElement, document.body]) {
+        element.style.removeProperty('overflow');
+        element.style.removeProperty('overflow-y');
+        element.style.removeProperty('height');
+        element.style.removeProperty('position');
+        element.style.removeProperty('touch-action');
+      }
+    }
   },
 
   // =================================================

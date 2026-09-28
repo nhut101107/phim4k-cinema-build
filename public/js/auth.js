@@ -287,6 +287,7 @@ const Auth = {
       app.classList.remove('hidden');
       app.style.removeProperty('display');
     }
+    window.App?.syncPageScrollLock?.();
 
     // VIP Plan display
     const vipText = document.getElementById('vipPlanText');
