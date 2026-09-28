@@ -29,6 +29,8 @@ const App = {
   searchRequestId: 0,
   scrollFrame: 0,
   detailRequestId: 0,
+  railInitialItems: 14,
+  railBatchItems: 12,
 
   init() {
     this.bindEvents();
@@ -787,37 +789,53 @@ const App = {
     `;
 
     const row = sec.querySelector(isGrid ? '.filtered-movie-grid' : '.cinema-rail');
+    const allItems = section.items || [];
+    const initialItems = isGrid ? allItems : allItems.slice(0, this.railInitialItems);
     const fragment = document.createDocumentFragment();
-    (section.items || []).forEach((movie, movieIndex) => {
+    initialItems.forEach((movie, movieIndex) => {
       const card = this.createMovieCard(movie, isGrid ? null : movieIndex);
       fragment.appendChild(card);
     });
     row.appendChild(fragment);
-    if (!isGrid) this.bindMovieRail(sec, row);
+    if (!isGrid) this.bindMovieRail(sec, row, allItems);
 
     return sec;
   },
 
-  bindMovieRail(section, row) {
+  bindMovieRail(section, row, items = []) {
     if (!row) return;
     const status = section.querySelector('.rail-position');
-    const cards = [...row.querySelectorAll('.movie-card')];
-    if (!status || !cards.length) return;
+    if (!status || !row.querySelector('.movie-card')) return;
     let frame = 0;
+    let mounted = row.querySelectorAll('.movie-card').length;
+    let appending = false;
+    const appendNext = () => {
+      if (appending || mounted >= items.length) return;
+      appending = true;
+      const end = Math.min(items.length, mounted + this.railBatchItems);
+      const fragment = document.createDocumentFragment();
+      for (let index = mounted; index < end; index += 1) {
+        fragment.appendChild(this.createMovieCard(items[index], index));
+      }
+      row.appendChild(fragment);
+      mounted = end;
+      appending = false;
+    };
     const update = () => {
       frame = 0;
       const rowRect = row.getBoundingClientRect();
       const guide = rowRect.left + Math.min(28, rowRect.width * 0.08);
       let nearestIndex = 0;
       let nearestDistance = Number.POSITIVE_INFINITY;
-      cards.forEach((card, index) => {
+      row.querySelectorAll('.movie-card').forEach((card, index) => {
         const distance = Math.abs(card.getBoundingClientRect().left - guide);
         if (distance < nearestDistance) {
           nearestDistance = distance;
           nearestIndex = index;
         }
       });
-      status.textContent = `${String(nearestIndex + 1).padStart(2, '0')} / ${String(cards.length).padStart(2, '0')}`;
+      status.textContent = `${String(nearestIndex + 1).padStart(2, '0')} / ${String(items.length).padStart(2, '0')}`;
+      if (row.scrollLeft + row.clientWidth >= row.scrollWidth - row.clientWidth) appendNext();
     };
     row.addEventListener('scroll', () => {
       if (!frame) frame = requestAnimationFrame(update);
