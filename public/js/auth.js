@@ -348,6 +348,9 @@ const Auth = {
           return;
         }
         if (!res.active) {
+          if (res.transient === true || ['STATUS_UNAVAILABLE', 'RATE_LIMITED', 'LICENSE_SERVER_UNAVAILABLE', 'INVALID_SERVER_RESPONSE'].includes(res.code)) {
+            return;
+          }
           // If freeAccess is still on server-side, just re-unlock silently
           if (res.freeAccess === true) {
             return;
