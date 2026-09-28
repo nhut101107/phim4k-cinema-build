@@ -126,7 +126,7 @@ const Admin = {
       if (window.promptAdminLogin) {
         window.promptAdminLogin();
       } else {
-        alert('Vui lòng đăng nhập với Key Admin: mnhut');
+        alert('Vui lòng đăng nhập bằng Key Admin.');
       }
       return;
     }

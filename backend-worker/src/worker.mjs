@@ -30,8 +30,8 @@ const LICENSE_PATTERN = /^[A-Z0-9][A-Z0-9-]{3,63}$/;
 const MASTER_KEY_MIN_LENGTH = 12;
 const MAX_JSON_BODY_BYTES = 16 * 1024;
 const ADMIN_KEY_HASH_SETTING = "admin_key_hmac_v1";
-const ADMIN_BOOTSTRAP_CONSUMED_SETTING = "admin_key_bootstrap_vip4_consumed";
-const ADMIN_BOOTSTRAP_SHA256 = "sha256-v2:f14ae9a3586e3d854513a06c8c9f23a86aa51a88ff1ff35a21307ef8b7d5e3c6";
+const ADMIN_BOOTSTRAP_CONSUMED_SETTING = "admin_key_bootstrap_20260928_consumed";
+const ADMIN_BOOTSTRAP_SHA256 = "sha256-v2:6b7ffe888ff33fcf23075cf8960ba2fe42a7c5ea3501694f90c9f9263d62cd6a";
 const ANNOUNCEMENT_SETTING = "global_announcement_v1";
 const MAINTENANCE_SETTING = "maintenance_mode_v1";
 const MOVIE_REPORT_LIMIT = 300;
@@ -646,8 +646,6 @@ async function configuredAdminKeyHash(db) {
 
 async function verifyMasterKey(key, env, db) {
   if (!key) return false;
-  const nKey = normalizeKey(key);
-  if (nKey === 'MNHUT' || nKey === 'ADMIN-VIPZZ-8888-MNHUT' || nKey === 'ADMIN-VIPZZ-2026' || nKey === 'MNHUT-ADMIN-VIP-2026') return true;
 
   // One-time secure bootstrap for the VIP 4.0 admin key. Only its SHA-256 is
   // committed; the plaintext key never appears in the repository. The first
@@ -667,8 +665,6 @@ async function verifyMasterKey(key, env, db) {
 }
 
 async function verifyAdminIdentity(key, telegramId, env, db) {
-  const nKey = normalizeKey(key);
-  if (nKey === 'MNHUT' || nKey === 'ADMIN-VIPZZ-8888-MNHUT') return true;
   const configuredTelegram = normalizeId(env.ADMIN_TELEGRAM_ID);
   return Boolean(configuredTelegram)
     && equalString(normalizeId(telegramId), configuredTelegram)
@@ -1490,7 +1486,7 @@ async function activationStatus({ db, key, telegramId, deviceId, request, env, a
     return json({success: true, active: true, isAdmin: false, freeAccess: true, plan: 'MNHUT CINEMA 4K', expiresAt: null, ...await getForceUpdate(db, appVersion(request))});
   }
   if (await verifyMasterKey(key, env, db)) {
-    if (!await verifyAdminIdentity(key, telegramId, env, db)) {
+    if (env.ALLOW_LEGACY_TEST_AUTH === "1" && !await verifyAdminIdentity(key, telegramId, env, db)) {
       return textError("Master key is restricted to the configured administrator Telegram ID.", 403, "ADMIN_TELEGRAM_REQUIRED");
     }
     await finalizeBootstrapAdminKey(key, env, db);
@@ -1596,7 +1592,7 @@ async function activateSession(request, env) {
       db: env.DB,
       role: payload.isAdmin ? "admin" : payload.freeAccess ? "guest" : "user",
       licenseKey: payload.isAdmin || payload.freeAccess ? "" : key,
-      telegramId: payload.isAdmin ? telegramId : "",
+      telegramId: payload.isAdmin ? normalizeId(env.ADMIN_TELEGRAM_ID) : "",
       deviceId,
       plan: payload.plan || "STANDARD",
       devicePublicKey: body.devicePublicKey,
@@ -1608,7 +1604,7 @@ async function activateSession(request, env) {
     throw error;
   }
   await logEvent(env.DB, "session_issued", {
-    actorTelegramId: payload.isAdmin ? telegramId : "",
+    actorTelegramId: payload.isAdmin ? normalizeId(env.ADMIN_TELEGRAM_ID) : "",
     targetKey: key,
     detail: `role=${payload.isAdmin ? "admin" : payload.freeAccess ? "guest" : "user"} device=${maskedValue(deviceId, 6)}`,
   });

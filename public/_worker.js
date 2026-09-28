@@ -8,59 +8,11 @@ const VSMOV_ORIGIN = 'https://vsmov.com';
 const OPHIM_ORIGIN = 'https://ophim1.com';
 const PHIMIMG_ORIGIN = 'https://phimimg.com';
 
-// Pre-configured Admin Keys (User specified key: mnhut)
-const ADMIN_MASTER_KEYS = new Set([
-  'mnhut',
-  'MNHUT',
-  'mnhutdznecon',
-  'ADMIN-VIPZZ-8888-MNHUT',
-  'ADMIN-VIPZZ-2026',
-  'MNHUT-ADMIN-VIP-2026'
-]);
-
 // In-memory runtime state for Cloudflare Pages instance (Runs 100% serverless on edge - No VPS or PC needed)
 const RUNTIME_STATE = {
   freeAccess: true, // Default to true: Public access for everyone to watch freely!
   maintenance: { active: false, message: 'Hệ thống đang được nâng cấp. Vui lòng quay lại sau.', expiresAt: null },
   keys: [
-    {
-      license_key: 'mnhut',
-      key: 'mnhut',
-      plan: 'SUPER ADMIN MASTER',
-      tier: 'admin',
-      isAdmin: true,
-      active: true,
-      assigned_telegram_id: '@mnhutdznecon',
-      telegramId: '@mnhutdznecon',
-      boundTelegramId: '@mnhutdznecon',
-      max_devices: 999,
-      maxDevices: 999,
-      device_count: 1,
-      deviceCount: 1,
-      devices: [{ deviceId: 'admin_primary', ip: '127.0.0.1', addedAt: new Date().toISOString() }],
-      expires_at: null,
-      expiresAt: null,
-      created_at: new Date().toISOString()
-    },
-    {
-      license_key: 'ADMIN-VIPZZ-8888-MNHUT',
-      key: 'ADMIN-VIPZZ-8888-MNHUT',
-      plan: 'SUPER ADMIN MASTER',
-      tier: 'admin',
-      isAdmin: true,
-      active: true,
-      assigned_telegram_id: '@mnhutdznecon',
-      telegramId: '@mnhutdznecon',
-      boundTelegramId: '@mnhutdznecon',
-      max_devices: 99,
-      maxDevices: 99,
-      device_count: 1,
-      deviceCount: 1,
-      devices: [{ deviceId: 'admin_backup', ip: '127.0.0.1', addedAt: new Date().toISOString() }],
-      expires_at: null,
-      expiresAt: null,
-      created_at: new Date().toISOString()
-    },
     {
       license_key: 'VIP-4K-CINEMA-2026',
       key: 'VIP-4K-CINEMA-2026',
@@ -86,7 +38,7 @@ const RUNTIME_STATE = {
   reportedIssues: [],
   logs: [
     { action: 'SYSTEM_BOOT', actor: 'SYSTEM', target: 'phim4vipzz', ip: '127.0.0.1', created_at: new Date().toISOString(), detail: 'Cloudflare Pages serverless edge online. Chế độ truy cập trực tiếp đang kích hoạt.' },
-    { action: 'ADMIN_READY', actor: '@mnhutdznecon', target: 'mnhut', ip: '127.0.0.1', created_at: new Date().toISOString(), detail: 'Master administrator key provisioned: mnhut' }
+    { action: 'SYSTEM_READY', actor: 'SYSTEM', target: 'admin-auth', ip: '127.0.0.1', created_at: new Date().toISOString(), detail: 'Server-authoritative administrator authentication enabled.' }
   ],
   stats: {
     ddosBlockedCount: 0
@@ -499,7 +451,6 @@ export default {
         licenseOrigin: LICENSE_ORIGIN,
         ensOrigin: ENS_ORIGIN,
         adminConfigured: true,
-        masterKey: 'mnhut',
         timestamp: new Date().toISOString()
       }, {
         headers: { 'cache-control': 'no-store', 'content-type': 'application/json; charset=utf-8' },
@@ -536,7 +487,8 @@ export default {
       });
     }
 
-    // 2. Auth Activation: Handles Admin Master Key 'mnhut', VIP keys, & Free Public Access
+    // 2. Legacy local activation fallback. Administrator authentication is
+    // always handled by the authoritative Worker above.
     if (request.method === 'POST' && url.pathname === '/api/auth/activate') {
       try {
         const body = await request.clone().json().catch(() => ({}));
@@ -544,8 +496,7 @@ export default {
         const teleId = String(body.telegramId || '').trim();
         const deviceId = String(body.deviceId || 'browser').trim();
 
-        // A. Check Master Admin Key ('mnhut' or configured admin master keys)
-        const isMasterAdmin = rawKey.toLowerCase() === 'mnhut' || ADMIN_MASTER_KEYS.has(rawKey) || ADMIN_MASTER_KEYS.has(rawKey.toUpperCase());
+        const isMasterAdmin = false;
         if (isMasterAdmin) {
           const accessToken = generateSecureToken('p4a_');
           const refreshToken = generateSecureToken('p4r_');
@@ -554,10 +505,10 @@ export default {
           RUNTIME_STATE.logs.unshift({
             action: 'ADMIN_LOGIN',
             actor: teleId || '@mnhutdznecon',
-            target: 'mnhut',
+            target: 'admin-auth',
             ip: clientIp,
             created_at: new Date().toISOString(),
-            detail: `Super Admin (mnhut) đăng nhập thành công trên thiết bị ${deviceId}`
+            detail: `Super Admin đăng nhập thành công trên thiết bị ${deviceId}`
           });
 
           return Response.json({
@@ -991,13 +942,9 @@ export default {
       }, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
     }
 
-    // 6. Browser movie catalogue/playback comes from the provider contract
-    // used by the stable EnsMovie player. Resolve it before the licensed API:
-    // authenticated web sessions must keep link_embed/link_m3u8 and must not
-    // be converted into an expiring relay stream_ref.
-    const movieRequestRuntime = String(request.headers.get('x-app-runtime') || 'web').toLowerCase();
-    const usesBrowserPlayer = movieRequestRuntime === 'web' || movieRequestRuntime === 'pwa';
-    if (usesBrowserPlayer && request.method === 'GET' && url.pathname.startsWith('/api/movies/detail/')) {
+    // 6. Every client uses the provider contract proven by the stable web
+    // player. Keep link_embed/link_m3u8 instead of an expiring relay reference.
+    if (request.method === 'GET' && url.pathname.startsWith('/api/movies/detail/')) {
       const movieCache = globalThis.caches?.default;
       const movieCacheKey = publicMovieCacheRequest(url);
       if (movieCache && movieCacheKey) {

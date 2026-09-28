@@ -401,11 +401,8 @@ async function handleActivation(e) {
   const spinner = document.getElementById('activateSpinner');
   const msgEl = document.getElementById('gateMessage');
 
-  let telegramId = document.getElementById('adminLoginFields')?.open ? teleInput.value.trim() : '';
+  const telegramId = document.getElementById('adminLoginFields')?.open ? teleInput.value.trim() : '';
   const key = keyInput.value.trim();
-  if (key.toLowerCase() === 'mnhut' && !telegramId) {
-    telegramId = '@mnhutdznecon';
-  }
 
   if (!key) {
     msgEl.textContent = 'Vui lòng nhập License Key!';

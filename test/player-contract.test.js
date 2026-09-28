@@ -28,12 +28,11 @@ test('web fallback episodes use the native EnsMovie playback identity contract',
   assert.match(player, /API\.getPlaybackTicket\(episode\.stream_ref\)/);
 });
 
-test('raw Pages catalogue episodes keep the previously working provider player path', () => {
+test('all clients keep the previously working provider player path', () => {
   assert.match(app, /episode\?\.link_embed \|\| episode\?\.link_m3u8/);
-  assert.match(player, /const publicWebPlayback = !window\.Phim4KRuntime\?\.apiBaseUrl/);
   assert.match(player, /episode\?\.link_embed \|\| ''/);
   assert.match(player, /episode\?\.link_m3u8 \|\| episode\?\.m3u8/);
-  assert.ok(player.indexOf('const publicWebPlayback = !window.Phim4KRuntime?.apiBaseUrl') < player.indexOf("this.showAlert('Server này hiện không có luồng phát"));
+  assert.doesNotMatch(player, /publicWebPlayback/);
 });
 
 test('web playback restores the EnsMovie embed before any relay ticket', () => {
@@ -41,8 +40,9 @@ test('web playback restores the EnsMovie embed before any relay ticket', () => {
   const ticket = player.indexOf('API.getPlaybackTicket(episode.stream_ref)');
   assert.ok(embed >= 0 && ticket >= 0 && embed < ticket);
   assert.match(player, /playEmbedStream\(embedUrl\)[\s\S]*?iframe\.src = safeEmbedUrl/);
-  assert.match(pagesWorker, /const usesBrowserPlayer = movieRequestRuntime === 'web' \|\| movieRequestRuntime === 'pwa'/);
-  assert.match(pagesWorker, /usesBrowserPlayer && request\.method === 'GET' && url\.pathname\.startsWith\('\/api\/movies\/detail\/'\)[\s\S]*?fetchDirectMovieCatalog\(url\.pathname, url\.searchParams\)/);
+  assert.match(pagesWorker, /request\.method === 'GET' && url\.pathname\.startsWith\('\/api\/movies\/detail\/'\)[\s\S]*?fetchDirectMovieCatalog\(url\.pathname, url\.searchParams\)/);
+  assert.doesNotMatch(pagesWorker, /usesBrowserPlayer/);
+  assert.match(player, /resolutionBadge\.className = 'badge-real-res hidden'/);
 });
 
 test('hidden native video cannot cover an active EnsMovie embed with a false stall warning', () => {

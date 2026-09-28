@@ -232,11 +232,10 @@ const Player = {
     this.currentEpisode = episode;
     this.suppressBuffering = false;
 
-    // Web uses the same provider embed player that powered the stable
-    // EnsMovie build. Do this before stream_ref resolution so an authenticated
-    // browser never gets routed back through our expiring relay ticket.
-    const publicWebPlayback = !window.Phim4KRuntime?.apiBaseUrl;
-    const providerEmbedUrl = publicWebPlayback ? (episode?.link_embed || '') : '';
+    // Every client uses the same provider embed player that powers the stable
+    // web build. Do this before stream_ref resolution so native clients do not
+    // get routed through an expiring relay ticket when a working embed exists.
+    const providerEmbedUrl = episode?.link_embed || '';
     if (providerEmbedUrl) {
       this.playEmbedStream(providerEmbedUrl);
       return;
@@ -269,13 +268,10 @@ const Player = {
       }
     }
 
-    // The public Pages catalogue uses the provider's original playback
-    // contract. This was the stable path before protected stream references
-    // were added, and remains required whenever detail responses contain raw
-    // link_embed/link_m3u8 fields instead of stream_ref.
-    const directStreamUrl = publicWebPlayback
-      ? (episode?.link_m3u8 || episode?.m3u8 || episode?.stream_url || episode?.url || '')
-      : '';
+    // Keep the provider's direct stream contract as the universal fallback
+    // whenever a title has no embed URL.
+    const directStreamUrl = episode?.link_m3u8 || episode?.m3u8
+      || episode?.stream_url || episode?.url || '';
     if (directStreamUrl) {
       this.video?.classList.remove('hidden');
       document.getElementById('playerEmbed')?.classList.add('hidden');
@@ -300,7 +296,7 @@ const Player = {
       if (parsed.protocol === 'https:' && !parsed.username && !parsed.password) safeEmbedUrl = parsed.href;
     } catch (_error) {}
     if (!safeEmbedUrl) {
-      this.showAlert('Nguồn phát ENSMOVIE không hợp lệ. Đang thử server khác…');
+      this.showAlert('Nguồn phát không hợp lệ. Đang thử server khác…');
       this.fallbackToNextServer();
       return;
     }
@@ -326,7 +322,11 @@ const Player = {
       iframe.classList.remove('hidden');
     }
     this.showBuffering(false);
-    this.setResolutionBadge(0, 0, 'ENSMOVIE');
+    const resolutionBadge = document.getElementById('realResolutionBadge');
+    if (resolutionBadge) {
+      resolutionBadge.textContent = '';
+      resolutionBadge.className = 'badge-real-res hidden';
+    }
   },
 
   loadStream(streamUrl, options = {}) {

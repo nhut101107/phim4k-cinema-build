@@ -1239,17 +1239,15 @@ const App = {
     });
   },
 
-  // EnsMovie resolves an episode by movie + source + server + episode identity.
-  // The authoritative API supplies stream_ref. The public web catalogue can
-  // fall back to provider-native episode metadata when that API is unavailable.
+  // Preserve provider-native playback metadata on every platform. Reconstruct
+  // a protected reference only for metadata-only responses.
   withPlaybackReference(episode, server, serverIndex, episodeIndex) {
     // The Pages catalogue deliberately returns the provider's native
     // link_embed/link_m3u8 contract. Keep those episodes intact so Player can
     // use the known-good provider playback path. Only reconstruct a protected
     // reference for metadata-only responses from the licensed backend.
-    const publicWebFallback = !window.Phim4KRuntime?.apiBaseUrl;
-    if (episode?.stream_ref || (publicWebFallback && (episode?.link_embed || episode?.link_m3u8
-      || episode?.m3u8 || episode?.stream_url || episode?.url))) return episode;
+    if (episode?.stream_ref || episode?.link_embed || episode?.link_m3u8
+      || episode?.m3u8 || episode?.stream_url || episode?.url) return episode;
     const movie = this.activeMovieDetail?.movie || {};
     return {
       ...episode,

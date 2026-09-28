@@ -178,7 +178,7 @@ test('iOS entry point cache-busts every bundled script and stylesheet', () => {
   const html = read('../public/index.html');
   const localAssets = [...html.matchAll(/(?:src|href)="\/(?:js|css|vendor)\/[^"?]+(?:\?[^" ]+)?"/g)].map(match => match[0]);
   assert.ok(localAssets.length >= 20);
-  assert.ok(localAssets.every(asset => asset.includes('?v=3.56.6')), localAssets.join('\n'));
+  assert.ok(localAssets.every(asset => asset.includes('?v=3.56.7')), localAssets.join('\n'));
   assert.match(html, /MNHUT Cinema 3\.56[^<]*BẢN ĐỒNG BỘ ĐA THIẾT BỊ/);
 });
 
@@ -363,11 +363,12 @@ test('native movie artwork accepts only opaque image tickets from its configured
   assert.match(appSource, /retry < 2/);
 });
 
-test('native runtime keeps provider fallback web-only and prefers playback tickets', () => {
+test('native runtime shares the stable provider playback path with web', () => {
   const bundled = ['../public/js/api.js', '../public/js/app.js', '../public/js/catalog-fallback.js', '../public/js/home-curation.js', '../public/js/player.js']
     .map(read).join('\n');
   assert.doesNotMatch(bundled, /phimapi|ophim1|phimimg|api\/media\/image\?url=|\/v1\/api|\/danh-sach\/phim-moi-cap-nhat/i);
-  assert.match(bundled, /const publicWebFallback = !window\.Phim4KRuntime\?\.apiBaseUrl/);
+  assert.doesNotMatch(bundled, /publicWebFallback|publicWebPlayback/);
+  assert.match(bundled, /const providerEmbedUrl = episode\?\.link_embed \|\| ''/);
   assert.match(bundled, /getPlaybackTicket/);
   assert.match(read('../public/js/player.js'), /stream_ref/);
 });
