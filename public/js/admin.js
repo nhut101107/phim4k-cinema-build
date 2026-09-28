@@ -10,6 +10,11 @@ const Admin = {
   userRefreshTimer: null,
   logLoading: false,
 
+  async secureFetch(input, init = {}) {
+    const secured = await window.SessionVault?.decorate?.(input, init) || init;
+    return window.fetch(input, secured);
+  },
+
   async loadAccessPolicy() {
     const toggle = document.getElementById('adminFreeAccess');
     const save = document.getElementById('saveAccessPolicy');
@@ -32,7 +37,7 @@ const Admin = {
     toggle.disabled = save.disabled = true;
     message.textContent = requestedFreeAccess ? 'Đang bật truy cập trực tiếp…' : 'Đang bật lại yêu cầu key…';
     try {
-      const response = await fetch('/api/admin/access-policy', {method:'POST', cache:'no-store', headers:{...this.getAdminHeaders(), 'Content-Type':'application/json'}, body:JSON.stringify({freeAccess:requestedFreeAccess})});
+      const response = await this.secureFetch('/api/admin/access-policy', {method:'POST', cache:'no-store', headers:{...this.getAdminHeaders(), 'Content-Type':'application/json'}, body:JSON.stringify({freeAccess:requestedFreeAccess})});
       const result = await response.json();
       if (!response.ok || !result.success || result.freeAccess !== requestedFreeAccess) throw new Error('Không lưu được chế độ');
       toggle.checked = result.freeAccess;
@@ -105,7 +110,7 @@ const Admin = {
     toggle.disabled = save.disabled = true;
     status.textContent = enabled ? 'Đang đóng phòng chiếu…' : 'Đang mở lại ứng dụng…';
     try {
-      const response = await fetch('/api/admin/maintenance', {
+      const response = await this.secureFetch('/api/admin/maintenance', {
         method: 'POST', cache: 'no-store',
         headers: { ...this.getAdminHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled, message, durationMinutes }),
@@ -198,7 +203,7 @@ const Admin = {
     if (!container) return;
     container.innerHTML = '<p class="admin-desc">Đang tải yêu cầu thiết bị…</p>';
     try {
-      const response = await fetch('/api/admin/device-access-requests', { headers: this.getAdminHeaders() });
+      const response = await this.secureFetch('/api/admin/device-access-requests', { headers: this.getAdminHeaders() });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.message || `HTTP ${response.status}`);
       const requests = Array.isArray(payload.requests) ? payload.requests : [];
@@ -249,7 +254,7 @@ const Admin = {
 
   async decideDeviceRequest(key, deviceId, decision) {
     try {
-      const response = await fetch('/api/admin/device-access-decision', {
+      const response = await this.secureFetch('/api/admin/device-access-decision', {
         method: 'POST',
         headers: this.getAdminHeaders(),
         body: JSON.stringify({ key, deviceId, decision })
@@ -272,7 +277,7 @@ const Admin = {
     if (!container) return;
     container.innerHTML = '<p class="admin-desc">Đang tải hộp thư báo lỗi…</p>';
     try {
-      const response = await fetch('/api/admin/reports', { cache: 'no-store', headers: this.getAdminHeaders() });
+      const response = await this.secureFetch('/api/admin/reports', { cache: 'no-store', headers: this.getAdminHeaders() });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || data.error || `HTTP ${response.status}`);
       container.replaceChildren();
@@ -361,8 +366,8 @@ const Admin = {
     const alertEl = document.getElementById('adminMasterKeyAlert');
     const newKey = String(input?.value || '').trim().toUpperCase();
 
-    if (!/^[A-Z0-9][A-Z0-9-]{11,63}$/.test(newKey)) {
-      alertEl.textContent = 'Key Admin mới phải dài 12–64 ký tự, chỉ gồm A–Z, số hoặc dấu gạch ngang.';
+    if (!/^[A-Z0-9][A-Z0-9-]{4,63}$/.test(newKey)) {
+      alertEl.textContent = 'Key Admin mới phải dài 5–64 ký tự, chỉ gồm A–Z, số hoặc dấu gạch ngang.';
       alertEl.className = 'gate-message error';
       alertEl.classList.remove('hidden');
       return;
@@ -370,7 +375,7 @@ const Admin = {
     if (!confirm('Đổi key Admin? Key cũ sẽ bị vô hiệu ngay sau khi đổi.')) return;
 
     try {
-      const res = await fetch('/api/admin/rotate-master-key', {
+      const res = await this.secureFetch('/api/admin/rotate-master-key', {
         method: 'POST',
         headers: this.getAdminHeaders(),
         body: JSON.stringify({ newKey })
@@ -403,7 +408,7 @@ const Admin = {
     tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px;">Đang tải danh sách key từ cơ sở dữ liệu...</td></tr>';
 
     try {
-      const res = await fetch('/api/admin/keys', {
+      const res = await this.secureFetch('/api/admin/keys', {
         headers: this.getAdminHeaders()
       });
 
@@ -524,7 +529,7 @@ const Admin = {
     if (!key) return;
 
     try {
-      const res = await fetch('/api/admin/create-key', {
+      const res = await this.secureFetch('/api/admin/create-key', {
         method: 'POST',
         headers: this.getAdminHeaders(),
         body: JSON.stringify({ key, plan, durationDays, assignedTelegramId, maxDevices })
@@ -560,7 +565,7 @@ const Admin = {
     }
 
     try {
-      const res = await fetch('/api/admin/renew-key', {
+      const res = await this.secureFetch('/api/admin/renew-key', {
         method: 'POST',
         headers: this.getAdminHeaders(),
         body: JSON.stringify({ key, addDays: numDays })
@@ -578,7 +583,7 @@ const Admin = {
     if (!confirm(`Gỡ toàn bộ thiết bị khỏi key [${key}]?\nTất cả phiên đang dùng key này sẽ bị đăng xuất.`)) return;
 
     try {
-      const res = await fetch('/api/admin/reset-device', {
+      const res = await this.secureFetch('/api/admin/reset-device', {
         method: 'POST',
         headers: this.getAdminHeaders(),
         body: JSON.stringify({ key })
@@ -601,7 +606,7 @@ const Admin = {
       return;
     }
     try {
-      const res = await fetch('/api/admin/set-max-devices', {
+      const res = await this.secureFetch('/api/admin/set-max-devices', {
         method: 'POST',
         headers: this.getAdminHeaders(),
         body: JSON.stringify({ key, maxDevices })
@@ -618,7 +623,7 @@ const Admin = {
   async removeDevice(key, deviceId) {
     if (!confirm(`Gỡ thiết bị [${deviceId}] khỏi key [${key}]?\nPhiên trên máy đó sẽ bị đăng xuất ngay.`)) return;
     try {
-      const res = await fetch('/api/admin/remove-device', {
+      const res = await this.secureFetch('/api/admin/remove-device', {
         method: 'POST',
         headers: this.getAdminHeaders(),
         body: JSON.stringify({ key, deviceId })
@@ -636,7 +641,7 @@ const Admin = {
     if (newTele === null) return;
 
     try {
-      const res = await fetch('/api/admin/reset-telegram', {
+      const res = await this.secureFetch('/api/admin/reset-telegram', {
         method: 'POST',
         headers: this.getAdminHeaders(),
         body: JSON.stringify({ key, newTelegramId: newTele.trim() })
@@ -652,7 +657,7 @@ const Admin = {
 
   async toggleKey(key) {
     try {
-      const res = await fetch('/api/admin/toggle-key', {
+      const res = await this.secureFetch('/api/admin/toggle-key', {
         method: 'POST',
         headers: this.getAdminHeaders(),
         body: JSON.stringify({ key })
@@ -669,7 +674,7 @@ const Admin = {
     if (!confirm(`CẢNH BÁO: Bạn có chắc chắn muốn xóa vĩnh viễn key [${key}] không?`)) return;
 
     try {
-      const res = await fetch('/api/admin/delete-key', {
+      const res = await this.secureFetch('/api/admin/delete-key', {
         method: 'POST',
         headers: this.getAdminHeaders(),
         body: JSON.stringify({ key })
@@ -746,7 +751,7 @@ const Admin = {
       row.appendChild(makeCell(deviceId || 'Chưa gắn thiết bị', true));
       row.appendChild(makeCell(user.deviceName || 'Chưa nhận diện'));
       row.appendChild(makeCell(user.lastIp || 'Chưa ghi nhận', true));
-      row.appendChild(makeCell(key, true));
+      row.appendChild(makeCell(key || 'Truy cập trực tiếp', true));
       row.appendChild(makeCell(user.plan || 'VIP'));
       row.appendChild(makeCell(user.expiresAt ? new Date(user.expiresAt).toLocaleDateString('vi-VN') : 'Vĩnh viễn'));
       row.appendChild(makeCell(user.telegramId || 'Không sử dụng'));
@@ -776,7 +781,7 @@ const Admin = {
   },
 
   async banUser(key, deviceId = '') {
-    const reason = prompt(`Lý do ban user dùng key [${key}]:`, 'Vi phạm điều khoản sử dụng');
+    const reason = prompt(key ? `Lý do ban user dùng key [${key}]:` : `Lý do ban thiết bị [${deviceId}]:`, 'Vi phạm điều khoản sử dụng');
     if (reason === null) return;
     if (!confirm(`Xác nhận ban user này? Key sẽ bị khóa ngay trên thiết bị đang dùng.`)) return;
     try {
@@ -929,7 +934,7 @@ const Admin = {
 
     sourceEl.textContent = 'Đang kiểm tra…';
     try {
-      const res = await fetch('/api/admin/content-status', { headers: this.getAdminHeaders() });
+      const res = await this.secureFetch('/api/admin/content-status', { headers: this.getAdminHeaders() });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
 
@@ -976,7 +981,7 @@ const Admin = {
     }
 
     try {
-      const res = await fetch('/api/admin/refresh-movies', {
+      const res = await this.secureFetch('/api/admin/refresh-movies', {
         method: 'POST',
         headers: this.getAdminHeaders()
       });
@@ -1048,7 +1053,7 @@ const Admin = {
       button.textContent = 'Đang gửi…';
     }
     try {
-      const response = await fetch('/api/admin/announcement', {
+      const response = await this.secureFetch('/api/admin/announcement', {
         method: 'POST',
         headers: this.getAdminHeaders(),
         body: JSON.stringify({ action: 'publish', title, message, durationMinutes })
@@ -1073,7 +1078,7 @@ const Admin = {
     const button = document.getElementById('announcementClearBtn');
     if (button) button.disabled = true;
     try {
-      const response = await fetch('/api/admin/announcement', {
+      const response = await this.secureFetch('/api/admin/announcement', {
         method: 'POST',
         headers: this.getAdminHeaders(),
         body: JSON.stringify({ action: 'clear' })
@@ -1243,7 +1248,7 @@ const Admin = {
     const alertEl = document.getElementById('editExpiryAlert');
 
     try {
-      const res = await fetch('/api/admin/set-key-expiry', {
+      const res = await this.secureFetch('/api/admin/set-key-expiry', {
         method: 'POST',
         headers: this.getAdminHeaders(),
         body: JSON.stringify({ key: this.editingKey, addDays: days })
@@ -1270,7 +1275,7 @@ const Admin = {
     const alertEl = document.getElementById('editExpiryAlert');
 
     try {
-      const res = await fetch('/api/admin/set-key-expiry', {
+      const res = await this.secureFetch('/api/admin/set-key-expiry', {
         method: 'POST',
         headers: this.getAdminHeaders(),
         body: JSON.stringify({ key: this.editingKey, isLifetime: true })
@@ -1305,7 +1310,7 @@ const Admin = {
     }
 
     try {
-      const res = await fetch('/api/admin/set-key-expiry', {
+      const res = await this.secureFetch('/api/admin/set-key-expiry', {
         method: 'POST',
         headers: this.getAdminHeaders(),
         body: JSON.stringify({ key: this.editingKey, expiresAt: dateInput.value })
@@ -1387,7 +1392,7 @@ const Admin = {
     const message = document.getElementById('adminForceUpdateMessage').value.trim();
 
     try {
-      const res = await fetch('/api/admin/set-force-update', {
+      const res = await this.secureFetch('/api/admin/set-force-update', {
         method: 'POST',
         headers: this.getAdminHeaders(),
         body: JSON.stringify({ enabled, minVersion, latestVersion, message })
@@ -1435,7 +1440,7 @@ const Admin = {
       if (![androidUrl, iosUrl, windowsUrl, tvUrl].every(isDrive)) {
         throw new Error('Tất cả link tải phải là link Google Drive công khai.');
       }
-      const res = await fetch('/api/admin/update-downloads', {
+      const res = await this.secureFetch('/api/admin/update-downloads', {
         method: 'POST',
         headers: this.getAdminHeaders(),
         body: JSON.stringify({
