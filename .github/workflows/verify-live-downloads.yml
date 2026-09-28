@@ -44,12 +44,8 @@ jobs:
           for platform,(file_id,size,sha) in releases.items():
             entry=manifest[platform]
             url=urllib.parse.urlsplit(entry['url'])
-            if platform == 'windows':
-              assert url.hostname=='github.com',(platform,url.hostname)
-              assert url.path.endswith('/4K-Cinema-Windows-3.56-x64.exe'),url.path
-            else:
-              assert url.hostname=='drive.usercontent.google.com',(platform,url.hostname)
-              assert urllib.parse.parse_qs(url.query).get('id')==[file_id],platform
+            assert url.hostname=='drive.usercontent.google.com',(platform,url.hostname)
+            assert urllib.parse.parse_qs(url.query).get('id')==[file_id],platform
             assert entry['version']=='3.56',platform
             assert entry['sha256']==sha,platform
             assert entry['sizeBytes']==size,platform
