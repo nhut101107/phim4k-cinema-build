@@ -73,15 +73,15 @@
 
 .movie-copyright-watermark {
   position: absolute;
-  z-index: 45;
+  z-index: 55;
   top: max(clamp(52px, 6vh, 72px), calc(env(safe-area-inset-top) + 48px));
   right: max(clamp(70px, 7vw, 140px), calc(env(safe-area-inset-right) + 42px));
   color: rgba(255, 255, 255, .72);
-  font-family: "Chalkboard SE", "Comic Sans MS", "Marker Felt", "Segoe Print", "Bradley Hand", cursive;
+  font-family: "Segoe Print", "Bradley Hand", "Chalkboard SE", "Marker Felt", cursive;
   font-size: clamp(18px, 2vw, 30px);
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1;
-  letter-spacing: -.055em;
+  letter-spacing: -.035em;
   text-align: right;
   text-shadow: 0 1px 3px rgba(0, 0, 0, .82);
   white-space: nowrap;
