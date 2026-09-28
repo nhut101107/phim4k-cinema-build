@@ -3460,7 +3460,8 @@ async function handleProtectedMovieCatalog(request, env, executionContext) {
   if (pathname === "/api/movies/home") {
     const resolved = await fetchEnsMovieStyleHomeCatalog(env);
     if (!resolved.items.length) return textError("Nguồn danh mục tạm thời không khả dụng.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
-    const payload = HomeCuration.build(excludeClosedMovies(resolved.items, closed));
+    const visibleItems = excludeClosedMovies(await filterAvailableCatalogItems(resolved.items, env), closed);
+    const payload = HomeCuration.build(visibleItems);
     payload.sources = resolved.sources;
     return json(await protectCatalogImages(payload, request, env));
   }
@@ -3478,7 +3479,7 @@ async function handleProtectedMovieCatalog(request, env, executionContext) {
     return json({
       title: "Toàn bộ kho phim",
       sources: resolved.sources,
-      items: await protectCatalogImages(excludeClosedMovies(resolved.items, closed), request, env),
+      items: await protectCatalogImages(excludeClosedMovies(await filterAvailableCatalogItems(resolved.items, env), closed), request, env),
       pagination,
     });
   }
@@ -3495,7 +3496,7 @@ async function handleProtectedMovieCatalog(request, env, executionContext) {
       : genre ? `/v1/api/the-loai/${genre}?page=${page}&limit=48` : `/v1/api/quoc-gia/${country}?page=${page}&limit=48`;
     if (country && genre) target += `&country=${encodeURIComponent(country)}`;
     const data = await fetchProtectedCatalogJson(target, env);
-    return json({ filters: { genre, country }, items: await protectCatalogImages(excludeClosedMovies(normalizedCatalogItems(data, env), closed), request, env), pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1, totalItems: 0 } });
+    return json({ filters: { genre, country }, items: await protectCatalogImages(excludeClosedMovies(await filterAvailableCatalogItems(normalizedCatalogItems(data, env), env), closed), request, env), pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1, totalItems: 0 } });
   }
 
   const categoryMatch = pathname.match(/^\/api\/movies\/category\/([a-z0-9-]+)$/);
@@ -3509,7 +3510,7 @@ async function handleProtectedMovieCatalog(request, env, executionContext) {
     return json({
       title: category,
       sources: resolved.sources,
-      items: await protectCatalogImages(excludeClosedMovies(resolved.items, closed), request, env),
+      items: await protectCatalogImages(excludeClosedMovies(await filterAvailableCatalogItems(resolved.items, env), closed), request, env),
       pagination: data.pagination || data.data?.params?.pagination || { currentPage: page, totalPages: 1 },
     });
   }
@@ -3523,7 +3524,7 @@ async function handleProtectedMovieCatalog(request, env, executionContext) {
     return json({
       query,
       sources: resolved.sources,
-      items: await protectCatalogImages(excludeClosedMovies(resolved.items, closed), request, env),
+      items: await protectCatalogImages(excludeClosedMovies(await filterAvailableCatalogItems(resolved.items, env), closed), request, env),
       pagination: data.data?.params?.pagination || data.pagination || { currentPage: page, totalPages: 1 },
     });
   }
@@ -3533,6 +3534,7 @@ async function handleProtectedMovieCatalog(request, env, executionContext) {
     const slug = catalogSlug(detailMatch[1]);
     if (!slug) return textError("Mã phim không hợp lệ.", 400, "INVALID_MOVIE_SLUG");
     if (closed.has(slug)) return textError("Phim đang tạm đóng để Admin sửa nguồn phát.", 423, "MOVIE_TEMPORARILY_CLOSED");
+    if (await movieIsUnavailable(env, slug)) return textError("Phim hiện không còn nguồn phát hoạt động.", 404, "MOVIE_SOURCE_OFFLINE");
     const entries = await resolveEnsMovieStyleSources(slug, env);
     const data = mergeResolvedMovieSources(entries);
     if (!data) return textError("Chưa tải được thông tin phim từ các nguồn.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");

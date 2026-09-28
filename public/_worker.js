@@ -997,7 +997,7 @@ export default {
     // be converted into an expiring relay stream_ref.
     const movieRequestRuntime = String(request.headers.get('x-app-runtime') || 'web').toLowerCase();
     const usesBrowserPlayer = movieRequestRuntime === 'web' || movieRequestRuntime === 'pwa';
-    if (usesBrowserPlayer && request.method === 'GET' && url.pathname.startsWith('/api/movies/')) {
+    if (usesBrowserPlayer && request.method === 'GET' && url.pathname.startsWith('/api/movies/detail/')) {
       const movieCache = globalThis.caches?.default;
       const movieCacheKey = publicMovieCacheRequest(url);
       if (movieCache && movieCacheKey) {

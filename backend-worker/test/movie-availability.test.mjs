@@ -40,7 +40,7 @@ function viewerRequest(path, init = {}) {
   });
 }
 
-test('a movie stays visible even when all equivalent sources are definitively gone', async () => {
+test('a movie is hidden after all equivalent sources are definitively gone', async () => {
   const f = fixture();
   const originalFetch = globalThis.fetch;
   const deadMovie = {
@@ -70,11 +70,11 @@ test('a movie stays visible even when all equivalent sources are definitively go
 
     const catalog = await worker.fetch(viewerRequest('/api/movies/catalog?page=1'), f.env);
     assert.equal(catalog.status, 200);
-    assert.deepEqual((await catalog.json()).items.map((movie) => movie.slug), ['dead-movie', 'live-movie']);
+    assert.deepEqual((await catalog.json()).items.map((movie) => movie.slug), ['live-movie']);
 
     const detail = await worker.fetch(viewerRequest('/api/movies/detail/dead-movie'), f.env);
-    assert.equal(detail.status, 200);
-    assert.equal((await detail.json()).movie.slug, 'dead-movie');
+    assert.equal(detail.status, 404);
+    assert.equal((await detail.json()).code, 'MOVIE_SOURCE_OFFLINE');
   } finally {
     globalThis.fetch = originalFetch;
     f.sqlite.close();

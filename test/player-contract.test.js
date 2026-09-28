@@ -42,7 +42,7 @@ test('web playback restores the EnsMovie embed before any relay ticket', () => {
   assert.ok(embed >= 0 && ticket >= 0 && embed < ticket);
   assert.match(player, /playEmbedStream\(embedUrl\)[\s\S]*?iframe\.src = safeEmbedUrl/);
   assert.match(pagesWorker, /const usesBrowserPlayer = movieRequestRuntime === 'web' \|\| movieRequestRuntime === 'pwa'/);
-  assert.match(pagesWorker, /usesBrowserPlayer && request\.method === 'GET' && url\.pathname\.startsWith\('\/api\/movies\/'\)[\s\S]*?fetchDirectMovieCatalog\(url\.pathname, url\.searchParams\)/);
+  assert.match(pagesWorker, /usesBrowserPlayer && request\.method === 'GET' && url\.pathname\.startsWith\('\/api\/movies\/detail\/'\)[\s\S]*?fetchDirectMovieCatalog\(url\.pathname, url\.searchParams\)/);
 });
 
 test('hidden native video cannot cover an active EnsMovie embed with a false stall warning', () => {
