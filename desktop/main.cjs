@@ -131,7 +131,7 @@ else app.whenReady().then(async () => {
         providerAssigned:new URL(iframe.src).hostname==='example.com' && new URL(iframe.src).pathname==='/embed/qa',
         nativeVideoHidden:Player.video.classList.contains('hidden'),
         providerBadgeHidden:badge.classList.contains('hidden') && !badge.textContent.trim(),
-        closeControl:Boolean(document.getElementById('btnClosePlayer')),
+        closeControl:Boolean(document.querySelector('.btn-close-player')),
       };
     })()`);
     report.pass = !failed && report.gatePresent && report.appPresent && !report.nodeExposed && report.platform === 'windows'
