@@ -232,11 +232,15 @@ const Player = {
     this.currentEpisode = episode;
     this.suppressBuffering = false;
 
-    // Every client uses the same provider embed player that powers the stable
-    // web build. Do this before stream_ref resolution so native clients do not
-    // get routed through an expiring relay ticket when a working embed exists.
+    const runtime = API.getRuntimeTag();
+    const preferProtectedPlayer = runtime === 'web' || runtime === 'windows';
+
+    // Native phone/TV builds retain the provider embed that is already stable.
+    // Desktop web and Windows resolve the same provider through the protected
+    // EnsMovie-style player first; raw catalogue embeds were the old PC path
+    // that intermittently returned a stuck third-party frame.
     const providerEmbedUrl = episode?.link_embed || '';
-    if (providerEmbedUrl) {
+    if (providerEmbedUrl && !preferProtectedPlayer) {
       this.playEmbedStream(providerEmbedUrl);
       return;
     }
@@ -281,6 +285,11 @@ const Player = {
       this.showBuffering(true, 'Đang mở luồng phát…');
       this.setResolutionBadge(0, 0, '4K Ultra HD');
       this.loadStream(directStreamUrl, { ...options, isHls: true, nativeDirectHls: false });
+      return;
+    }
+
+    if (providerEmbedUrl) {
+      this.playEmbedStream(providerEmbedUrl);
       return;
     }
 
