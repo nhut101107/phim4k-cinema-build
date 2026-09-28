@@ -19,10 +19,10 @@ jobs:
           import json, time, urllib.parse, urllib.request, urllib.error
           origin='https://phim4k-license-api.phim4k-pwdbhdz.workers.dev'
           releases={
-            'android':('1cIKz4nVb1ODD5TFqRx_yxc6bn02QB8pS',3967808,'78e0a673bf61f61bb78d5971e3a3c6986bd199fedacc89a5f24c5aded5f56325'),
-            'android_tv':('132cxRcOetx_AsOm6m9vgDFoVJCZOwWhs',3967808,'5d8335f77144aebbaf882992351b7a059857a932e781c335d0375769dcf148a8'),
-            'ios':('14AOZdrCewKFU2Rn52oySmgXNqQiWzNW_',4424082,'94959219094d568eb8722db148fceac88f66d1c297a1f6d562f579ca51ab99c0'),
-            'windows':('github-release',120969742,'ec1fc094ca880b412b175db973187cb37af4f71100a15e3c1463b8fc159c0e84'),
+            'android':('1cIKz4nVb1ODD5TFqRx_yxc6bn02QB8pS',4004825,'6fae60deb160e09c0f0a3ba29128a7f960e22618b565f7c96196c0fbbe700a56'),
+            'android_tv':('132cxRcOetx_AsOm6m9vgDFoVJCZOwWhs',4004825,'8e2fc80915254c2edb23041bf690eecdc7e0e3d28e81f04d7c13d19882a2417f'),
+            'ios':('14AOZdrCewKFU2Rn52oySmgXNqQiWzNW_',4460537,'a0765ea17a101a5d9a7ed4e367bf7a96972fdcecef7a554195ab911421f851d3'),
+            'windows':('1uOmdX9AwTPVHFYQsTlQp0ifyvNmSYU4_',120999359,'5bd381fb5f9a4b329b3ddd9c83fddef50e4be12a5475db87a691c3ceea14156b'),
           }
           def get(path):
             for attempt in range(4):
