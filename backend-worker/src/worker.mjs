@@ -1546,7 +1546,7 @@ async function activationStatus({ db, key, telegramId, deviceId, request, env, a
     return json({success: true, active: true, isAdmin: false, freeAccess: true, plan: 'MNHUT CINEMA 4K', expiresAt: null, ...await getForceUpdate(db, appVersion(request))});
   }
   if (await verifyMasterKey(key, env, db)) {
-    if (env.ALLOW_LEGACY_TEST_AUTH === "1" && !await verifyAdminIdentity(key, telegramId, env, db)) {
+    if (!await verifyAdminIdentity(key, telegramId, env, db)) {
       return textError("Master key is restricted to the configured administrator Telegram ID.", 403, "ADMIN_TELEGRAM_REQUIRED");
     }
     await finalizeBootstrapAdminKey(key, env, db);
