@@ -12,6 +12,7 @@
   let deviceKeyPromise;
   let session = null;
   let initialized = false;
+  const sessionChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('phim4k-session-v1') : null;
 
   const bytesToBase64Url = (bytes) => {
     let binary = '';
@@ -77,8 +78,8 @@
     };
   };
 
-  async function readSession() {
-    if (session) return session;
+  async function readSession(force = false) {
+    if (session && !force) return session;
     const native = nativeStore();
     if (native?.get) {
       try {
@@ -111,6 +112,7 @@
       if (native?.set) await native.set({ value: JSON.stringify(clean) });
       else await dbOperation('readwrite', (store) => store.put(clean, SESSION_KEY));
     } catch (_error) {}
+    sessionChannel?.postMessage({ type: 'session-updated' });
     return clean;
   }
 
@@ -123,6 +125,7 @@
     }
     try { await dbOperation('readwrite', (store) => store.delete(SESSION_KEY)); }
     catch (_error) {}
+    sessionChannel?.postMessage({ type: 'session-cleared' });
   }
 
   let inMemoryDeviceKey = null;
@@ -250,6 +253,10 @@
       return session;
     },
     current() { return session; },
+    async reload() {
+      session = await readSession(true);
+      return session;
+    },
     hasSession() { return Boolean(session?.accessToken && session?.refreshToken); },
     publicDeviceKey,
     save: writeSession,
@@ -278,4 +285,14 @@
   };
 
   window.SessionVault = SessionVault;
+  sessionChannel?.addEventListener('message', async (event) => {
+    if (event.data?.type === 'session-cleared') session = null;
+    if (event.data?.type === 'session-updated') session = await readSession(true);
+  });
+  window.addEventListener('storage', (event) => {
+    if (event.key === 'phim4k_session_fallback') {
+      try { session = event.newValue ? safeSession(JSON.parse(event.newValue)) : null; }
+      catch (_error) { session = null; }
+    }
+  });
 })();
