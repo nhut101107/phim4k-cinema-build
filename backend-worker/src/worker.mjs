@@ -27,11 +27,11 @@ const CORS_HEADERS = {
 
 const MAX_DURATION_DAYS = 3650;
 const LICENSE_PATTERN = /^[A-Z0-9][A-Z0-9-]{3,63}$/;
-const MASTER_KEY_MIN_LENGTH = 12;
+const MASTER_KEY_MIN_LENGTH = 5;
 const MAX_JSON_BODY_BYTES = 16 * 1024;
 const ADMIN_KEY_HASH_SETTING = "admin_key_hmac_v1";
-const ADMIN_BOOTSTRAP_CONSUMED_SETTING = "admin_key_bootstrap_20260928_consumed";
-const ADMIN_BOOTSTRAP_SHA256 = "sha256-v2:6b7ffe888ff33fcf23075cf8960ba2fe42a7c5ea3501694f90c9f9263d62cd6a";
+const ADMIN_BOOTSTRAP_CONSUMED_SETTING = "admin_key_bootstrap_20260929_mnhut_consumed";
+const ADMIN_BOOTSTRAP_SHA256 = "sha256-v2:12fd4536cbc27fa271d5535396ce4af9ec60fec39a8ec3a6111af1e358c53464";
 const ANNOUNCEMENT_SETTING = "global_announcement_v1";
 const MAINTENANCE_SETTING = "maintenance_mode_v1";
 const MOVIE_REPORT_LIMIT = 300;
@@ -2031,13 +2031,14 @@ async function listUsers(request, env) {
   const missing = dbUnavailable(env);
   if (missing) return missing;
   await ensureMultiDeviceSchema(env.DB);
-  const [rows, deviceRows, limitRows, securityRows] = await Promise.all([
+  const [rows, deviceRows, limitRows, securityRows, guestRows] = await Promise.all([
     env.DB.prepare(
       "SELECT license_keys.*, bans.telegram_id AS banned_telegram_id, bans.reason AS ban_reason FROM license_keys LEFT JOIN bans ON bans.telegram_id = COALESCE(license_keys.activated_telegram_id, license_keys.assigned_telegram_id) ORDER BY license_keys.updated_at DESC",
     ).bind().all(),
     env.DB.prepare("SELECT license_key, device_id, slot, last_seen_at, last_ip, device_name FROM license_devices ORDER BY license_key, slot").bind().all(),
     env.DB.prepare("SELECT license_key, max_devices FROM license_limits").bind().all(),
     env.DB.prepare("SELECT scope, value FROM security_bans").bind().all(),
+    env.DB.prepare("SELECT device_id, MAX(plan) AS plan, MIN(created_at) AS created_at, MAX(last_seen_at) AS last_seen_at FROM auth_sessions WHERE role = 'guest' GROUP BY device_id ORDER BY last_seen_at DESC LIMIT 500").bind().all(),
   ]);
   const bannedDevices = new Set((securityRows.results || []).filter((item) => item.scope === "device").map((item) => item.value));
   const bannedIps = new Set((securityRows.results || []).filter((item) => item.scope === "ip").map((item) => item.value));
@@ -2078,6 +2079,20 @@ async function listUsers(request, env) {
       maxDevices: Math.min(20, Math.max(1, limits.get(record.license_key) || 1)),
     }];
   });
+  const licensedDevices = new Set((deviceRows.results || []).map((item) => item.device_id));
+  for (const guest of (guestRows.results || [])) {
+    if (!guest.device_id || licensedDevices.has(guest.device_id)) continue;
+    users.push({
+      telegramId: "", key: "", plan: guest.plan || "TRỰC TIẾP",
+      isBanned: bannedDevices.has(guest.device_id), active: true,
+      status: bannedDevices.has(guest.device_id) ? "Đã khóa thiết bị" : "Đang truy cập",
+      expiresAt: null, boundDeviceId: guest.device_id, lastIp: "",
+      deviceName: "Thiết bị truy cập trực tiếp",
+      deviceBanned: bannedDevices.has(guest.device_id), ipBanned: false,
+      devices: [], deviceCount: 1, maxDevices: 1,
+      lastSeenAt: guest.last_seen_at || guest.created_at || "",
+    });
+  }
   return json({ users });
 }
 
@@ -2102,6 +2117,10 @@ async function setBan(request, env, banned) {
         "INSERT INTO security_bans (scope, value, reason, created_at, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(scope, value) DO UPDATE SET reason = excluded.reason, updated_at = excluded.updated_at",
       ).bind(scope, scopeValue, String(body.reason || "").slice(0, 300), timestamp, timestamp).run();
       if (scope === "device") await env.DB.prepare("UPDATE auth_sessions SET revoked_at = ?, updated_at = ? WHERE device_id = ? AND revoked_at IS NULL").bind(timestamp, timestamp, scopeValue).run();
+      if (scope === "ip") {
+        await env.DB.prepare("UPDATE auth_sessions SET revoked_at = ?, updated_at = ? WHERE device_id IN (SELECT device_id FROM license_devices WHERE last_ip = ?) AND revoked_at IS NULL")
+          .bind(timestamp, timestamp, scopeValue).run();
+      }
     } else {
       await env.DB.prepare("DELETE FROM security_bans WHERE scope = ? AND value = ?").bind(scope, scopeValue).run();
     }
@@ -2149,7 +2168,23 @@ async function setBan(request, env, banned) {
     return json({ success: true, message: banned ? "Đã khóa user theo key và thiết bị." : "Đã mở khóa user theo key." });
   }
 
-  if (key || deviceId) return textError("Không tìm thấy user gắn với key hoặc thiết bị này.", 404, "USER_NOT_FOUND");
+  if (!license && deviceId) {
+    const timestamp = now();
+    if (banned) {
+      await env.DB.prepare(
+        "INSERT INTO security_bans (scope, value, reason, created_at, updated_at) VALUES ('device', ?, ?, ?, ?) ON CONFLICT(scope, value) DO UPDATE SET reason = excluded.reason, updated_at = excluded.updated_at",
+      ).bind(deviceId, String(body.reason || "").slice(0, 300), timestamp, timestamp).run();
+      await env.DB.prepare("UPDATE auth_sessions SET revoked_at = ?, updated_at = ? WHERE device_id = ? AND revoked_at IS NULL")
+        .bind(timestamp, timestamp, deviceId).run();
+    } else {
+      await env.DB.prepare("DELETE FROM security_bans WHERE scope = 'device' AND value = ?").bind(deviceId).run();
+    }
+    await logEvent(env.DB, banned ? "device_banned" : "device_unbanned", {
+      actorTelegramId: requestTelegram(request), detail: `device=${maskedValue(deviceId, 6)} direct-access`,
+    });
+    return json({ success: true, message: banned ? "Đã khóa user theo thiết bị." : "Đã mở khóa thiết bị user." });
+  }
+  if (key) return textError("Không tìm thấy user gắn với key này.", 404, "USER_NOT_FOUND");
   if (!telegramId) return textError("Thiếu key hoặc mã thiết bị của user.", 400, "MISSING_USER_TARGET");
   if (!validTelegramId(telegramId)) return textError("Telegram ID is invalid.", 400, "INVALID_TELEGRAM_ID");
   if (banned) {
