@@ -10,3 +10,4 @@
 2026-09-28 MNHUT rebuild #14: remove stale iOS document scroll locks across web and apps
 2026-09-28 MNHUT rebuild #15: stabilize Android phone device test on the supported API 31 image
 2026-09-28 MNHUT rebuild #16: keep every player action visible in phone landscape mode
+2026-09-28 MNHUT rebuild #17: sync protected desktop playback, real admin actions and low-lag rails to all clients
