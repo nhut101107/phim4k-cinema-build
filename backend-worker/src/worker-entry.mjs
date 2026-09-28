@@ -16,22 +16,22 @@ const PUBLIC_RELEASES = Object.freeze({
   android: Object.freeze({
     url: 'https://drive.usercontent.google.com/download?id=1cIKz4nVb1ODD5TFqRx_yxc6bn02QB8pS&export=download&confirm=t',
     version: '3.56',
-    sha256: '28c444b1b89d0fb03944f6c09d243eae30c48e8e55fddb91a34b313d4c2f575a',
+    sha256: '6fae60deb160e09c0f0a3ba29128a7f960e22618b565f7c96196c0fbbe700a56',
     sizeBytes: 4004825,
     signer: 'github-actions[bot]',
   }),
   android_tv: Object.freeze({
     url: 'https://drive.usercontent.google.com/download?id=132cxRcOetx_AsOm6m9vgDFoVJCZOwWhs&export=download&confirm=t',
     version: '3.56',
-    sha256: '1c55d7115dd8b4bd76303ec78d8cb80aab9dc7679b02053c7ebac41f3dbe9324',
+    sha256: '8e2fc80915254c2edb23041bf690eecdc7e0e3d28e81f04d7c13d19882a2417f',
     sizeBytes: 4004825,
     signer: 'github-actions[bot]',
   }),
   ios: Object.freeze({
     url: 'https://drive.usercontent.google.com/download?id=14AOZdrCewKFU2Rn52oySmgXNqQiWzNW_&export=download&confirm=t',
     version: '3.56',
-    sha256: '4dfe57e76cfad54aa46a195f1a87c949b2d397b9f828827de17898366398f6a1',
-    sizeBytes: 4459949,
+    sha256: 'a0765ea17a101a5d9a7ed4e367bf7a96972fdcecef7a554195ab911421f851d3',
+    sizeBytes: 4460537,
     signer: 'github-actions[bot]',
   }),
   windows: Object.freeze({
