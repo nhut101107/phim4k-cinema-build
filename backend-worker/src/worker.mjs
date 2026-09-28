@@ -84,22 +84,22 @@ const PUBLIC_RELEASES = Object.freeze({
   android: Object.freeze({
     url: INSTALLER_RELEASES["/download/android"].url,
     version: "3.56",
-    sha256: "78e0a673bf61f61bb78d5971e3a3c6986bd199fedacc89a5f24c5aded5f56325",
-    sizeBytes: 3967808,
+    sha256: "28c444b1b89d0fb03944f6c09d243eae30c48e8e55fddb91a34b313d4c2f575a",
+    sizeBytes: 4004825,
     signer: "github-actions[bot]",
   }),
   android_tv: Object.freeze({
     url: INSTALLER_RELEASES["/download/android-tv"].url,
     version: "3.56",
-    sha256: "5d8335f77144aebbaf882992351b7a059857a932e781c335d0375769dcf148a8",
-    sizeBytes: 3967808,
+    sha256: "1c55d7115dd8b4bd76303ec78d8cb80aab9dc7679b02053c7ebac41f3dbe9324",
+    sizeBytes: 4004825,
     signer: "github-actions[bot]",
   }),
   ios: Object.freeze({
     url: INSTALLER_RELEASES["/download/ios"].url,
     version: "3.56",
-    sha256: "94959219094d568eb8722db148fceac88f66d1c297a1f6d562f579ca51ab99c0",
-    sizeBytes: 4424082,
+    sha256: "4dfe57e76cfad54aa46a195f1a87c949b2d397b9f828827de17898366398f6a1",
+    sizeBytes: 4459949,
     signer: "github-actions[bot]",
   }),
   windows: Object.freeze({
