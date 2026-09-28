@@ -111,6 +111,8 @@ test('web, iOS and Windows release versions stay aligned', () => {
   assert.equal(desktop.nsis.createStartMenuShortcut, true);
   assert.equal(desktop.nsis.deleteAppDataOnUninstall, false);
   assert.match(read('../desktop/main.cjs'), /setPath\('userData',[\s\S]*?'Phim4K Cinema'/);
+  assert.match(read('../desktop/main.cjs'), /smokeMode[\s\S]*?autoplay-policy[\s\S]*?no-user-gesture-required/);
+  assert.match(read('../desktop/main.cjs'), /smokeMode[\s\S]*?disableHardwareAcceleration\(\)/);
   assert.match(read('../ios/App/App/Info.plist'), /<key>CFBundleDisplayName<\/key>\s*<string>MNHUT Cinema<\/string>/);
   assert.match(read('../android/app/src/main/res/values/strings.xml'), /<string name="app_name">MNHUT Cinema<\/string>/);
 });

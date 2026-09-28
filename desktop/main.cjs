@@ -5,6 +5,15 @@ const fs = require('node:fs');
 const { Readable } = require('node:stream');
 const { resolveAsset, allowedExternal } = require('./policy.cjs');
 
+const smokeMode = process.argv.includes('--smoke-test');
+if (smokeMode) {
+  // Hosted Windows runners have no visible user gesture and can expose an
+  // unstable GPU decoder. Keep the packaged smoke deterministic while still
+  // exercising the real app, bundled video, controls and seek behavior.
+  app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+  app.disableHardwareAcceleration();
+}
+
 protocol.registerSchemesAsPrivileged([{ scheme: 'phim4k', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
 // Keep the existing storage location while the visible application name is MNHUT, so upgrading does not erase local viewing progress.
 app.setPath('userData', path.join(app.getPath('appData'), 'Phim4K Cinema'));
@@ -88,7 +97,7 @@ else app.whenReady().then(async () => {
   });
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   session.defaultSession.setPermissionCheckHandler(() => false);
-  const smoke = process.argv.includes('--smoke-test');
+  const smoke = smokeMode;
   const win = new BrowserWindow({ width: 1366, height: 900, minWidth: 960, minHeight: 640, backgroundColor: '#0b101b', show: !smoke,
     autoHideMenuBar: true, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true, devTools: false,
       preload: path.join(__dirname, 'preload.cjs') } });
@@ -135,6 +144,7 @@ else app.whenReady().then(async () => {
       return {right:Math.abs(right-start-10)<.5,left:Math.abs(right-v.currentTime-10)<.5,stillPaused:v.paused,timings:[start,right,v.currentTime]};
     })()`);
     report.pass = !failed && report.keyGate && !report.nodeExposed && report.platform === 'windows' && report.downloadFunction && report.videoDecoded && report.playerInteraction.subtitleSafe && report.playerInteraction.outsideDoesNotPause && report.playerInteraction.centerPauses && Object.values(report.seek).every(Boolean);
+    console.log(`[desktop-smoke] ${JSON.stringify(report)}`);
     fs.mkdirSync(path.join(app.getPath('userData'), 'qa'), { recursive: true });
     fs.writeFileSync(path.join(app.getPath('userData'), 'qa', 'desktop-smoke.json'), JSON.stringify(report, null, 2));
     app.exit(report.pass ? 0 : 1);
