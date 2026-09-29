@@ -70,11 +70,13 @@ test('server labels come from provider language metadata without fake regions', 
   assert.equal(format({ server_name: 'Server 4' }, 3, {}), 'Server 4');
 });
 
-test('ENSMovie iframe chrome auto-hides after 2.6 seconds and retains a wake edge', () => {
+test('ENSMovie iframe chrome auto-hides after 2.6 seconds and wakes from a full-screen tap', () => {
   assert.match(player, /const embedActive = this\.wrapper\?\.classList\.contains\('embed-active'\)/);
   assert.match(player, /playEmbedStream\(embedUrl\)[\s\S]*?this\.resetInactivityTimer\(\)/);
   assert.match(player, /\}, 2600\);/);
+  assert.match(player, /event\.target === this\.wrapper[\s\S]*?contains\('embed-active'\)[\s\S]*?contains\('inactive'\)/);
   assert.match(css, /\.cinema-player-wrapper\.inactive\.embed-active::after/);
+  assert.match(css, /\.cinema-player-wrapper\.inactive\.embed-active::after\s*\{[\s\S]*?inset:\s*0;/);
   assert.match(css, /\.cinema-player-wrapper\.inactive\.embed-active #playerTopBar > \*/);
 });
 

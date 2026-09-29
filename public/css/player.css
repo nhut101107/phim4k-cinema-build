@@ -360,17 +360,17 @@ video::cue {
 }
 
 /* Embedded players live in a cross-origin iframe, so their pointer events do
-   not bubble to the wrapper. Keep only a thin invisible top-edge wake zone;
-   the rest of the movie stays completely unobstructed. */
+   not bubble to the wrapper. While our chrome is hidden, cover the player with
+   a transparent first-tap layer. That tap wakes our controls; the layer then
+   disappears so subsequent taps reach the embedded player normally. */
 .cinema-player-wrapper.inactive.embed-active::after {
   content: "";
   position: absolute;
   z-index: 45;
-  top: 0;
-  right: 0;
-  left: 0;
-  height: 24px;
+  inset: 0;
   pointer-events: auto;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .progress-bar-container {

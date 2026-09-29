@@ -113,7 +113,12 @@ const Player = {
       if (event.pointerType === 'mouse') this.resetInactivityTimer();
     }, { passive: true });
     this.wrapper.addEventListener('pointerdown', event => {
-      if (event.target.closest('button, input, .player-controls')) this.resetInactivityTimer();
+      const wakingEmbedChrome = event.target === this.wrapper
+        && this.wrapper.classList.contains('embed-active')
+        && this.wrapper.classList.contains('inactive');
+      if (wakingEmbedChrome || event.target.closest('button, input, .player-controls')) {
+        this.resetInactivityTimer();
+      }
     }, { passive: true });
     window.addEventListener('resize', () => {
       if (!this.modal.classList.contains('hidden')) {
