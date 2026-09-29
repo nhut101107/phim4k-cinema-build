@@ -183,6 +183,11 @@
     margin: 0;
   }
 
+  body.web-preview .account-actions > .account-download-btn,
+  body.web-preview .account-actions > .account-signout-btn {
+    grid-column: 1 / -1;
+  }
+
   body.web-preview .admin-quick-actions {
     display: grid !important;
     grid-template-columns: repeat(4, minmax(0, 1fr));

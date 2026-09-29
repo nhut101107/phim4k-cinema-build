@@ -120,6 +120,15 @@ const Player = {
         this.resetInactivityTimer();
       }
     }, { passive: true });
+    const embed = document.getElementById('playerEmbed');
+    embed?.addEventListener('load', () => {
+      // Native WebViews may finish the cross-origin navigation after the
+      // fullscreen transition. Re-arm from the real iframe load so app chrome
+      // cannot remain pinned on top of the movie.
+      if (this.wrapper?.classList.contains('embed-active') && !this.modal?.classList.contains('hidden')) {
+        this.resetInactivityTimer();
+      }
+    });
     window.addEventListener('resize', () => {
       if (!this.modal.classList.contains('hidden')) {
         this.syncFullscreenViewport();
@@ -189,7 +198,11 @@ const Player = {
     this.loadEpisode(episode, { resumeTime: this.getSavedWatchTime(), autoplay: true });
     this.startProgressSaveTimer();
     this.resetInactivityTimer();
-    void this.enterCinemaFullscreen();
+    void this.enterCinemaFullscreen().finally(() => {
+      // Fullscreen/orientation is asynchronous in Capacitor. The final timer
+      // must start after that native transition, not before it.
+      if (this.wrapper?.classList.contains('embed-active')) this.resetInactivityTimer();
+    });
   },
 
   close() {
