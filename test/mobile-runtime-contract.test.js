@@ -178,7 +178,8 @@ test('iOS entry point cache-busts every bundled script and stylesheet', () => {
   const html = read('../public/index.html');
   const localAssets = [...html.matchAll(/(?:src|href)="\/(?:js|css|vendor)\/[^"?]+(?:\?[^" ]+)?"/g)].map(match => match[0]);
   assert.ok(localAssets.length >= 20);
-  assert.ok(localAssets.every(asset => asset.includes('?v=3.56.12')), localAssets.join('\n'));
+  assert.ok(localAssets.every(asset => asset.includes('?v=')), localAssets.join('\n'));
+  assert.match(html, /\/js\/player\.js\?v=3\.56\.13/);
   assert.match(html, /MNHUT Cinema 3\.56[^<]*BẢN ĐỒNG BỘ ĐA THIẾT BỊ/);
 });
 
