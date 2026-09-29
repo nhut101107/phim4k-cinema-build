@@ -55,7 +55,7 @@ test('downloads admin route is authorized, atomic and compatible with clients', 
   assert.equal(data.windows.url, data.windowsUrl);
     assert.equal(data.android_tv.version, '3.56');
   assert.match(data.android_tv.url, /^https:\/\/drive\.usercontent\.google\.com\/download/);
-    assert.equal(data.android_tv.sha256, '8e2fc80915254c2edb23041bf690eecdc7e0e3d28e81f04d7c13d19882a2417f');
+    assert.equal(data.android_tv.sha256, '8d06fc04357deb40557646541a41a9cd7acdfefdd55a49f7f0a4d897adc92f60');
 });
 test('streamed JSON body is bounded even without Content-Length', async () => {
   const f = fixture();
