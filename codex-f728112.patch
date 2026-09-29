@@ -1,0 +1,1560 @@
+diff --git a/backend-worker/migrations/0005_feedback_tickets.sql b/backend-worker/migrations/0005_feedback_tickets.sql
+new file mode 100644
+index 0000000..c7f198c
+--- /dev/null
++++ b/backend-worker/migrations/0005_feedback_tickets.sql
+@@ -0,0 +1,19 @@
++CREATE TABLE IF NOT EXISTS feedback_tickets (
++  id TEXT PRIMARY KEY,
++  owner_id TEXT NOT NULL,
++  device_id TEXT NOT NULL,
++  category TEXT NOT NULL CHECK(category IN ('feedback', 'issue')),
++  subject TEXT NOT NULL,
++  message TEXT NOT NULL,
++  status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'answered', 'closed')),
++  admin_reply TEXT NOT NULL DEFAULT '',
++  created_at TEXT NOT NULL,
++  updated_at TEXT NOT NULL,
++  replied_at TEXT
++);
++
++CREATE INDEX IF NOT EXISTS idx_feedback_owner_updated
++  ON feedback_tickets(owner_id, updated_at DESC);
++
++CREATE INDEX IF NOT EXISTS idx_feedback_status_updated
++  ON feedback_tickets(status, updated_at DESC);
+diff --git a/backend-worker/schema.sql b/backend-worker/schema.sql
+index c91a1bd..c27aa49 100644
+--- a/backend-worker/schema.sql
++++ b/backend-worker/schema.sql
+@@ -165,3 +165,22 @@ CREATE TABLE IF NOT EXISTS audit_logs (
+ CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(id DESC);
+ CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs(actor_telegram_id, id DESC);
+ CREATE INDEX IF NOT EXISTS idx_audit_logs_target ON audit_logs(target_telegram_id, id DESC);
++
++CREATE TABLE IF NOT EXISTS feedback_tickets (
++  id TEXT PRIMARY KEY,
++  owner_id TEXT NOT NULL,
++  device_id TEXT NOT NULL,
++  category TEXT NOT NULL CHECK(category IN ('feedback', 'issue')),
++  subject TEXT NOT NULL,
++  message TEXT NOT NULL,
++  status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'answered', 'closed')),
++  admin_reply TEXT NOT NULL DEFAULT '',
++  created_at TEXT NOT NULL,
++  updated_at TEXT NOT NULL,
++  replied_at TEXT
++);
++
++CREATE INDEX IF NOT EXISTS idx_feedback_owner_updated
++  ON feedback_tickets(owner_id, updated_at DESC);
++CREATE INDEX IF NOT EXISTS idx_feedback_status_updated
++  ON feedback_tickets(status, updated_at DESC);
+diff --git a/backend-worker/src/worker.mjs b/backend-worker/src/worker.mjs
+index 787a548..8d9306f 100644
+--- a/backend-worker/src/worker.mjs
++++ b/backend-worker/src/worker.mjs
+@@ -526,6 +526,37 @@ function requestDeviceName(request) {
+   return runtime === "web" ? "Trình duyệt web" : runtime;
+ }
+ 
++function requestOsName(request) {
++  const userAgent = String(request.headers.get("user-agent") || "");
++  const ios = userAgent.match(/(?:CPU (?:iPhone )?OS|iPhone OS) ([\d_]+)/i)?.[1];
++  if (ios) return `iOS ${ios.replaceAll("_", ".")}`;
++  const android = userAgent.match(/Android\s+([\d.]+)/i)?.[1];
++  if (android) return `Android ${android}`;
++  const windows = userAgent.match(/Windows NT\s+([\d.]+)/i)?.[1];
++  if (windows) return windows === "10.0" ? "Windows 10/11" : `Windows ${windows}`;
++  const mac = userAgent.match(/Mac OS X\s+([\d_]+)/i)?.[1];
++  if (mac) return `macOS ${mac.replaceAll("_", ".")}`;
++  return requestRuntime(request);
++}
++
++function requestBrowserName(request) {
++  const userAgent = String(request.headers.get("user-agent") || "");
++  const match = userAgent.match(/Edg\/([\d.]+)/i)
++    || userAgent.match(/CriOS\/([\d.]+)/i)
++    || userAgent.match(/Chrome\/([\d.]+)/i)
++    || userAgent.match(/FxiOS\/([\d.]+)/i)
++    || userAgent.match(/Firefox\/([\d.]+)/i)
++    || userAgent.match(/Version\/([\d.]+).*Safari/i);
++  if (!match) return "Không xác định";
++  const major = String(match[1] || "").split(".")[0];
++  const name = /Edg\//i.test(userAgent) ? "Edge"
++    : /CriOS\//i.test(userAgent) ? "Chrome iOS"
++      : /Chrome\//i.test(userAgent) ? "Chrome"
++        : /FxiOS\//i.test(userAgent) ? "Firefox iOS"
++          : /Firefox\//i.test(userAgent) ? "Firefox" : "Safari";
++  return major ? `${name} ${major}` : name;
++}
++
+ function ratePolicy(pathname) {
+   if (pathname === "/api/auth/activate" || pathname === "/api/auth/request-device-access") return RATE_LIMITS.authActivate;
+   if (pathname === "/api/auth/status" || pathname === "/api/auth/device-status") return RATE_LIMITS.authStatus;
+@@ -1048,11 +1079,15 @@ async function handleTelemetry(request, env) {
+   const device = maskedValue(identity.deviceId, 6);
+   for (const event of events) {
+     const context = {
++      ...event.context,
+       device,
++      deviceId: identity.deviceId,
+       deviceName: requestDeviceName(request),
+       ip: getClientIp(request),
+       version: String(appVersion(request)).slice(0, 24),
+-      ...event.context,
++      runtime: requestRuntime(request),
++      os: requestOsName(request),
++      browser: requestBrowserName(request),
+     };
+     // Preserve valid JSON rather than slicing a serialized object mid-field.
+     for (const key of Object.keys(event.context).reverse()) {
+@@ -1358,6 +1393,69 @@ async function ensureMovieReportSchema(db) {
+   await db.prepare("CREATE TABLE IF NOT EXISTS closed_movies (movie_slug TEXT PRIMARY KEY, movie_name TEXT, reason TEXT, closed_at TEXT NOT NULL, closed_by TEXT)").bind().run();
+ }
+ 
++async function ensureFeedbackSchema(db) {
++  await db.prepare("CREATE TABLE IF NOT EXISTS feedback_tickets (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, device_id TEXT NOT NULL, category TEXT NOT NULL CHECK(category IN ('feedback', 'issue')), subject TEXT NOT NULL, message TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'answered', 'closed')), admin_reply TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, replied_at TEXT)").bind().run();
++  await db.prepare("CREATE INDEX IF NOT EXISTS idx_feedback_owner_updated ON feedback_tickets(owner_id, updated_at DESC)").run();
++  await db.prepare("CREATE INDEX IF NOT EXISTS idx_feedback_status_updated ON feedback_tickets(status, updated_at DESC)").run();
++}
++
++function feedbackOwner(identity) {
++  const telegramId = normalizeId(identity?.telegramId);
++  const deviceId = normalizeDeviceId(identity?.deviceId);
++  return telegramId ? `telegram:${telegramId}` : `device:${deviceId}`;
++}
++
++async function handleViewerFeedback(request, env) {
++  const identity = await verifyTelemetryViewer(request, env);
++  if (identity.error) return identity.error;
++  await ensureFeedbackSchema(env.DB);
++  const ownerId = feedbackOwner(identity);
++  if (request.method === "GET") {
++    const result = await env.DB.prepare("SELECT id, category, subject, message, status, admin_reply, created_at, updated_at, replied_at FROM feedback_tickets WHERE owner_id = ? ORDER BY updated_at DESC LIMIT 50")
++      .bind(ownerId).all();
++    return json({ success: true, tickets: result.results || [] });
++  }
++  const body = await parseBody(request);
++  const category = String(body.category || "feedback").trim() === "issue" ? "issue" : "feedback";
++  const subject = cleanProgressText(body.subject || (category === "issue" ? "Báo lỗi" : "Góp ý"), 120);
++  const message = cleanProgressText(body.message, 1200);
++  if (!subject || !message || message.length < 3) return textError("Nội dung góp ý quá ngắn.", 400, "INVALID_FEEDBACK");
++  const timestamp = now();
++  const id = crypto.randomUUID();
++  await env.DB.prepare("INSERT INTO feedback_tickets (id, owner_id, device_id, category, subject, message, status, admin_reply, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'open', '', ?, ?)")
++    .bind(id, ownerId, identity.deviceId, category, subject, message, timestamp, timestamp).run();
++  await logEvent(env.DB, "feedback_submitted", {
++    actorTelegramId: identity.telegramId,
++    detail: JSON.stringify({ id, category, device: maskedValue(identity.deviceId, 6), subject }),
++  });
++  return json({ success: true, id, message: "Đã gửi đến Admin. Phản hồi sẽ hiện ngay trong hộp thư này." }, 201);
++}
++
++async function listAdminFeedback(request, env) {
++  const denied = await requireVerifiedAdmin(request, env);
++  if (denied) return denied;
++  await ensureFeedbackSchema(env.DB);
++  const result = await env.DB.prepare("SELECT * FROM feedback_tickets ORDER BY CASE status WHEN 'open' THEN 0 WHEN 'answered' THEN 1 ELSE 2 END, updated_at DESC LIMIT 200").all();
++  return json({ success: true, tickets: result.results || [] });
++}
++
++async function replyAdminFeedback(request, env) {
++  const denied = await requireVerifiedAdmin(request, env);
++  if (denied) return denied;
++  const body = await parseBody(request);
++  const id = String(body.id || "").trim();
++  const reply = cleanProgressText(body.reply, 1200);
++  const status = String(body.status || "answered").trim();
++  if (!id || !reply || !["answered", "closed"].includes(status)) return textError("Phản hồi Admin không hợp lệ.", 400, "INVALID_FEEDBACK_REPLY");
++  await ensureFeedbackSchema(env.DB);
++  const timestamp = now();
++  const result = await env.DB.prepare("UPDATE feedback_tickets SET admin_reply = ?, status = ?, replied_at = ?, updated_at = ? WHERE id = ?")
++    .bind(reply, status, timestamp, timestamp, id).run();
++  if (!Number(result?.meta?.changes || 0)) return textError("Không tìm thấy góp ý này.", 404, "FEEDBACK_NOT_FOUND");
++  await logEvent(env.DB, "admin_feedback_replied", { actorTelegramId: requestTelegram(request), detail: JSON.stringify({ id, status }) });
++  return json({ success: true, message: status === "closed" ? "Đã trả lời và đóng góp ý." : "Đã gửi phản hồi đến người dùng." });
++}
++
+ async function closedMovieSlugs(db) {
+   try {
+     await ensureMovieReportSchema(db);
+@@ -3461,8 +3559,12 @@ async function protectCatalogImages(value, request, env, expiresAt = Math.floor(
+ async function protectMovieDetail(data, request, env, slug) {
+   const resolved = resolveCatalogImageReferences(data, catalogImageBase(data, env));
+   const output = await protectCatalogImages(resolved, request, env);
+-  if (output?.movie && typeof output.movie === "object") delete output.movie.trailer_url;
+-  const servers = Array.isArray(output?.episodes) ? output.episodes : [];
++  if (output?.movie && typeof output.movie === "object") {
++    delete output.movie.trailer_url;
++    delete output.movie._source_candidates;
++  }
++  const servers = (Array.isArray(output?.episodes) ? output.episodes : [])
++    .filter((server) => cleanProgressText(server?._source_id, 40).toLowerCase() === "phimapi");
+   output.episodes = servers.map((server, serverIndex) => {
+     const sourceId = cleanProgressText(server?._source_id, 40).toLowerCase();
+     const sourceMovieSlug = catalogSlug(server?._source_movie_slug) || slug;
+@@ -3471,25 +3573,30 @@ async function protectMovieDetail(data, request, env, slug) {
+       server_name: cleanProgressText(server?.server_name, 100) || `Server ${serverIndex + 1}`,
+       source_id: sourceId,
+       source_name: cleanProgressText(server?._source_name, 80),
+-      server_data: (Array.isArray(server?.server_data) ? server.server_data : []).map((episode, episodeIndex) => ({
+-        name: cleanProgressText(episode?.name, 120) || `Tập ${episodeIndex + 1}`,
+-        slug: cleanProgressText(episode?.slug, 160),
+-        filename: cleanProgressText(episode?.filename, 160),
+-        stream_ref: {
+-          movie: slug,
+-          server: serverIndex,
+-          episode: episodeIndex,
+-          source: sourceId,
+-          sourceMovieSlug,
+-          serverName: sourceServerName,
+-          episodeSlug: cleanProgressText(episode?.slug, 160),
+-          episodeName: cleanProgressText(episode?.name, 120),
+-          episodeFilename: cleanProgressText(episode?.filename, 160),
+-          episodeNumber: episodeOrdinalHint(episode),
+-        },
+-      })),
++      server_data: (Array.isArray(server?.server_data) ? server.server_data : []).flatMap((episode, episodeIndex) => {
++        const embed = safePublicHttpsUrl(episode?.link_embed || episode?.linkEmbed);
++        if (!embed || embed.hostname !== "player.phimapi.com" || !embed.pathname.startsWith("/player/")) return [];
++        return [{
++          name: cleanProgressText(episode?.name, 120) || `Tập ${episodeIndex + 1}`,
++          slug: cleanProgressText(episode?.slug, 160),
++          filename: cleanProgressText(episode?.filename, 160),
++          link_embed: embed.href,
++          stream_ref: {
++            movie: slug,
++            server: serverIndex,
++            episode: episodeIndex,
++            source: sourceId,
++            sourceMovieSlug,
++            serverName: sourceServerName,
++            episodeSlug: cleanProgressText(episode?.slug, 160),
++            episodeName: cleanProgressText(episode?.name, 120),
++            episodeFilename: cleanProgressText(episode?.filename, 160),
++            episodeNumber: episodeOrdinalHint(episode),
++          },
++        }];
++      }),
+     };
+-  });
++  }).filter((server) => server.server_data.length);
+   return output;
+ }
+ 
+@@ -3662,7 +3769,7 @@ async function handleProtectedMovieCatalog(request, env, executionContext) {
+     if (!data) return textError("Chưa tải được thông tin phim từ các nguồn.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
+     prewarmBackupStreams(data, slug, executionContext);
+     const output = await protectMovieDetail(data, request, env, slug);
+-    output.sources = entries.map((entry, index) => ({
++    output.sources = entries.filter((entry) => entry.id === "phimapi").map((entry, index) => ({
+       id: entry.id,
+       name: `Server ${index + 1}`,
+       servers: Array.isArray(entry.data?.episodes) ? entry.data.episodes.length : 0,
+@@ -4151,6 +4258,7 @@ export default {
+       }
+       if (request.method === "GET" && pathname === "/api/app/announcement") return json(await getAnnouncement(env.DB));
+       if (request.method === "POST" && pathname === "/api/telemetry") return await handleTelemetry(request, env);
++      if (["GET", "POST"].includes(request.method) && pathname === "/api/feedback") return await handleViewerFeedback(request, env);
+       if (["GET", "POST", "DELETE"].includes(request.method) && pathname === "/api/watch-progress") return await handleWatchProgress(request, env);
+       if ((request.method === "GET" || request.method === "POST") && pathname === "/api/app/downloads") return await handleDownloads(request, env);
+       if (request.method === "POST" && pathname === "/api/admin/update-downloads") return await handleDownloads(request, env);
+@@ -4158,6 +4266,8 @@ export default {
+       if (request.method === "GET" && pathname === "/api/admin/device-access-requests") return await listDeviceAccessRequests(request, env);
+       if (request.method === "POST" && pathname === "/api/admin/device-access-decision") return await decideDeviceAccess(request, env);
+       if (request.method === "GET" && pathname === "/api/admin/reports") return await listMovieReports(request, env);
++      if (request.method === "GET" && pathname === "/api/admin/feedback") return await listAdminFeedback(request, env);
++      if (request.method === "POST" && pathname === "/api/admin/feedback/reply") return await replyAdminFeedback(request, env);
+       if (request.method === "POST" && pathname === "/api/admin/report-decision") return await decideMovieReport(request, env);
+       if (request.method === "POST" && pathname === "/api/admin/movie-availability") return await setMovieAvailability(request, env);
+       if (request.method === "POST" && pathname === "/api/admin/rotate-master-key") return await rotateMasterKey(request, env);
+diff --git a/backend-worker/test/media-protection.test.mjs b/backend-worker/test/media-protection.test.mjs
+index 414e88c..d397579 100644
+--- a/backend-worker/test/media-protection.test.mjs
++++ b/backend-worker/test/media-protection.test.mjs
+@@ -30,7 +30,7 @@ const detailPayload = {
+       slug: 'tap-1',
+       filename: 'tap-1',
+       link_m3u8: 'https://video.example/path/master.m3u8',
+-      link_embed: 'https://embed.example/watch/secret',
++      link_embed: 'https://player.phimapi.com/player/?url=https%3A%2F%2Fvideo.example%2Fpath%2Fmaster.m3u8',
+     }],
+   }],
+ };
+@@ -42,7 +42,7 @@ function viewerRequest(path, init = {}) {
+   });
+ }
+ 
+-test('catalog detail strips raw media links and playback uses encrypted Worker capabilities', async () => {
++test('catalog detail exposes only the ENSMovie iframe and keeps raw streams protected', async () => {
+   const originalFetch = globalThis.fetch;
+   globalThis.fetch = async (input) => {
+     const target = String(input);
+@@ -67,7 +67,8 @@ test('catalog detail strips raw media links and playback uses encrypted Worker c
+     assert.equal(detail.status, 200);
+     const detailJson = await detail.json();
+     const serializedDetail = JSON.stringify(detailJson);
+-    assert.doesNotMatch(serializedDetail, /video\.example|embed\.example|link_m3u8|link_embed/i);
++    assert.doesNotMatch(serializedDetail, /link_m3u8|embed\.example/i);
++    assert.equal(detailJson.episodes[0].server_data[0].link_embed, 'https://player.phimapi.com/player/?url=https%3A%2F%2Fvideo.example%2Fpath%2Fmaster.m3u8');
+     assert.match(detailJson.movie.poster_url, /^https:\/\/example\.workers\.dev\/api\/media\/image\?t=/);
+     assert.equal(detailJson.episodes[0].server_name, 'Server 1');
+     assert.equal(detailJson.episodes[0].source_name, 'Server');
+diff --git a/backend-worker/test/movie-availability.test.mjs b/backend-worker/test/movie-availability.test.mjs
+index 4872ca3..d740969 100644
+--- a/backend-worker/test/movie-availability.test.mjs
++++ b/backend-worker/test/movie-availability.test.mjs
+@@ -167,7 +167,7 @@ test('a stale volatile HLS master is rejected and playback uses the live StreamC
+   }
+ });
+ 
+-test('a direct HLS backup provider is merged without exposing an ad embed page', async () => {
++test('a direct HLS backup provider is never exposed in the ENSMovie-only detail', async () => {
+   const f = fixture();
+   const originalFetch = globalThis.fetch;
+   const primary = {
+@@ -195,8 +195,8 @@ test('a direct HLS backup provider is merged without exposing an ad embed page',
+     const detail = await worker.fetch(viewerRequest('/api/movies/detail/backup-movie'), f.env);
+     assert.equal(detail.status, 200);
+     const detailJson = await detail.json();
+-    assert.equal(detailJson.episodes.length, 2);
+-    assert.equal(detailJson.episodes[1].server_data.length, 1);
++    assert.equal(detailJson.episodes.length, 0);
++    assert.doesNotMatch(JSON.stringify(detailJson), /backup-video|ads\.example|nguonphim/i);
+ 
+     const playback = await worker.fetch(viewerRequest('/api/movies/play', {
+       method: 'POST',
+diff --git a/ios/App/App/RuntimeIntegrityManifest.generated.swift b/ios/App/App/RuntimeIntegrityManifest.generated.swift
+index 2a035d0..dd4a5e9 100644
+--- a/ios/App/App/RuntimeIntegrityManifest.generated.swift
++++ b/ios/App/App/RuntimeIntegrityManifest.generated.swift
+@@ -6,26 +6,27 @@ enum RuntimeIntegrityManifest {
+     private static let protectedFiles: [String: String] = [
+         "public/cordova_plugins.js": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+         "public/cordova.js": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+-        "public/css/modal.css": "c6d6044f57269eb34f91a810aaae6de76cdb14c653d27bd91afa6c33ec70d6b2",
+-        "public/css/player.css": "3fa8d8dac4464434b085da75d9baff4d5206d24dba0b965b662e3c516b2fd2a1",
++        "public/css/modal.css": "5a52123feec537dba7197943c9289bbea836bfd03fd297d5ebba8b91c6109d3e",
++        "public/css/player.css": "234460e07881b2d2a8285efec96f57946d27e5c3f4849a01f6b0f232314583fc",
+         "public/css/style.css": "e9841e8d2554ffe4ec0e3c059e367a7e3f4ad45ac3b6d3de536e591996a4e70e",
+         "public/css/tv.css": "4ad38e4a9af9696fa99effd05e25e4bcfe05a5ea116b924dc467c71c5f43b192",
+         "public/css/web-premium.css": "69c29c61878f02c1a7653e6337c6385746799b5d95f2c8385c4aa4f56952fda6",
+-        "public/index.html": "17f254e2265f23aad21505823b7c73e795d1cd246ff095a48728c6e8df9190cc",
+-        "public/js/admin.js": "2b8a7ad5417c2016f7de31d062c1ef57f7e5cb5c1924e43c1b2f3d0d8000d555",
++        "public/index.html": "4ae53ff97a8dd2b9e8935ad1fcd0147ad9a764136f7c1266279ef14c40fcbaf8",
++        "public/js/admin.js": "8ea71fa08ee79d6a089eb88457140e63430162a602b3a56c64488dc8f282413f",
+         "public/js/api.js": "eaa9948607f70caa107932154040a338c958eef5e5f8b05e1332c27f411042b0",
+-        "public/js/app.js": "7b48c8fbe44f77f3fa894e4fa4697ea6ef9d5d525af958d14019ed97d032d2cb",
++        "public/js/app.js": "d1f678f09eaaf0b3d40831a881e1b854966dc6c43ce284c6a7652234b23e244c",
+         "public/js/audio-enhancer.js": "5e4a54d0cfb9abe0c11b41f63cc96baecbd33b6c34c3228f5e15f9fe1f383915",
+         "public/js/auth.js": "905e1186b9d760e7304b63b126d704edc4585e998d039184fde7f1a9100aecc8",
+         "public/js/catalog-fallback.js": "8ab81d28b4295c052218cc508239a5f1a6736a425d6ec7d4ffb22582b08523a3",
+         "public/js/coverflow.js": "a08bf63fa88d01658dc568a521906a756cf16182cdb6148139cc3dd72a821d0e",
+         "public/js/diagnostics.js": "477a0d7ed75d8018800a3691fe360144758e1962eb1d7bf55c217e37391d99d7",
++        "public/js/feedback.js": "1813edd0f571e0d19718be692e875976f17297d5845ed77e85fb2b22380e0f23",
+         "public/js/home-curation.js": "09a4a59ed29045aa918615a5d107a8d84000cb0c16d878e4be9134678dfdd3e7",
+         "public/js/mobile-config.js": "987cc36eec01030a86f9f1c76f753d67f79c6eda256c642fbe8c6f9e8f57647f",
+         "public/js/native-downloads.js": "961f0e9c23b4271d373db2e55015ebd272228cc699cfe771de0adcef6f658814",
+         "public/js/platform.js": "6dfb516cd395d03f2199d4d881b219f4f626237084856f3335d9447c03842fcb",
+         "public/js/player-core.js": "9f8750318082163793065a81830435cf8fcf2426228c9fafabce9bf33550821e",
+-        "public/js/player.js": "3a4990892a09086968e9b47448ff8815b513e45fb97923e0e164e05876412409",
++        "public/js/player.js": "4210e79f5604fb109c875a8993bf4a9a97ef2cb22e3f4d9c3fdcfd64db3eb826",
+         "public/js/release-copy.js": "d72075a12d7661c14b5929aebabe52d99923fdc161552b773db1f4988b73d1d6",
+         "public/js/runtime-config.js": "70b624cb7eb3bd4a5d03d3e0ac68378199be801d5395a1754a3c7c55bfc3fc97",
+         "public/js/session-vault.js": "44f7df4d6436153995c75cf54fe4c6eccb4c3a51815b0e6d24ebe35efae90707",
+@@ -38,7 +39,7 @@ enum RuntimeIntegrityManifest {
+         "public/media/superman_4k.jpg": "9339c63a766caa26647be0b64cacf0c95e3db29859ce4445b5e9db15a05ab7fe",
+         "public/media/the_boys_4k.jpg": "572cb16dfb429292bb9fc690a0c5bfa28a8d688ed23588595e396b454067971a",
+         "public/vendor/hls.min.js": "afcde07437ec84b072fe8782e772ceb5046eac751b2719f73ae0d83d763bc3f5",
+-        "public/web-index.html": "ee30cd9c8c1bd7c4a3c9343b2f348aeda899ca9266d39b7fb7edc2645934544e",
++        "public/web-index.html": "52d7ad860b390c31786c9e726384ffe326975de266f17db610c58e4a8f7a0448",
+     ]
+ 
+     static func verify(in bundle: Bundle = .main) -> Bool {
+diff --git a/public/_worker.js b/public/_worker.js
+index da3c9c9..cec948d 100644
+--- a/public/_worker.js
++++ b/public/_worker.js
+@@ -4,7 +4,6 @@
+ const LICENSE_ORIGIN = 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev';
+ const ENS_ORIGIN = 'https://enshihi.vercel.app';
+ const PHIMAPI_ORIGIN = 'https://phimapi.com';
+-const VSMOV_ORIGIN = 'https://vsmov.com';
+ const OPHIM_ORIGIN = 'https://ophim1.com';
+ const PHIMIMG_ORIGIN = 'https://phimimg.com';
+ 
+@@ -157,7 +156,9 @@ function normalizeMovie(item, payload = null) {
+ }
+ 
+ function normalizedMovieItems(payload) {
+-  return movieItems(payload).map((item) => normalizeMovie(item, payload)).filter(Boolean);
++  return movieItems(payload)
++    .map((item) => normalizeMovie(item, payload))
++    .filter((movie) => movie && (movie.poster_url || movie.thumb_url));
+ }
+ 
+ function movieIdentity(item) {
+@@ -220,6 +221,7 @@ async function fetchMovieJson(path, origin = PHIMAPI_ORIGIN) {
+   try {
+     const response = await fetch(`${origin}${path}`, {
+       headers: { accept: 'application/json' },
++      signal: AbortSignal.timeout(8000),
+       cf: { cacheEverything: true, cacheTtl: 60 },
+     });
+     if (!response.ok || !String(response.headers.get('content-type') || '').includes('application/json')) return null;
+@@ -244,30 +246,25 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
+   const page = searchParams.get('page') || '1';
+   try {
+     if (endpoint === '/api/movies/home') {
++      const latestPageCount = 12;
++      const categoryPageCount = 4;
+       const phimApiRequests = [
+-        ...[1, 2, 3, 4].map((number) => `/danh-sach/phim-moi-cap-nhat?page=${number}`),
++        ...Array.from({ length: latestPageCount }, (_, index) => `/danh-sach/phim-moi-cap-nhat?page=${index + 1}`),
+         ...['phim-chieu-rap', 'phim-le', 'phim-bo', 'hoat-hinh', 'tv-shows']
+-          .flatMap((category) => [1, 2, 3].map((number) => `/v1/api/danh-sach/${category}?page=${number}&limit=24`)),
++          .flatMap((category) => Array.from({ length: categoryPageCount }, (_, index) => `/v1/api/danh-sach/${category}?page=${index + 1}&limit=32`)),
+       ];
+-      const vsmovRequests = [
+-        ...[1, 2, 3, 4, 5, 6].map((number) => `/api/danh-sach/phim-moi-cap-nhat?page=${number}`),
+-        ...['phim-le', 'phim-bo']
+-          .flatMap((category) => [1, 2, 3, 4, 5, 6].map((number) => `/api/danh-sach/${category}?page=${number}&limit=24`)),
+-      ];
+-      const [phimApiPayloads, vsmovPayloads] = await Promise.all([
+-        Promise.all(phimApiRequests.map((path) => fetchMovieJson(path))),
+-        Promise.all(vsmovRequests.map((path) => fetchMovieJson(path, VSMOV_ORIGIN))),
+-      ]);
++      const phimApiPayloads = await Promise.all(phimApiRequests.map((path) => fetchMovieJson(path)));
+       const groups = phimApiPayloads.map((payload) => normalizedMovieItems(payload));
+-      const vsmovGroups = vsmovPayloads.map((payload) => normalizedMovieItems(payload));
+-      const latestItems = latestFirst([...groups.slice(0, 4).flat(), ...vsmovGroups.slice(0, 6).flat()]);
++      const latestItems = latestFirst(groups.slice(0, latestPageCount).flat());
+       const categoryGroups = ['cinema', 'movies', 'series', 'anime', 'tv'].map((id, index) => ({
+         id,
+-        items: uniqueMovies(groups.slice(4 + index * 3, 7 + index * 3).flat()),
++        items: latestFirst(groups.slice(
++          latestPageCount + index * categoryPageCount,
++          latestPageCount + (index + 1) * categoryPageCount,
++        ).flat()),
+       }));
+-      categoryGroups[1].items = latestFirst([...categoryGroups[1].items, ...vsmovGroups.slice(6, 12).flat()]);
+-      categoryGroups[2].items = latestFirst([...categoryGroups[2].items, ...vsmovGroups.slice(12, 18).flat()]);
+       const allItems = uniqueMovies([...latestItems, ...categoryGroups.flatMap((group) => group.items)]);
++      const premiumItems = latestFirst(allItems.filter((movie) => /(?:4k|uhd|fhd|1080)/i.test(String(movie?.quality || ''))));
+       if (!allItems.length) return null;
+ 
+       const hero = hotNewMovies([
+@@ -277,7 +274,7 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
+         ...categoryGroups[2].items,
+       ], 12).map((movie) => ({
+         ...movie,
+-        quality: movie.quality || 'HD',
++        quality: movie.quality || 'Theo nguồn',
+         episode_current: movie.episode_current || 'Mới cập nhật',
+       }));
+ 
+@@ -286,6 +283,7 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
+         updatedAt: new Date().toISOString(),
+         sections: [
+           { id: 'latest', title: '🔥 Phim Mới & Hot Cập Nhật Liên Tục', items: latestItems.slice(0, 174) },
++          { id: 'premium-quality', title: '💎 Kho FHD & 4K Chất Lượng Cao', items: premiumItems.slice(0, 120) },
+           { id: 'cinema', title: '🎬 Phim Chiếu Rạp', items: categoryGroups[0].items.slice(0, 54) },
+           { id: 'movies', title: '🍿 Phim Lẻ Mới', items: categoryGroups[1].items.slice(0, 186) },
+           { id: 'series', title: '📺 Phim Bộ Nổi Bật', items: categoryGroups[2].items.slice(0, 162) },
+@@ -298,11 +296,11 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
+ 
+     if (endpoint.startsWith('/api/movies/detail/')) {
+       const slug = endpoint.split('/api/movies/detail/')[1];
+-      for (const target of [
+-        `${PHIMAPI_ORIGIN}/phim/${encodeURIComponent(slug)}`,
+-        `${VSMOV_ORIGIN}/api/phim/${encodeURIComponent(slug)}`,
+-      ]) {
+-        const res = await fetch(target, { headers: { accept: 'application/json' } });
++      for (const target of [`${PHIMAPI_ORIGIN}/phim/${encodeURIComponent(slug)}`]) {
++        const res = await fetch(target, {
++          headers: { accept: 'application/json' },
++          signal: AbortSignal.timeout(8000),
++        });
+         if (res.ok) {
+           const data = await res.json();
+           const normalized = data?.movie ? { ...data, movie: normalizeMovie(data.movie, data) || data.movie } : data;
+@@ -315,12 +313,9 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
+ 
+     if (endpoint === '/api/movies/search') {
+       const q = searchParams.get('q') || '';
+-      const [data, vsmovData] = await Promise.all([
+-        fetchMovieJson(`/v1/api/tim-kiem?keyword=${encodeURIComponent(q)}&page=${page}&limit=48`),
+-        fetchMovieJson(`/api/tim-kiem?keyword=${encodeURIComponent(q)}&page=${page}&limit=24`, VSMOV_ORIGIN),
+-      ]);
+-      if (data || vsmovData) {
+-        const items = uniqueMovies([...normalizedMovieItems(data), ...normalizedMovieItems(vsmovData)]);
++      const data = await fetchMovieJson(`/v1/api/tim-kiem?keyword=${encodeURIComponent(q)}&page=${page}&limit=48`);
++      if (data) {
++        const items = uniqueMovies(normalizedMovieItems(data));
+         return Response.json({
+           query: q,
+           items,
+@@ -330,12 +325,9 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
+     }
+ 
+     if (endpoint === '/api/movies/catalog') {
+-      const [data, vsmovData] = await Promise.all([
+-        fetchMovieJson(`/v1/api/danh-sach/phim-moi-cap-nhat?page=${page}&limit=48&sort_field=modified.time&sort_type=desc`),
+-        fetchMovieJson(`/api/danh-sach/phim-moi-cap-nhat?page=${page}`, VSMOV_ORIGIN),
+-      ]);
+-      if (data || vsmovData) {
+-        const items = uniqueMovies([...normalizedMovieItems(data), ...normalizedMovieItems(vsmovData)]);
++      const data = await fetchMovieJson(`/v1/api/danh-sach/phim-moi-cap-nhat?page=${page}&limit=48&sort_field=modified.time&sort_type=desc`);
++      if (data) {
++        const items = uniqueMovies(normalizedMovieItems(data));
+         return Response.json({
+           title: 'Toàn bộ kho phim',
+           items,
+@@ -367,14 +359,9 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
+ 
+     if (endpoint.startsWith('/api/movies/category/')) {
+       const cat = endpoint.split('/api/movies/category/')[1];
+-      const [data, vsmovData] = await Promise.all([
+-        fetchMovieJson(`/v1/api/danh-sach/${encodeURIComponent(cat)}?page=${page}&limit=48`),
+-        ['phim-le', 'phim-bo'].includes(cat)
+-          ? fetchMovieJson(`/api/danh-sach/${encodeURIComponent(cat)}?page=${page}&limit=24`, VSMOV_ORIGIN)
+-          : Promise.resolve(null),
+-      ]);
+-      if (data || vsmovData) {
+-        const items = uniqueMovies([...normalizedMovieItems(data), ...normalizedMovieItems(vsmovData)]);
++      const data = await fetchMovieJson(`/v1/api/danh-sach/${encodeURIComponent(cat)}?page=${page}&limit=48`);
++      if (data) {
++        const items = uniqueMovies(normalizedMovieItems(data));
+         return Response.json({
+           category: cat,
+           items,
+@@ -467,7 +454,7 @@ export default {
+     // approvals and movie reports survive Cloudflare Pages isolate restarts.
+     const authoritativeApi = url.pathname.startsWith('/api/auth/')
+       || url.pathname.startsWith('/api/admin/')
+-      || ['/api/app/access-policy', '/api/app/downloads', '/api/app/check-update', '/api/app/version', '/api/app/announcement', '/api/telemetry', '/api/watch-progress', '/api/movies/report-issue', '/api/movies/play'].includes(url.pathname);
++      || ['/api/app/access-policy', '/api/app/downloads', '/api/app/check-update', '/api/app/version', '/api/app/announcement', '/api/telemetry', '/api/feedback', '/api/watch-progress', '/api/movies/report-issue', '/api/movies/play'].includes(url.pathname);
+     if (authoritativeApi) {
+       return proxyTo(request, LICENSE_ORIGIN, {
+         'x-forwarded-host': url.host,
+@@ -912,7 +899,7 @@ export default {
+ 
+     if (url.pathname === '/api/admin/content-status') {
+       return Response.json({
+-        source: 'phimapi + vsmov + ensmovie',
++        source: 'phimapi + ensmovie',
+         cacheActive: true,
+         lastSuccessfulRefreshAt: new Date().toISOString(),
+         refreshIntervalSeconds: 30
+@@ -942,9 +929,10 @@ export default {
+       }, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
+     }
+ 
+-    // 6. Every client uses the provider contract proven by the stable web
+-    // player. Keep link_embed/link_m3u8 instead of an expiring relay reference.
+-    if (request.method === 'GET' && url.pathname.startsWith('/api/movies/detail/')) {
++    // 6. Movie browsing and details go directly through the same provider
++    // contract used by ENSMovie. This avoids waiting for the legacy backend
++    // before falling back and keeps link_embed/link_m3u8 intact on every client.
++    if (request.method === 'GET' && url.pathname.startsWith('/api/movies/')) {
+       const movieCache = globalThis.caches?.default;
+       const movieCacheKey = publicMovieCacheRequest(url);
+       if (movieCache && movieCacheKey) {
+diff --git a/public/css/modal.css b/public/css/modal.css
+index b10b47f..a926af3 100644
+--- a/public/css/modal.css
++++ b/public/css/modal.css
+@@ -1983,3 +1983,73 @@
+ .license-activate-btn.is-loading .activate-arrow {
+   visibility: hidden;
+ }
++
++.feedback-fab {
++  position: fixed;
++  right: max(16px, env(safe-area-inset-right));
++  bottom: calc(82px + env(safe-area-inset-bottom));
++  z-index: 8500;
++  min-height: 44px;
++  padding: 0 16px;
++  border: 1px solid rgba(245, 196, 81, .55);
++  border-radius: 999px;
++  color: #fff3c4;
++  background: rgba(12, 17, 29, .94);
++  box-shadow: 0 12px 32px rgba(0, 0, 0, .42);
++  font: 800 13px/1 var(--font);
++  cursor: pointer;
++}
++
++.player-open .feedback-fab,
++.modal-open .feedback-fab { opacity: 0; pointer-events: none; }
++
++.feedback-dialog {
++  width: min(680px, calc(100vw - 24px));
++  max-height: min(88dvh, 820px);
++  overflow-y: auto;
++  padding: 28px;
++}
++
++.feedback-header { padding-right: 38px; }
++.feedback-header > span { color: var(--accent-gold); font-size: 11px; font-weight: 900; letter-spacing: .14em; }
++.feedback-header h2 { margin: 6px 0 8px; }
++.feedback-header p { margin: 0 0 18px; color: var(--text-muted); line-height: 1.55; }
++.feedback-form { display: grid; gap: 12px; }
++.feedback-form label { display: grid; gap: 6px; color: #d9e2f0; font-size: 13px; font-weight: 750; }
++.feedback-form input,
++.feedback-form select,
++.feedback-form textarea {
++  width: 100%;
++  box-sizing: border-box;
++  padding: 12px 13px;
++  border: 1px solid rgba(255,255,255,.12);
++  border-radius: 11px;
++  color: #fff;
++  background: rgba(5, 10, 20, .88);
++  font: 500 14px/1.45 var(--font);
++}
++.feedback-form textarea { resize: vertical; min-height: 120px; }
++.feedback-thread-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 24px; }
++.feedback-thread-heading h3 { margin: 0; }
++.feedback-thread-list { display: grid; gap: 12px; margin-top: 12px; }
++.feedback-empty { color: var(--text-muted); text-align: center; }
++.feedback-ticket {
++  padding: 14px;
++  border: 1px solid rgba(255,255,255,.1);
++  border-radius: 13px;
++  background: rgba(10, 17, 30, .78);
++}
++.feedback-ticket.status-answered { border-color: rgba(52, 211, 153, .35); }
++.feedback-ticket-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
++.feedback-ticket-heading span { flex: 0 0 auto; color: #f5c451; font-size: 11px; font-weight: 800; }
++.feedback-ticket p { margin: 9px 0; color: #d9e2f0; white-space: pre-wrap; }
++.feedback-ticket small { color: var(--text-muted); }
++.feedback-admin-reply { margin-top: 12px; padding: 12px; border-left: 3px solid #34d399; border-radius: 8px; background: rgba(52, 211, 153, .08); }
++.feedback-admin-reply b { color: #6ee7b7; }
++.feedback-admin-existing-reply { color: #6ee7b7 !important; }
++
++@media (max-width: 640px) {
++  .feedback-dialog { padding: 22px 15px 18px; }
++  .feedback-fab { bottom: calc(76px + env(safe-area-inset-bottom)); padding: 0 13px; }
++  .feedback-ticket-heading { display: grid; }
++}
+diff --git a/public/css/player.css b/public/css/player.css
+index c254ea5..352d04c 100644
+--- a/public/css/player.css
++++ b/public/css/player.css
+@@ -352,6 +352,26 @@ video::cue {
+ }
+ .cinema-player-wrapper.inactive .player-top-bar,
+ .cinema-player-wrapper.inactive .player-controls { opacity: 0; pointer-events: none; }
++.cinema-player-wrapper.inactive .player-top-bar {
++  visibility: hidden;
++}
++.cinema-player-wrapper.inactive.embed-active #playerTopBar > * {
++  pointer-events: none !important;
++}
++
++/* Embedded players live in a cross-origin iframe, so their pointer events do
++   not bubble to the wrapper. Keep only a thin invisible top-edge wake zone;
++   the rest of the movie stays completely unobstructed. */
++.cinema-player-wrapper.inactive.embed-active::after {
++  content: "";
++  position: absolute;
++  z-index: 45;
++  top: 0;
++  right: 0;
++  left: 0;
++  height: 24px;
++  pointer-events: auto;
++}
+ 
+ .progress-bar-container {
+   position: relative;
+diff --git a/public/index.html b/public/index.html
+index 7b8bca8..41206d7 100644
+--- a/public/index.html
++++ b/public/index.html
+@@ -13,11 +13,11 @@
+   
+   <link rel="manifest" href="/manifest.webmanifest">
+   <meta name="theme-color" content="#080b11">
+-  <link rel="stylesheet" href="/css/style.css?v=3.56.14">
+-  <link rel="stylesheet" href="/css/modal.css?v=3.56.14">
+-  <link rel="stylesheet" href="/css/player.css?v=3.56.14">
+-  <link rel="stylesheet" href="/css/tv.css?v=3.56.14">
+-  <link rel="stylesheet" href="/css/web-premium.css?v=3.56.14">
++  <link rel="stylesheet" href="/css/style.css?v=3.56.15">
++  <link rel="stylesheet" href="/css/modal.css?v=3.56.15">
++  <link rel="stylesheet" href="/css/player.css?v=3.56.16">
++  <link rel="stylesheet" href="/css/tv.css?v=3.56.15">
++  <link rel="stylesheet" href="/css/web-premium.css?v=3.56.15">
+ </head>
+ <body class="activation-locked">
+   <script>document.body.classList.add('web-preview');</script>
+@@ -446,6 +446,7 @@
+             ⚙️ MỞ PANEL QUẢN TRỊ ADMIN
+           </button>
+           <button type="button" id="accLogsBtn" class="btn-secondary hidden" onclick="Admin.open('logs')">📜 Đọc log người dùng</button>
++          <button type="button" class="btn-secondary" onclick="openFeedbackModal()">💬 Góp ý / Báo lỗi cho Admin</button>
+           <button class="btn-secondary" onclick="checkAppUpdate(true)">
+             🔄 Kiểm Tra Cập Nhật Bản Mới
+           </button>
+@@ -968,6 +969,17 @@
+           <div id="movieReportsList" class="device-requests-list"><p class="admin-desc">Đang tải báo lỗi…</p></div>
+         </div>
+ 
++        <div class="admin-section-box feedback-admin-inbox">
++          <div class="table-header-row">
++            <div>
++              <h3>💬 Góp ý & báo lỗi từ người dùng</h3>
++              <p class="admin-desc">Đọc nội dung và trả lời trực tiếp; user sẽ thấy phản hồi trong hộp thư của họ.</p>
++            </div>
++            <button class="btn-refresh-keys" type="button" onclick="Admin.loadFeedbackInbox()">Làm mới</button>
++          </div>
++          <div id="feedbackInboxList" class="device-requests-list"><p class="admin-desc">Đang tải góp ý…</p></div>
++        </div>
++
+         <div class="admin-section-box announcement-editor">
+           <div class="table-header-row">
+             <div>
+@@ -1023,7 +1035,7 @@
+               </select>
+               <button class="btn-action-mini btn-time" onclick="Admin.applyLogFilter()">Lọc</button>
+               <button class="btn-action-mini" onclick="Admin.clearLogFilter()">Bỏ lọc</button>
+-              <button class="btn-refresh-keys" onclick="Admin.loadLogs()">🔄 Làm mới</button>
++              <button class="btn-refresh-keys" onclick="Admin.refreshLogs()">🔄 Cập nhật log mới</button>
+               <button class="btn-action-mini btn-delete" onclick="Admin.clearLogs()">🗑 Xóa Sạch Log</button>
+             </div>
+           </div>
+@@ -1047,8 +1059,8 @@
+               <span class="terminal-dot red"></span>
+               <span class="terminal-dot yellow"></span>
+               <span class="terminal-dot green"></span>
+-              <span class="terminal-title">activity.log — tự làm mới mỗi 10 giây</span>
+-              <span id="logLiveState" class="log-live-state">● LIVE</span>
++              <span class="terminal-title">activity.log — chỉ cập nhật khi Admin yêu cầu</span>
++              <span id="logLiveState" class="log-live-state">● THỦ CÔNG</span>
+             </div>
+             <div class="terminal-body" id="terminalLogsBody">
+               <div class="log-line">Đang tải dữ liệu nhật ký hoạt động...</div>
+@@ -1248,6 +1260,30 @@
+     </div>
+   </div>
+ 
++  <button id="feedbackFab" class="feedback-fab" type="button" onclick="openFeedbackModal()" aria-label="Góp ý hoặc báo lỗi">💬 Góp ý</button>
++
++  <div id="feedbackModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="feedbackTitle" onclick="closeFeedbackModal(event)">
++    <div class="modal-dialog feedback-dialog" onclick="event.stopPropagation()">
++      <button class="modal-close-btn" type="button" aria-label="Đóng góp ý" onclick="hideFeedbackModal()">✕</button>
++      <div class="feedback-header">
++        <span>HỘP THƯ MNHUT</span>
++        <h2 id="feedbackTitle">Góp ý hoặc báo lỗi</h2>
++        <p>Nhắn chi tiết cho Admin. Khi Admin trả lời, phản hồi sẽ hiện bên dưới.</p>
++      </div>
++      <form class="feedback-form" onsubmit="submitFeedback(event)">
++        <label><span>Loại nội dung</span>
++          <select id="feedbackCategory"><option value="feedback">Góp ý hoàn thiện</option><option value="issue">Báo lỗi ứng dụng/phim</option></select>
++        </label>
++        <label><span>Tiêu đề</span><input id="feedbackSubject" maxlength="120" placeholder="Ví dụ: lỗi trên iPhone, đề xuất thêm phim…" /></label>
++        <label><span>Nội dung chi tiết</span><textarea id="feedbackMessage" maxlength="1200" rows="5" required placeholder="Mô tả lỗi, tên phim, thiết bị hoặc phần muốn cải thiện…"></textarea></label>
++        <button id="feedbackSubmitBtn" class="btn-primary" type="submit">Gửi đến Admin</button>
++        <p id="feedbackStatus" class="gate-message hidden" role="status"></p>
++      </form>
++      <div class="feedback-thread-heading"><h3>Lịch sử & phản hồi</h3><button type="button" class="btn-action-mini" onclick="Feedback.load()">Làm mới</button></div>
++      <div id="feedbackThreadList" class="feedback-thread-list"><p class="feedback-empty">Đang tải…</p></div>
++    </div>
++  </div>
++
+   <!-- ================================================= -->
+   <!-- 7. DOWNLOAD LATEST VERSION MODAL (ADR, IPA, EXE)  -->
+   <!-- ================================================= -->
+@@ -1423,23 +1459,24 @@
+   </div>
+ 
+   <!-- Scripts -->
+-  <script src="/js/mobile-config.js?v=3.56.14"></script>
+-  <script src="/js/session-vault.js?v=3.56.14"></script>
+-  <script src="/js/runtime-config.js?v=3.56.14"></script>
+-  <script src="/js/catalog-fallback.js?v=3.56.14"></script>
+-  <script src="/js/home-curation.js?v=3.56.14"></script>
+-  <script src="/js/api.js?v=3.56.14"></script>
+-  <script src="/js/platform.js?v=3.56.14"></script>
+-  <script src="/js/release-copy.js?v=3.56.14"></script>
+-  <script src="/js/native-downloads.js?v=3.56.14"></script>
+-  <script src="/js/auth.js?v=3.56.14"></script>
+-  <script src="/js/admin.js?v=3.56.14"></script>
+-  <script src="/js/player-core.js?v=3.56.14"></script>
+-  <script src="/js/audio-enhancer.js?v=3.56.14"></script>
+-  <script src="/js/player.js?v=3.56.14"></script>
+-  <script src="/js/coverflow.js?v=3.56.14"></script>
+-  <script src="/js/app.js?v=3.56.14"></script>
+-  <script src="/js/tv.js?v=3.56.14"></script>
+-  <script src="/js/diagnostics.js?v=3.56.14"></script>
++  <script src="/js/mobile-config.js?v=3.56.15"></script>
++  <script src="/js/session-vault.js?v=3.56.15"></script>
++  <script src="/js/runtime-config.js?v=3.56.15"></script>
++  <script src="/js/catalog-fallback.js?v=3.56.15"></script>
++  <script src="/js/home-curation.js?v=3.56.15"></script>
++  <script src="/js/api.js?v=3.56.15"></script>
++  <script src="/js/platform.js?v=3.56.15"></script>
++  <script src="/js/release-copy.js?v=3.56.15"></script>
++  <script src="/js/native-downloads.js?v=3.56.15"></script>
++  <script src="/js/auth.js?v=3.56.15"></script>
++  <script src="/js/admin.js?v=3.56.16"></script>
++  <script src="/js/feedback.js?v=3.56.15"></script>
++  <script src="/js/player-core.js?v=3.56.15"></script>
++  <script src="/js/audio-enhancer.js?v=3.56.15"></script>
++  <script src="/js/player.js?v=3.56.16"></script>
++  <script src="/js/coverflow.js?v=3.56.15"></script>
++  <script src="/js/app.js?v=3.56.17"></script>
++  <script src="/js/tv.js?v=3.56.15"></script>
++  <script src="/js/diagnostics.js?v=3.56.15"></script>
+ </body>
+ </html>
+diff --git a/public/js/admin.js b/public/js/admin.js
+index c9cb920..fa4fbeb 100644
+--- a/public/js/admin.js
++++ b/public/js/admin.js
+@@ -15,6 +15,17 @@ const Admin = {
+     return window.fetch(input, secured);
+   },
+ 
++  formatVietnamTime(value, { seconds = true } = {}) {
++    const date = new Date(value);
++    if (!Number.isFinite(date.getTime())) return 'Không rõ thời gian';
++    return new Intl.DateTimeFormat('vi-VN', {
++      timeZone: 'Asia/Ho_Chi_Minh',
++      day: '2-digit', month: '2-digit', year: 'numeric',
++      hour: '2-digit', minute: '2-digit', ...(seconds ? { second: '2-digit' } : {}),
++      hour12: false,
++    }).format(date);
++  },
++
+   async loadAccessPolicy() {
+     const toggle = document.getElementById('adminFreeAccess');
+     const save = document.getElementById('saveAccessPolicy');
+@@ -178,14 +189,11 @@ const Admin = {
+     }
+     if (tab === 'users') {
+       this.loadUsers();
+-      this.startUserAutoRefresh();
+     }
+     if (tab === 'downloads') return Promise.all([this.loadDownloadsConfig(), this.loadAccessPolicy()]);
+-    if (tab === 'content') return Promise.all([this.loadContentStatus(), this.loadAnnouncementEditor(), this.loadMovieReports()]);
++    if (tab === 'content') return Promise.all([this.loadContentStatus(), this.loadAnnouncementEditor(), this.loadMovieReports(), this.loadFeedbackInbox()]);
+     if (tab === 'logs') {
+-      const loading = this.loadLogs();
+-      this.startLogAutoRefresh();
+-      return loading;
++      return this.loadLogs();
+     }
+   },
+ 
+@@ -348,6 +356,66 @@ const Admin = {
+     await this.loadMovieReports();
+   },
+ 
++  async loadFeedbackInbox() {
++    const container = document.getElementById('feedbackInboxList');
++    if (!container) return;
++    container.textContent = 'Đang tải góp ý người dùng…';
++    try {
++      const data = await API.request('/api/admin/feedback', { cache: 'no-store' });
++      const tickets = Array.isArray(data.tickets) ? data.tickets : [];
++      container.replaceChildren();
++      if (!tickets.length) {
++        const empty = document.createElement('p');
++        empty.className = 'admin-desc';
++        empty.textContent = 'Chưa có góp ý hoặc báo lỗi chung nào.';
++        container.appendChild(empty);
++        return;
++      }
++      tickets.forEach((ticket) => {
++        const card = document.createElement('article');
++        card.className = `device-request-card feedback-admin-card status-${ticket.status || 'open'}`;
++        const info = document.createElement('div');
++        info.className = 'device-request-info';
++        const title = document.createElement('strong');
++        title.textContent = `${ticket.category === 'issue' ? '🐞 Báo lỗi' : '💡 Góp ý'} · ${ticket.subject}`;
++        const body = document.createElement('span');
++        body.textContent = ticket.message;
++        const meta = document.createElement('small');
++        meta.textContent = `${ticket.device_id || 'Không rõ thiết bị'} · ${this.formatVietnamTime(ticket.created_at)}`;
++        info.append(title, body, meta);
++        if (ticket.admin_reply) {
++          const reply = document.createElement('span');
++          reply.className = 'feedback-admin-existing-reply';
++          reply.textContent = `Đã trả lời: ${ticket.admin_reply}`;
++          info.appendChild(reply);
++        }
++        const actions = document.createElement('div');
++        actions.className = 'device-request-actions';
++        const answer = document.createElement('button');
++        answer.type = 'button';
++        answer.className = 'btn-action-mini btn-time';
++        answer.textContent = ticket.admin_reply ? 'Sửa trả lời' : 'Trả lời user';
++        answer.onclick = () => this.replyFeedback(ticket);
++        actions.appendChild(answer);
++        card.append(info, actions);
++        container.appendChild(card);
++      });
++    } catch (error) {
++      container.textContent = `Không đọc được góp ý: ${error.message}`;
++    }
++  },
++
++  async replyFeedback(ticket) {
++    const reply = prompt(`Trả lời user về “${ticket.subject}”:`, ticket.admin_reply || '');
++    if (reply === null || !reply.trim()) return;
++    const data = await API.request('/api/admin/feedback/reply', {
++      method: 'POST',
++      body: JSON.stringify({ id: ticket.id, reply: reply.trim(), status: 'answered' }),
++    });
++    alert(`✔ ${data.message}`);
++    await this.loadFeedbackInbox();
++  },
++
+   async setMovieAvailability(report, closed) {
+     const movieSlug = report.movie_slug || report.movieSlug;
+     const movieName = report.movie_name || report.movieName || movieSlug;
+@@ -828,10 +896,9 @@ const Admin = {
+   },
+ 
+   startUserAutoRefresh() {
++    // Danh sách user chỉ cập nhật khi Admin chủ động bấm Làm mới.
++    // Tự tải lại làm nhảy vị trí đang đọc giống phần nhật ký.
+     this.stopUserAutoRefresh();
+-    this.userRefreshTimer = window.setInterval(() => {
+-      if (this.currentTab === 'users' && !document.hidden) void this.loadUsers();
+-    }, 10000);
+   },
+ 
+   stopUserAutoRefresh() {
+@@ -864,10 +931,9 @@ const Admin = {
+   },
+ 
+   startLogAutoRefresh() {
++    // Nhật ký chỉ làm mới khi Admin chủ động bấm nút. Tự tải lại làm mất vị
++    // trí đang đọc trên điện thoại và tạo truy vấn thừa mỗi 10 giây.
+     this.stopLogAutoRefresh();
+-    this.logRefreshTimer = window.setInterval(() => {
+-      if (this.currentTab === 'logs' && !document.hidden) this.loadLogs();
+-    }, 10000);
+   },
+ 
+   stopLogAutoRefresh() {
+@@ -885,14 +951,15 @@ const Admin = {
+     this.logLoading = true;
+     const more = document.getElementById('logsLoadMoreBtn');
+     if (more) more.disabled = true;
+-    if (!append) container.innerHTML = '<div class="log-line log-dim">Đang tải nhật ký người dùng…</div>';
++    const previousScrollTop = container.scrollTop;
++    if (!append && !this.loadedLogs.length) container.innerHTML = '<div class="log-line log-dim">Đang tải nhật ký người dùng…</div>';
+     const filter = this.logAccountFilter || document.getElementById('logAccountFilter')?.value.trim() || '';
+     const type = this.logTypeFilter || document.getElementById('logTypeFilter')?.value || 'ALL';
+     const query = new URLSearchParams({ limit: '100', type });
+     if (filter) query.set('identity', filter);
+     if (append && this.logCursor) query.set('before', String(this.logCursor));
+     const liveState = document.getElementById('logLiveState');
+-    if (liveState) liveState.textContent = '● ĐANG ĐỒNG BỘ';
++    if (liveState) liveState.textContent = '● ĐANG LÀM MỚI';
+ 
+     try {
+       const data = await API.request(`/api/admin/logs?${query.toString()}`, { cache: 'no-store' });
+@@ -900,8 +967,9 @@ const Admin = {
+       this.loadedLogs = append ? [...this.loadedLogs, ...incoming] : incoming;
+       this.logCursor = data.nextCursor || null;
+       this.renderLogs(this.loadedLogs);
++      if (!append) container.scrollTop = previousScrollTop;
+       if (more) more.classList.toggle('hidden', !data.hasMore);
+-      if (liveState) liveState.textContent = '● LIVE';
++      if (liveState) liveState.textContent = '● THỦ CÔNG';
+     } catch (err) {
+       if (!append) {
+         container.innerHTML = '';
+@@ -921,6 +989,11 @@ const Admin = {
+     if (this.logCursor) return this.loadLogs({ append: true });
+   },
+ 
++  refreshLogs() {
++    this.logCursor = null;
++    return this.loadLogs();
++  },
++
+   // ====================================================
+   // 4. LIVE MOVIE FEED & POSTER MANAGEMENT
+   // ====================================================
+@@ -1126,15 +1199,16 @@ const Admin = {
+       country: 'Quốc gia', query: 'Từ khóa', results: 'Kết quả', server: 'Server', quality: 'Chất lượng',
+       seconds: 'Vị trí', duration: 'Thời lượng', watched: 'Đã xem', error: 'Lỗi', entry: 'Cách vào', version: 'Phiên bản',
+       session: 'Phiên', runtime: 'Nền tảng', screen: 'Màn hình', language: 'Ngôn ngữ', network: 'Mạng',
+-      viewport: 'Vùng hiển thị', visibility: 'Hiển thị', uptime: 'Thời gian mở (giây)', buffered: 'Đệm (giây)', readyState: 'Trạng thái video', eventAt: 'Giờ thiết bị', device: 'Thiết bị (đã che)', os: 'Hệ điều hành', browser: 'Trình duyệt'
+-      , deviceName: 'Tên thiết bị', ip: 'IP mạng'
++      viewport: 'Vùng hiển thị', visibility: 'Hiển thị', uptime: 'Thời gian mở (giây)', buffered: 'Đệm (giây)', readyState: 'Trạng thái video', eventAt: 'Giờ thiết bị', device: 'Thiết bị (đã che)', deviceId: 'Mã thiết bị đầy đủ', os: 'Hệ điều hành', browser: 'Trình duyệt',
++      deviceName: 'Tên thiết bị', ip: 'IP mạng'
+     };
+ 
+     logs.forEach(l => {
+       const line = document.createElement('div');
+       line.className = 'log-line';
+ 
+-      const time = new Date(l.timestamp).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'medium' });
++      const timestamp = l.timestamp || l.createdAt || l.created_at;
++      const time = this.formatVietnamTime(timestamp);
+       
+       let typeClass = 'log-tag-info';
+       if (l.type === 'ADMIN') typeClass = 'log-tag-admin';
+@@ -1164,7 +1238,7 @@ const Admin = {
+         const label = document.createElement('b');
+         label.textContent = contextLabels[key] || key;
+         const content = document.createElement('em');
+-        content.textContent = String(value);
++        content.textContent = key === 'eventAt' ? this.formatVietnamTime(value) : String(value);
+         item.append(label, content);
+         details.appendChild(item);
+       });
+@@ -1190,9 +1264,9 @@ const Admin = {
+       : `${Math.round(watchedSeconds / 60)} phút`;
+     const latestMovie = logs.find((log) => log.context?.movie)?.context?.movie || '—';
+     document.getElementById('logLatestMovie').textContent = latestMovie;
+-    const latestTimestamp = logs[0]?.timestamp;
++    const latestTimestamp = logs[0]?.timestamp || logs[0]?.createdAt || logs[0]?.created_at;
+     document.getElementById('logLastSeen').textContent = latestTimestamp
+-      ? new Date(latestTimestamp).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })
++      ? this.formatVietnamTime(latestTimestamp, { seconds: false })
+       : '—';
+   },
+ 
+diff --git a/public/js/app.js b/public/js/app.js
+index 3a1c1d7..9a6128a 100644
+--- a/public/js/app.js
++++ b/public/js/app.js
+@@ -901,7 +901,7 @@ const App = {
+       <div class="card-poster-wrapper">
+         <img class="card-poster" src="${this.escapeHtml(posterUrl)}" alt="${this.escapeHtml(movie.name || 'Poster phim')}" loading="${railIndex !== null && railIndex < 2 ? 'eager' : 'lazy'}" fetchpriority="${railIndex !== null && railIndex < 2 ? 'high' : 'auto'}" decoding="async" width="300" height="450" />
+         ${railIndex !== null ? `<span class="card-rail-number" aria-hidden="true">${String(railIndex + 1).padStart(2, '0')}</span>` : ''}
+-        <span class="card-badge-quality">${this.escapeHtml(movie.quality || 'FHD')}</span>
++        <span class="card-badge-quality">${this.escapeHtml(movie.quality || 'Theo nguồn')}</span>
+         ${epCurrent ? `<span class="card-badge-ep">${this.escapeHtml(epCurrent)}</span>` : ''}
+         <span class="card-quick-play" aria-hidden="true"><b>▶</b><small>MỞ PHIM</small></span>
+       </div>
+@@ -961,6 +961,11 @@ const App = {
+       if (finished) return;
+       if (sourceIndex >= sources.length) {
+         finished = true;
++        const brokenCard = image.closest?.('.movie-card, .schedule-card, .search-item, .coverflow-item');
++        if (brokenCard) {
++          brokenCard.remove();
++          return;
++        }
+         image.dataset.posterFallback = '1';
+         image.src = fallback;
+         return;
+@@ -1257,7 +1262,7 @@ const App = {
+     // Badges
+     const badgesBox = document.getElementById('detailBadges');
+     badgesBox.innerHTML = `
+-      <span class="detail-badge badge-red">${this.escapeHtml(movie.quality || 'FHD')}</span>
++      <span class="detail-badge badge-red">${this.escapeHtml(movie.quality || 'Theo nguồn')}</span>
+       <span class="detail-badge">${this.escapeHtml(movie.year || '2026')}</span>
+       <span class="detail-badge">${this.escapeHtml(movie.time || 'Đang cập nhật')}</span>
+       <span class="detail-badge">${this.escapeHtml(movie.episode_current || movie.episode_total || 'Trọn bộ')}</span>
+diff --git a/public/js/feedback.js b/public/js/feedback.js
+new file mode 100644
+index 0000000..418627d
+--- /dev/null
++++ b/public/js/feedback.js
+@@ -0,0 +1,118 @@
++const Feedback = {
++  loading: false,
++
++  formatTime(value) {
++    const date = new Date(value);
++    if (!Number.isFinite(date.getTime())) return 'Không rõ thời gian';
++    return new Intl.DateTimeFormat('vi-VN', {
++      timeZone: 'Asia/Ho_Chi_Minh',
++      day: '2-digit', month: '2-digit', year: 'numeric',
++      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
++    }).format(date);
++  },
++
++  async open() {
++    const modal = document.getElementById('feedbackModal');
++    if (!modal) return;
++    modal.classList.remove('hidden');
++    document.body.classList.add('modal-open');
++    await this.load();
++  },
++
++  close() {
++    document.getElementById('feedbackModal')?.classList.add('hidden');
++    window.App?.syncPageScrollLock?.();
++  },
++
++  async submit(event) {
++    event?.preventDefault?.();
++    const category = document.getElementById('feedbackCategory')?.value || 'feedback';
++    const subject = String(document.getElementById('feedbackSubject')?.value || '').trim();
++    const message = String(document.getElementById('feedbackMessage')?.value || '').trim();
++    const status = document.getElementById('feedbackStatus');
++    const button = document.getElementById('feedbackSubmitBtn');
++    if (message.length < 3) {
++      status.textContent = 'Nhập nội dung cụ thể hơn một chút.';
++      status.className = 'gate-message error';
++      return;
++    }
++    button.disabled = true;
++    status.textContent = 'Đang gửi đến Admin…';
++    status.className = 'gate-message';
++    try {
++      const result = await API.request('/api/feedback', {
++        method: 'POST',
++        body: JSON.stringify({ category, subject, message }),
++      });
++      status.textContent = result.message || 'Đã gửi đến Admin.';
++      status.className = 'gate-message success';
++      document.getElementById('feedbackSubject').value = '';
++      document.getElementById('feedbackMessage').value = '';
++      await this.load();
++    } catch (error) {
++      status.textContent = `Không gửi được: ${error.message}`;
++      status.className = 'gate-message error';
++    } finally {
++      button.disabled = false;
++    }
++  },
++
++  async load() {
++    const list = document.getElementById('feedbackThreadList');
++    if (!list || this.loading) return;
++    this.loading = true;
++    list.textContent = 'Đang đọc phản hồi…';
++    try {
++      const data = await API.request('/api/feedback', { cache: 'no-store' });
++      list.replaceChildren();
++      const tickets = Array.isArray(data.tickets) ? data.tickets : [];
++      if (!tickets.length) {
++        const empty = document.createElement('p');
++        empty.className = 'feedback-empty';
++        empty.textContent = 'Chưa có góp ý hoặc báo lỗi nào.';
++        list.appendChild(empty);
++        return;
++      }
++      tickets.forEach((ticket) => {
++        const card = document.createElement('article');
++        card.className = `feedback-ticket status-${ticket.status || 'open'}`;
++        const heading = document.createElement('div');
++        heading.className = 'feedback-ticket-heading';
++        const title = document.createElement('strong');
++        title.textContent = `${ticket.category === 'issue' ? 'Báo lỗi' : 'Góp ý'} · ${ticket.subject}`;
++        const state = document.createElement('span');
++        state.textContent = ticket.status === 'answered' ? 'Admin đã trả lời' : ticket.status === 'closed' ? 'Đã đóng' : 'Đang chờ';
++        heading.append(title, state);
++        const message = document.createElement('p');
++        message.textContent = ticket.message;
++        const time = document.createElement('small');
++        time.textContent = this.formatTime(ticket.created_at);
++        card.append(heading, message, time);
++        if (ticket.admin_reply) {
++          const reply = document.createElement('div');
++          reply.className = 'feedback-admin-reply';
++          const label = document.createElement('b');
++          label.textContent = 'Admin trả lời';
++          const body = document.createElement('p');
++          body.textContent = ticket.admin_reply;
++          const replyTime = document.createElement('small');
++          replyTime.textContent = this.formatTime(ticket.replied_at || ticket.updated_at);
++          reply.append(label, body, replyTime);
++          card.appendChild(reply);
++        }
++        list.appendChild(card);
++      });
++    } catch (error) {
++      list.textContent = `Không đọc được phản hồi: ${error.message}`;
++    } finally {
++      this.loading = false;
++    }
++  },
++};
++
++function openFeedbackModal() { return Feedback.open(); }
++function hideFeedbackModal() { Feedback.close(); }
++function closeFeedbackModal(event) { if (event.target?.id === 'feedbackModal') Feedback.close(); }
++function submitFeedback(event) { return Feedback.submit(event); }
++
++window.Feedback = Feedback;
+diff --git a/public/js/player.js b/public/js/player.js
+index 92b48f9..1d845ac 100644
+--- a/public/js/player.js
++++ b/public/js/player.js
+@@ -2,12 +2,23 @@
+ // subtitles and the selected server keep their context on every platform.
+ 
+ function formatMovieServerName(server, index = 0, movie = null) {
+-  const raw = `${server?.server_name || ''} ${movie?.lang || ''}`.toLocaleLowerCase('vi');
+-  const language = /lồng tiếng|long tieng/.test(raw) ? 'Lồng tiếng'
+-    : /thuyết minh|thuyet minh/.test(raw) ? 'Thuyết minh'
+-      : /vietsub|việt sub|phụ đề|phu de/.test(raw) ? 'Vietsub' : '';
+-  const city = Number(index) % 2 === 0 ? 'Sài Gòn' : 'Đà Nẵng';
+-  return language ? `${city} · ${language}` : city;
++  const nativeName = server?._source_server_name
++    || server?.source_server_name
++    || server?.server_data?.[0]?.stream_ref?.serverName
++    || server?.server_name
++    || '';
++  const normalize = (value) => String(value || '').normalize('NFD')
++    .replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase();
++  const classify = (value) => {
++    const raw = normalize(value);
++    if (/long\s*tieng|dubbed|\blt\b/.test(raw)) return 'Lồng tiếng';
++    if (/thuyet\s*minh|voice[ -]?over|\btm\b/.test(raw)) return 'Thuyết minh';
++    if (/viet\s*sub|phu\s*de|subbed|\bvs\b/.test(raw)) return 'Vietsub';
++    return '';
++  };
++  // Provider-native server metadata is authoritative. Movie.lang is only a
++  // fallback when that server genuinely has no language marker.
++  return classify(nativeName) || classify(movie?.lang) || `Server ${Number(index) + 1}`;
+ }
+ window.formatMovieServerName = formatMovieServerName;
+ 
+@@ -285,6 +296,9 @@ const Player = {
+       resolutionBadge.textContent = '';
+       resolutionBadge.className = 'badge-real-res hidden';
+     }
++    // The cross-origin ENSMovie iframe cannot emit pointer/play events to this
++    // wrapper. Start our chrome timer as soon as the embed is mounted.
++    this.resetInactivityTimer();
+   },
+ 
+   loadStream(streamUrl, options = {}) {
+@@ -1033,11 +1047,12 @@ const Player = {
+     window.requestAnimationFrame?.(() => this.updateSubtitleSafeArea());
+     clearTimeout(this.inactivityTimer);
+     this.inactivityTimer = window.setTimeout(() => {
+-      if (!this.video?.paused) {
++      const embedActive = this.wrapper?.classList.contains('embed-active');
++      if (embedActive || !this.video?.paused) {
+         this.wrapper.classList.add('inactive');
+         this.updateSubtitleSafeArea();
+       }
+-    }, 3200);
++    }, 2600);
+   },
+ 
+   formatTime(seconds) {
+diff --git a/public/web-index.html b/public/web-index.html
+index 7b8bca8..41206d7 100644
+--- a/public/web-index.html
++++ b/public/web-index.html
+@@ -13,11 +13,11 @@
+   
+   <link rel="manifest" href="/manifest.webmanifest">
+   <meta name="theme-color" content="#080b11">
+-  <link rel="stylesheet" href="/css/style.css?v=3.56.14">
+-  <link rel="stylesheet" href="/css/modal.css?v=3.56.14">
+-  <link rel="stylesheet" href="/css/player.css?v=3.56.14">
+-  <link rel="stylesheet" href="/css/tv.css?v=3.56.14">
+-  <link rel="stylesheet" href="/css/web-premium.css?v=3.56.14">
++  <link rel="stylesheet" href="/css/style.css?v=3.56.15">
++  <link rel="stylesheet" href="/css/modal.css?v=3.56.15">
++  <link rel="stylesheet" href="/css/player.css?v=3.56.16">
++  <link rel="stylesheet" href="/css/tv.css?v=3.56.15">
++  <link rel="stylesheet" href="/css/web-premium.css?v=3.56.15">
+ </head>
+ <body class="activation-locked">
+   <script>document.body.classList.add('web-preview');</script>
+@@ -446,6 +446,7 @@
+             ⚙️ MỞ PANEL QUẢN TRỊ ADMIN
+           </button>
+           <button type="button" id="accLogsBtn" class="btn-secondary hidden" onclick="Admin.open('logs')">📜 Đọc log người dùng</button>
++          <button type="button" class="btn-secondary" onclick="openFeedbackModal()">💬 Góp ý / Báo lỗi cho Admin</button>
+           <button class="btn-secondary" onclick="checkAppUpdate(true)">
+             🔄 Kiểm Tra Cập Nhật Bản Mới
+           </button>
+@@ -968,6 +969,17 @@
+           <div id="movieReportsList" class="device-requests-list"><p class="admin-desc">Đang tải báo lỗi…</p></div>
+         </div>
+ 
++        <div class="admin-section-box feedback-admin-inbox">
++          <div class="table-header-row">
++            <div>
++              <h3>💬 Góp ý & báo lỗi từ người dùng</h3>
++              <p class="admin-desc">Đọc nội dung và trả lời trực tiếp; user sẽ thấy phản hồi trong hộp thư của họ.</p>
++            </div>
++            <button class="btn-refresh-keys" type="button" onclick="Admin.loadFeedbackInbox()">Làm mới</button>
++          </div>
++          <div id="feedbackInboxList" class="device-requests-list"><p class="admin-desc">Đang tải góp ý…</p></div>
++        </div>
++
+         <div class="admin-section-box announcement-editor">
+           <div class="table-header-row">
+             <div>
+@@ -1023,7 +1035,7 @@
+               </select>
+               <button class="btn-action-mini btn-time" onclick="Admin.applyLogFilter()">Lọc</button>
+               <button class="btn-action-mini" onclick="Admin.clearLogFilter()">Bỏ lọc</button>
+-              <button class="btn-refresh-keys" onclick="Admin.loadLogs()">🔄 Làm mới</button>
++              <button class="btn-refresh-keys" onclick="Admin.refreshLogs()">🔄 Cập nhật log mới</button>
+               <button class="btn-action-mini btn-delete" onclick="Admin.clearLogs()">🗑 Xóa Sạch Log</button>
+             </div>
+           </div>
+@@ -1047,8 +1059,8 @@
+               <span class="terminal-dot red"></span>
+               <span class="terminal-dot yellow"></span>
+               <span class="terminal-dot green"></span>
+-              <span class="terminal-title">activity.log — tự làm mới mỗi 10 giây</span>
+-              <span id="logLiveState" class="log-live-state">● LIVE</span>
++              <span class="terminal-title">activity.log — chỉ cập nhật khi Admin yêu cầu</span>
++              <span id="logLiveState" class="log-live-state">● THỦ CÔNG</span>
+             </div>
+             <div class="terminal-body" id="terminalLogsBody">
+               <div class="log-line">Đang tải dữ liệu nhật ký hoạt động...</div>
+@@ -1248,6 +1260,30 @@
+     </div>
+   </div>
+ 
++  <button id="feedbackFab" class="feedback-fab" type="button" onclick="openFeedbackModal()" aria-label="Góp ý hoặc báo lỗi">💬 Góp ý</button>
++
++  <div id="feedbackModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="feedbackTitle" onclick="closeFeedbackModal(event)">
++    <div class="modal-dialog feedback-dialog" onclick="event.stopPropagation()">
++      <button class="modal-close-btn" type="button" aria-label="Đóng góp ý" onclick="hideFeedbackModal()">✕</button>
++      <div class="feedback-header">
++        <span>HỘP THƯ MNHUT</span>
++        <h2 id="feedbackTitle">Góp ý hoặc báo lỗi</h2>
++        <p>Nhắn chi tiết cho Admin. Khi Admin trả lời, phản hồi sẽ hiện bên dưới.</p>
++      </div>
++      <form class="feedback-form" onsubmit="submitFeedback(event)">
++        <label><span>Loại nội dung</span>
++          <select id="feedbackCategory"><option value="feedback">Góp ý hoàn thiện</option><option value="issue">Báo lỗi ứng dụng/phim</option></select>
++        </label>
++        <label><span>Tiêu đề</span><input id="feedbackSubject" maxlength="120" placeholder="Ví dụ: lỗi trên iPhone, đề xuất thêm phim…" /></label>
++        <label><span>Nội dung chi tiết</span><textarea id="feedbackMessage" maxlength="1200" rows="5" required placeholder="Mô tả lỗi, tên phim, thiết bị hoặc phần muốn cải thiện…"></textarea></label>
++        <button id="feedbackSubmitBtn" class="btn-primary" type="submit">Gửi đến Admin</button>
++        <p id="feedbackStatus" class="gate-message hidden" role="status"></p>
++      </form>
++      <div class="feedback-thread-heading"><h3>Lịch sử & phản hồi</h3><button type="button" class="btn-action-mini" onclick="Feedback.load()">Làm mới</button></div>
++      <div id="feedbackThreadList" class="feedback-thread-list"><p class="feedback-empty">Đang tải…</p></div>
++    </div>
++  </div>
++
+   <!-- ================================================= -->
+   <!-- 7. DOWNLOAD LATEST VERSION MODAL (ADR, IPA, EXE)  -->
+   <!-- ================================================= -->
+@@ -1423,23 +1459,24 @@
+   </div>
+ 
+   <!-- Scripts -->
+-  <script src="/js/mobile-config.js?v=3.56.14"></script>
+-  <script src="/js/session-vault.js?v=3.56.14"></script>
+-  <script src="/js/runtime-config.js?v=3.56.14"></script>
+-  <script src="/js/catalog-fallback.js?v=3.56.14"></script>
+-  <script src="/js/home-curation.js?v=3.56.14"></script>
+-  <script src="/js/api.js?v=3.56.14"></script>
+-  <script src="/js/platform.js?v=3.56.14"></script>
+-  <script src="/js/release-copy.js?v=3.56.14"></script>
+-  <script src="/js/native-downloads.js?v=3.56.14"></script>
+-  <script src="/js/auth.js?v=3.56.14"></script>
+-  <script src="/js/admin.js?v=3.56.14"></script>
+-  <script src="/js/player-core.js?v=3.56.14"></script>
+-  <script src="/js/audio-enhancer.js?v=3.56.14"></script>
+-  <script src="/js/player.js?v=3.56.14"></script>
+-  <script src="/js/coverflow.js?v=3.56.14"></script>
+-  <script src="/js/app.js?v=3.56.14"></script>
+-  <script src="/js/tv.js?v=3.56.14"></script>
+-  <script src="/js/diagnostics.js?v=3.56.14"></script>
++  <script src="/js/mobile-config.js?v=3.56.15"></script>
++  <script src="/js/session-vault.js?v=3.56.15"></script>
++  <script src="/js/runtime-config.js?v=3.56.15"></script>
++  <script src="/js/catalog-fallback.js?v=3.56.15"></script>
++  <script src="/js/home-curation.js?v=3.56.15"></script>
++  <script src="/js/api.js?v=3.56.15"></script>
++  <script src="/js/platform.js?v=3.56.15"></script>
++  <script src="/js/release-copy.js?v=3.56.15"></script>
++  <script src="/js/native-downloads.js?v=3.56.15"></script>
++  <script src="/js/auth.js?v=3.56.15"></script>
++  <script src="/js/admin.js?v=3.56.16"></script>
++  <script src="/js/feedback.js?v=3.56.15"></script>
++  <script src="/js/player-core.js?v=3.56.15"></script>
++  <script src="/js/audio-enhancer.js?v=3.56.15"></script>
++  <script src="/js/player.js?v=3.56.16"></script>
++  <script src="/js/coverflow.js?v=3.56.15"></script>
++  <script src="/js/app.js?v=3.56.17"></script>
++  <script src="/js/tv.js?v=3.56.15"></script>
++  <script src="/js/diagnostics.js?v=3.56.15"></script>
+ </body>
+ </html>
+diff --git a/scripts/rebuild-release.flag b/scripts/rebuild-release.flag
+index 88392f2..3853f2f 100644
+--- a/scripts/rebuild-release.flag
++++ b/scripts/rebuild-release.flag
+@@ -12,3 +12,4 @@
+ 2026-09-28 MNHUT rebuild #16: keep every player action visible in phone landscape mode
+ 2026-09-28 MNHUT rebuild #17: sync protected desktop playback, real admin actions and low-lag rails to all clients
+ 2026-09-29 MNHUT rebuild #18: restore stable ENS embed playback and live movie details on all clients
++2026-09-29 MNHUT rebuild #19: remove VSMOV, publish ENSMovie-only playback and repair broken artwork on all clients
+diff --git a/test/admin-runtime-contract.test.js b/test/admin-runtime-contract.test.js
+index 1aadb4f..e5ce0ec 100644
+--- a/test/admin-runtime-contract.test.js
++++ b/test/admin-runtime-contract.test.js
+@@ -27,8 +27,8 @@ test('admin route always receives the current login runtime instead of Safari ca
+   assert.ok(auth.includes("window.location.pathname.replace(/\\/+$/, '') === '/admin'"));
+   assert.match(worker, /new URL\('\/web-index\.html', request\.url\)/);
+   assert.match(worker, /headers\.set\('cache-control', 'no-store, max-age=0'\)/);
+-  assert.match(index, /\/js\/auth\.js\?v=3\.56\.14/);
+-  assert.match(webIndex, /\/js\/auth\.js\?v=3\.56\.14/);
++  assert.match(index, /\/js\/auth\.js\?v=3\.56\.15/);
++  assert.match(webIndex, /\/js\/auth\.js\?v=3\.56\.15/);
+   assert.doesNotMatch(`${index}\n${webIndex}`, /\/js\/auth\.js\?v=3\.56["']/);
+ });
+ 
+@@ -57,14 +57,41 @@ test('admin receives movie reports and can close or reopen a movie', () => {
+   assert.match(html, /id="movieReportsList"/);
+ });
+ 
+-test('ENSMovie-only playback keeps history and regional server labels', () => {
++test('ENSMovie-only playback keeps history and exact language server labels', () => {
+   const player = read('public/js/player.js');
+   const loadEpisode = player.match(/async loadEpisode\(episode,[\s\S]*?\n  \},\n\n  playEmbedStream/)?.[0] || '';
+   assert.match(loadEpisode, /this\.playEmbedStream\(providerEmbedUrl\)/);
+   assert.doesNotMatch(loadEpisode, /getPlaybackTicket|link_m3u8|loadStream/);
+   assert.match(player, /this\.setAspectRatio\('contain'/);
+   assert.match(player, /void this\.enterCinemaFullscreen\(\)/);
+-  assert.match(player, /'Sài Gòn' : 'Đà Nẵng'/);
++  assert.match(player, /return 'Lồng tiếng'/);
++  assert.match(player, /return 'Thuyết minh'/);
++  assert.match(player, /return 'Vietsub'/);
++  assert.doesNotMatch(player, /'Sài Gòn' : 'Đà Nẵng'/);
+   assert.match(player, /PlayerCore\.doubleTapSeek/);
+   assert.match(player, /ContinueWatching\.saveItem/);
+ });
++
++test('feedback is persisted, replyable by Admin and visible to the submitting user', () => {
++  const backend = read('backend-worker/src/worker.mjs');
++  const admin = read('public/js/admin.js');
++  const feedback = read('public/js/feedback.js');
++  const html = read('public/index.html');
++  assert.match(backend, /CREATE TABLE IF NOT EXISTS feedback_tickets/);
++  assert.match(backend, /pathname === "\/api\/feedback"/);
++  assert.match(backend, /pathname === "\/api\/admin\/feedback\/reply"/);
++  assert.match(admin, /replyFeedback\(ticket\)/);
++  assert.match(feedback, /admin_reply/);
++  assert.match(html, /id="feedbackModal"/);
++  assert.match(html, /id="feedbackInboxList"/);
++});
++
++test('admin logs use manual refresh and explicit Vietnam time', () => {
++  const admin = read('public/js/admin.js');
++  const html = read('public/index.html');
++  assert.doesNotMatch(admin, /logRefreshTimer = window\.setInterval/);
++  assert.doesNotMatch(admin, /userRefreshTimer = window\.setInterval/);
++  assert.match(admin, /timeZone: 'Asia\/Ho_Chi_Minh'/);
++  assert.match(html, /Admin\.refreshLogs\(\)/);
++  assert.match(html, /chỉ cập nhật khi Admin yêu cầu/);
++});
+diff --git a/test/mobile-runtime-contract.test.js b/test/mobile-runtime-contract.test.js
+index cee1ddf..a90e584 100644
+--- a/test/mobile-runtime-contract.test.js
++++ b/test/mobile-runtime-contract.test.js
+@@ -179,7 +179,7 @@ test('iOS entry point cache-busts every bundled script and stylesheet', () => {
+   const localAssets = [...html.matchAll(/(?:src|href)="\/(?:js|css|vendor)\/[^"?]+(?:\?[^" ]+)?"/g)].map(match => match[0]);
+   assert.ok(localAssets.length >= 20);
+   assert.ok(localAssets.every(asset => asset.includes('?v=')), localAssets.join('\n'));
+-  assert.match(html, /\/js\/player\.js\?v=3\.56\.14/);
++  assert.match(html, /\/js\/player\.js\?v=3\.56\.16/);
+   assert.match(html, /MNHUT Cinema 3\.56[^<]*BẢN ĐỒNG BỘ ĐA THIẾT BỊ/);
+ });
+ 
+diff --git a/test/player-contract.test.js b/test/player-contract.test.js
+index 8916a9a..c4d0232 100644
+--- a/test/player-contract.test.js
++++ b/test/player-contract.test.js
+@@ -2,6 +2,7 @@ const test = require('node:test');
+ const assert = require('node:assert/strict');
+ const fs = require('node:fs');
+ const path = require('node:path');
++const vm = require('node:vm');
+ 
+ const root = path.resolve(__dirname, '..');
+ const player = fs.readFileSync(path.join(root, 'public/js/player.js'), 'utf8');
+@@ -45,10 +46,36 @@ test('desktop and mobile playback use only the stable EnsMovie embed', () => {
+   assert.match(player, /playEmbedStream\(embedUrl\)[\s\S]*?iframe\.src = safeEmbedUrl/);
+   const authoritativeApi = pagesWorker.match(/const authoritativeApi =[\s\S]*?;\n    if \(authoritativeApi\)/)?.[0] || '';
+   assert.doesNotMatch(authoritativeApi, /\/api\/movies\/detail\//);
+-  assert.match(pagesWorker, /request\.method === 'GET' && url\.pathname\.startsWith\('\/api\/movies\/detail\/'\)[\s\S]*?fetchDirectMovieCatalog/);
++  assert.match(pagesWorker, /request\.method === 'GET' && url\.pathname\.startsWith\('\/api\/movies\/'\)[\s\S]*?fetchDirectMovieCatalog/);
+   assert.match(app, /if \(episode\?\.stream_ref\) return episode;[\s\S]*?stream_ref:/);
+   assert.doesNotMatch(pagesWorker, /usesBrowserPlayer/);
+   assert.match(player, /resolutionBadge\.className = 'badge-real-res hidden'/);
++  assert.match(backend, /embed\.hostname !== "player\.phimapi\.com"/);
++  assert.match(backend, /link_embed: embed\.href/);
++  assert.match(backend, /_source_id, 40\)\.toLowerCase\(\) === "phimapi"/);
++});
++
++test('broken catalogue artwork is removed instead of showing the generic 4K poster', () => {
++  assert.match(app, /image\.closest\?\.\('\.movie-card, \.schedule-card, \.search-item, \.coverflow-item'\)/);
++  assert.match(app, /if \(brokenCard\) \{[\s\S]*?brokenCard\.remove\(\);[\s\S]*?return;/);
++});
++
++test('server labels come from provider language metadata without fake regions', () => {
++  const source = player.match(/function formatMovieServerName\([\s\S]*?\n\}/)?.[0];
++  assert.ok(source);
++  const format = vm.runInNewContext(`${source}; formatMovieServerName`);
++  assert.equal(format({ server_name: 'Vietsub #1' }, 0, { lang: 'Lồng Tiếng' }), 'Vietsub');
++  assert.equal(format({ server_name: 'Thuyết minh #2' }, 1, { lang: 'Vietsub' }), 'Thuyết minh');
++  assert.equal(format({ server_name: 'Lồng Tiếng' }, 2, { lang: 'Vietsub' }), 'Lồng tiếng');
++  assert.equal(format({ server_name: 'Server 4' }, 3, {}), 'Server 4');
++});
++
++test('ENSMovie iframe chrome auto-hides after 2.6 seconds and retains a wake edge', () => {
++  assert.match(player, /const embedActive = this\.wrapper\?\.classList\.contains\('embed-active'\)/);
++  assert.match(player, /playEmbedStream\(embedUrl\)[\s\S]*?this\.resetInactivityTimer\(\)/);
++  assert.match(player, /\}, 2600\);/);
++  assert.match(css, /\.cinema-player-wrapper\.inactive\.embed-active::after/);
++  assert.match(css, /\.cinema-player-wrapper\.inactive\.embed-active #playerTopBar > \*/);
+ });
+ 
+ test('hidden native video cannot cover an active EnsMovie embed with a false stall warning', () => {
+diff --git a/test/web-worker-catalog.test.js b/test/web-worker-catalog.test.js
+index a672c35..885c49c 100644
+--- a/test/web-worker-catalog.test.js
++++ b/test/web-worker-catalog.test.js
+@@ -5,20 +5,35 @@ const path = require('node:path');
+ 
+ const worker = fs.readFileSync(path.join(__dirname, '../public/_worker.js'), 'utf8');
+ 
+-test('home catalog merges continuously updated PhimAPI and VSMOV pages', () => {
+-  assert.match(worker, /const VSMOV_ORIGIN = 'https:\/\/vsmov\.com'/);
+-  assert.match(worker, /\[1, 2, 3, 4, 5, 6\].*phim-moi-cap-nhat/s);
++test('home catalog uses only the continuously updated PhimAPI catalogue', () => {
++  assert.doesNotMatch(worker, /vsmov/i);
++  assert.match(worker, /latestPageCount = 12/);
++  assert.match(worker, /categoryPageCount = 4/);
++  assert.match(worker, /Array\.from\(\{ length: latestPageCount \}/);
+   assert.match(worker, /Phim Mới & Hot Cập Nhật Liên Tục/);
++  assert.doesNotMatch(worker, /Kho Phim Mở Rộng|expanded-library/);
+   assert.match(worker, /latestFirst\(/);
+   assert.match(worker, /hotNewMovies\(/);
+ });
+ 
++test('detail, search and category fallbacks never reintroduce VSMOV playback', () => {
++  assert.doesNotMatch(worker, /vsmov/i);
++  assert.match(worker, /PHIMAPI_ORIGIN.*\/phim\//s);
++  assert.match(worker, /source: 'phimapi \+ ensmovie'/);
++});
++
+ test('home sections have intentionally different large limits', () => {
+-  for (const count of [174, 54, 186, 162, 64, 42]) {
++  for (const count of [174, 120, 54, 186, 162, 64, 42]) {
+     assert.match(worker, new RegExp(`slice\\(0, ${count}\\)`));
+   }
+ });
+ 
++test('home exposes a truthful high-quality section without inventing HD labels', () => {
++  assert.match(worker, /Kho FHD & 4K Chất Lượng Cao/);
++  assert.match(worker, /\(\?:4k\|uhd\|fhd\|1080\)/);
++  assert.doesNotMatch(worker, /quality: movie\.quality \|\| 'HD'/);
++});
++
+ test('worker applies path-aware rate limits and normalized edge caching', () => {
+   assert.match(worker, /function rateLimitRule\(path\)/);
+   assert.match(worker, /function invalidRequestReason\(request, url\)/);
