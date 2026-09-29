@@ -284,12 +284,13 @@ test('home filters query the full server catalogue with pagination and a mobile 
   assert.match(styles, /\.filtered-movie-grid/);
 });
 
-test('native home paints its bundled catalogue before waiting for the live feed', () => {
+test('every client paints its bundled catalogue before waiting for the live feed', () => {
   const app = read('../public/js/app.js');
   const fallbackIndex = app.indexOf('this.applyHomeFeed(API.getBundledHomeFeed())');
   const liveRequestIndex = app.indexOf('const data = await API.getHomeFeed()');
-  assert.ok(fallbackIndex >= 0, 'native fallback should be rendered');
+  assert.ok(fallbackIndex >= 0, 'bundled fallback should be rendered');
   assert.ok(liveRequestIndex > fallbackIndex, 'live request must happen after the fallback is visible');
+  assert.doesNotMatch(app, /if \(!silent && window\.Phim4KRuntime\?\.apiBaseUrl\)/);
   assert.match(app, /if \(silent \|\| renderedBundledCatalog\) return;/);
   assert.match(app, /applyHomeFeed\(data\)/);
 });

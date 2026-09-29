@@ -59,7 +59,7 @@ test('admin receives movie reports and can close or reopen a movie', () => {
 
 test('ENSMovie-only playback keeps history and exact language server labels', () => {
   const player = read('public/js/player.js');
-  const loadEpisode = player.match(/async loadEpisode\(episode,[\s\S]*?\n  \},\n\n  playEmbedStream/)?.[0] || '';
+  const loadEpisode = player.match(/async loadEpisode\(episode,[\s\S]*?\r?\n  \},\r?\n\r?\n  playEmbedStream/)?.[0] || '';
   assert.match(loadEpisode, /this\.playEmbedStream\(providerEmbedUrl\)/);
   assert.doesNotMatch(loadEpisode, /getPlaybackTicket|link_m3u8|loadStream/);
   assert.match(player, /this\.setAspectRatio\('contain'/);

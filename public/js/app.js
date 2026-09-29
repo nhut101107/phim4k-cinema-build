@@ -167,11 +167,11 @@ const App = {
     document.getElementById('categoryView')?.classList.add('hidden');
 
     const container = document.getElementById('dynamicSections');
-    // Native WebViews can take longer than Safari to establish their first
-    // connection. Render the bundled catalogue now, then refresh it in place
-    // when the live Worker response arrives.
+    // Any client can encounter a slow first connection. Render the bundled
+    // catalogue immediately, then refresh it in place when the live Worker
+    // response arrives.
     let renderedBundledCatalog = false;
-    if (!silent && window.Phim4KRuntime?.apiBaseUrl) {
+    if (!silent) {
       try {
         this.applyHomeFeed(API.getBundledHomeFeed());
         renderedBundledCatalog = true;
