@@ -35,11 +35,11 @@ test('all clients keep the previously working provider player path', () => {
   assert.doesNotMatch(player, /publicWebPlayback/);
 });
 
-test('desktop playback resolves the protected EnsMovie path before the raw embed fallback', () => {
-  const embed = player.lastIndexOf('this.playEmbedStream(providerEmbedUrl)');
+test('desktop playback uses the stable EnsMovie embed before protected or raw fallbacks', () => {
+  const embed = player.indexOf('this.playEmbedStream(providerEmbedUrl)');
   const ticket = player.indexOf('API.getPlaybackTicket(episode.stream_ref)');
-  assert.ok(embed >= 0 && ticket >= 0 && ticket < embed);
-  assert.match(player, /preferProtectedPlayer = runtime === 'web' \|\| runtime === 'windows'/);
+  assert.ok(embed >= 0 && ticket >= 0 && embed < ticket);
+  assert.doesNotMatch(player, /preferProtectedPlayer/);
   assert.match(player, /playEmbedStream\(embedUrl\)[\s\S]*?iframe\.src = safeEmbedUrl/);
   const authoritativeApi = pagesWorker.match(/const authoritativeApi =[\s\S]*?;\n    if \(authoritativeApi\)/)?.[0] || '';
   assert.doesNotMatch(authoritativeApi, /\/api\/movies\/detail\//);
