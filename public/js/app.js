@@ -1174,6 +1174,7 @@ const App = {
   // 4. MOVIE DETAIL MODAL & EPISODES
   // =================================================
   async openMovieDetail(slug) {
+    this.lastDetailSlug = slug;
     const requestId = ++this.detailRequestId;
     const modal = document.getElementById('movieModal');
     modal.classList.remove('hidden');
@@ -1204,6 +1205,8 @@ const App = {
       if (requestId !== this.detailRequestId) return;
       document.getElementById('detailName').textContent = 'Không thể tải chi tiết phim';
       document.getElementById('detailContent').textContent = 'Đã có lỗi xảy ra hoặc phim này không tồn tại trên hệ thống.';
+      document.getElementById('serverTabs').innerHTML = '';
+      document.getElementById('episodesList').innerHTML = '<button type="button" class="ep-btn" onclick="App.openMovieDetail(App.lastDetailSlug)">Thử tải lại</button>';
     }
   },
 
@@ -1319,12 +1322,11 @@ const App = {
   // Preserve provider-native playback metadata on every platform. Reconstruct
   // a protected reference only for metadata-only responses.
   withPlaybackReference(episode, server, serverIndex, episodeIndex) {
-    // The Pages catalogue deliberately returns the provider's native
-    // link_embed/link_m3u8 contract. Keep those episodes intact so Player can
-    // use the known-good provider playback path. Only reconstruct a protected
-    // reference for metadata-only responses from the licensed backend.
-    if (episode?.stream_ref || episode?.link_embed || episode?.link_m3u8
-      || episode?.m3u8 || episode?.stream_url || episode?.url) return episode;
+    // Keep the provider's native URLs for mobile/TV, while also attaching the
+    // protected EnsMovie reference required by web/Windows. This prevents a
+    // public detail response from silently sending desktop back to the legacy
+    // raw player path.
+    if (episode?.stream_ref) return episode;
     const movie = this.activeMovieDetail?.movie || {};
     return {
       ...episode,
