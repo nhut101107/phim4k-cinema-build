@@ -167,7 +167,7 @@ test('a stale volatile HLS master is rejected and playback uses the live StreamC
   }
 });
 
-test('a direct HLS backup provider is merged without exposing an ad embed page', async () => {
+test('a direct HLS backup provider is never exposed in the ENSMovie-only detail', async () => {
   const f = fixture();
   const originalFetch = globalThis.fetch;
   const primary = {
@@ -195,8 +195,8 @@ test('a direct HLS backup provider is merged without exposing an ad embed page',
     const detail = await worker.fetch(viewerRequest('/api/movies/detail/backup-movie'), f.env);
     assert.equal(detail.status, 200);
     const detailJson = await detail.json();
-    assert.equal(detailJson.episodes.length, 2);
-    assert.equal(detailJson.episodes[1].server_data.length, 1);
+    assert.equal(detailJson.episodes.length, 0);
+    assert.doesNotMatch(JSON.stringify(detailJson), /backup-video|ads\.example|nguonphim/i);
 
     const playback = await worker.fetch(viewerRequest('/api/movies/play', {
       method: 'POST',

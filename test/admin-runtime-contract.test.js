@@ -27,8 +27,8 @@ test('admin route always receives the current login runtime instead of Safari ca
   assert.ok(auth.includes("window.location.pathname.replace(/\\/+$/, '') === '/admin'"));
   assert.match(worker, /new URL\('\/web-index\.html', request\.url\)/);
   assert.match(worker, /headers\.set\('cache-control', 'no-store, max-age=0'\)/);
-  assert.match(index, /\/js\/auth\.js\?v=3\.56\.14/);
-  assert.match(webIndex, /\/js\/auth\.js\?v=3\.56\.14/);
+  assert.match(index, /\/js\/auth\.js\?v=3\.56\.15/);
+  assert.match(webIndex, /\/js\/auth\.js\?v=3\.56\.15/);
   assert.doesNotMatch(`${index}\n${webIndex}`, /\/js\/auth\.js\?v=3\.56["']/);
 });
 
@@ -57,14 +57,41 @@ test('admin receives movie reports and can close or reopen a movie', () => {
   assert.match(html, /id="movieReportsList"/);
 });
 
-test('ENSMovie-only playback keeps history and regional server labels', () => {
+test('ENSMovie-only playback keeps history and exact language server labels', () => {
   const player = read('public/js/player.js');
   const loadEpisode = player.match(/async loadEpisode\(episode,[\s\S]*?\n  \},\n\n  playEmbedStream/)?.[0] || '';
   assert.match(loadEpisode, /this\.playEmbedStream\(providerEmbedUrl\)/);
   assert.doesNotMatch(loadEpisode, /getPlaybackTicket|link_m3u8|loadStream/);
   assert.match(player, /this\.setAspectRatio\('contain'/);
   assert.match(player, /void this\.enterCinemaFullscreen\(\)/);
-  assert.match(player, /'Sài Gòn' : 'Đà Nẵng'/);
+  assert.match(player, /return 'Lồng tiếng'/);
+  assert.match(player, /return 'Thuyết minh'/);
+  assert.match(player, /return 'Vietsub'/);
+  assert.doesNotMatch(player, /'Sài Gòn' : 'Đà Nẵng'/);
   assert.match(player, /PlayerCore\.doubleTapSeek/);
   assert.match(player, /ContinueWatching\.saveItem/);
+});
+
+test('feedback is persisted, replyable by Admin and visible to the submitting user', () => {
+  const backend = read('backend-worker/src/worker.mjs');
+  const admin = read('public/js/admin.js');
+  const feedback = read('public/js/feedback.js');
+  const html = read('public/index.html');
+  assert.match(backend, /CREATE TABLE IF NOT EXISTS feedback_tickets/);
+  assert.match(backend, /pathname === "\/api\/feedback"/);
+  assert.match(backend, /pathname === "\/api\/admin\/feedback\/reply"/);
+  assert.match(admin, /replyFeedback\(ticket\)/);
+  assert.match(feedback, /admin_reply/);
+  assert.match(html, /id="feedbackModal"/);
+  assert.match(html, /id="feedbackInboxList"/);
+});
+
+test('admin logs use manual refresh and explicit Vietnam time', () => {
+  const admin = read('public/js/admin.js');
+  const html = read('public/index.html');
+  assert.doesNotMatch(admin, /logRefreshTimer = window\.setInterval/);
+  assert.doesNotMatch(admin, /userRefreshTimer = window\.setInterval/);
+  assert.match(admin, /timeZone: 'Asia\/Ho_Chi_Minh'/);
+  assert.match(html, /Admin\.refreshLogs\(\)/);
+  assert.match(html, /chỉ cập nhật khi Admin yêu cầu/);
 });

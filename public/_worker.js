@@ -4,7 +4,6 @@
 const LICENSE_ORIGIN = 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev';
 const ENS_ORIGIN = 'https://enshihi.vercel.app';
 const PHIMAPI_ORIGIN = 'https://phimapi.com';
-const VSMOV_ORIGIN = 'https://vsmov.com';
 const OPHIM_ORIGIN = 'https://ophim1.com';
 const PHIMIMG_ORIGIN = 'https://phimimg.com';
 
@@ -157,7 +156,9 @@ function normalizeMovie(item, payload = null) {
 }
 
 function normalizedMovieItems(payload) {
-  return movieItems(payload).map((item) => normalizeMovie(item, payload)).filter(Boolean);
+  return movieItems(payload)
+    .map((item) => normalizeMovie(item, payload))
+    .filter((movie) => movie && (movie.poster_url || movie.thumb_url));
 }
 
 function movieIdentity(item) {
@@ -220,6 +221,7 @@ async function fetchMovieJson(path, origin = PHIMAPI_ORIGIN) {
   try {
     const response = await fetch(`${origin}${path}`, {
       headers: { accept: 'application/json' },
+      signal: AbortSignal.timeout(8000),
       cf: { cacheEverything: true, cacheTtl: 60 },
     });
     if (!response.ok || !String(response.headers.get('content-type') || '').includes('application/json')) return null;
@@ -244,30 +246,25 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
   const page = searchParams.get('page') || '1';
   try {
     if (endpoint === '/api/movies/home') {
+      const latestPageCount = 12;
+      const categoryPageCount = 4;
       const phimApiRequests = [
-        ...[1, 2, 3, 4].map((number) => `/danh-sach/phim-moi-cap-nhat?page=${number}`),
+        ...Array.from({ length: latestPageCount }, (_, index) => `/danh-sach/phim-moi-cap-nhat?page=${index + 1}`),
         ...['phim-chieu-rap', 'phim-le', 'phim-bo', 'hoat-hinh', 'tv-shows']
-          .flatMap((category) => [1, 2, 3].map((number) => `/v1/api/danh-sach/${category}?page=${number}&limit=24`)),
+          .flatMap((category) => Array.from({ length: categoryPageCount }, (_, index) => `/v1/api/danh-sach/${category}?page=${index + 1}&limit=32`)),
       ];
-      const vsmovRequests = [
-        ...[1, 2, 3, 4, 5, 6].map((number) => `/api/danh-sach/phim-moi-cap-nhat?page=${number}`),
-        ...['phim-le', 'phim-bo']
-          .flatMap((category) => [1, 2, 3, 4, 5, 6].map((number) => `/api/danh-sach/${category}?page=${number}&limit=24`)),
-      ];
-      const [phimApiPayloads, vsmovPayloads] = await Promise.all([
-        Promise.all(phimApiRequests.map((path) => fetchMovieJson(path))),
-        Promise.all(vsmovRequests.map((path) => fetchMovieJson(path, VSMOV_ORIGIN))),
-      ]);
+      const phimApiPayloads = await Promise.all(phimApiRequests.map((path) => fetchMovieJson(path)));
       const groups = phimApiPayloads.map((payload) => normalizedMovieItems(payload));
-      const vsmovGroups = vsmovPayloads.map((payload) => normalizedMovieItems(payload));
-      const latestItems = latestFirst([...groups.slice(0, 4).flat(), ...vsmovGroups.slice(0, 6).flat()]);
+      const latestItems = latestFirst(groups.slice(0, latestPageCount).flat());
       const categoryGroups = ['cinema', 'movies', 'series', 'anime', 'tv'].map((id, index) => ({
         id,
-        items: uniqueMovies(groups.slice(4 + index * 3, 7 + index * 3).flat()),
+        items: latestFirst(groups.slice(
+          latestPageCount + index * categoryPageCount,
+          latestPageCount + (index + 1) * categoryPageCount,
+        ).flat()),
       }));
-      categoryGroups[1].items = latestFirst([...categoryGroups[1].items, ...vsmovGroups.slice(6, 12).flat()]);
-      categoryGroups[2].items = latestFirst([...categoryGroups[2].items, ...vsmovGroups.slice(12, 18).flat()]);
       const allItems = uniqueMovies([...latestItems, ...categoryGroups.flatMap((group) => group.items)]);
+      const premiumItems = latestFirst(allItems.filter((movie) => /(?:4k|uhd|fhd|1080)/i.test(String(movie?.quality || ''))));
       if (!allItems.length) return null;
 
       const hero = hotNewMovies([
@@ -277,7 +274,7 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
         ...categoryGroups[2].items,
       ], 12).map((movie) => ({
         ...movie,
-        quality: movie.quality || 'HD',
+        quality: movie.quality || 'Theo nguồn',
         episode_current: movie.episode_current || 'Mới cập nhật',
       }));
 
@@ -286,6 +283,7 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
         updatedAt: new Date().toISOString(),
         sections: [
           { id: 'latest', title: '🔥 Phim Mới & Hot Cập Nhật Liên Tục', items: latestItems.slice(0, 174) },
+          { id: 'premium-quality', title: '💎 Kho FHD & 4K Chất Lượng Cao', items: premiumItems.slice(0, 120) },
           { id: 'cinema', title: '🎬 Phim Chiếu Rạp', items: categoryGroups[0].items.slice(0, 54) },
           { id: 'movies', title: '🍿 Phim Lẻ Mới', items: categoryGroups[1].items.slice(0, 186) },
           { id: 'series', title: '📺 Phim Bộ Nổi Bật', items: categoryGroups[2].items.slice(0, 162) },
@@ -298,11 +296,11 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
 
     if (endpoint.startsWith('/api/movies/detail/')) {
       const slug = endpoint.split('/api/movies/detail/')[1];
-      for (const target of [
-        `${PHIMAPI_ORIGIN}/phim/${encodeURIComponent(slug)}`,
-        `${VSMOV_ORIGIN}/api/phim/${encodeURIComponent(slug)}`,
-      ]) {
-        const res = await fetch(target, { headers: { accept: 'application/json' } });
+      for (const target of [`${PHIMAPI_ORIGIN}/phim/${encodeURIComponent(slug)}`]) {
+        const res = await fetch(target, {
+          headers: { accept: 'application/json' },
+          signal: AbortSignal.timeout(8000),
+        });
         if (res.ok) {
           const data = await res.json();
           const normalized = data?.movie ? { ...data, movie: normalizeMovie(data.movie, data) || data.movie } : data;
@@ -315,12 +313,9 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
 
     if (endpoint === '/api/movies/search') {
       const q = searchParams.get('q') || '';
-      const [data, vsmovData] = await Promise.all([
-        fetchMovieJson(`/v1/api/tim-kiem?keyword=${encodeURIComponent(q)}&page=${page}&limit=48`),
-        fetchMovieJson(`/api/tim-kiem?keyword=${encodeURIComponent(q)}&page=${page}&limit=24`, VSMOV_ORIGIN),
-      ]);
-      if (data || vsmovData) {
-        const items = uniqueMovies([...normalizedMovieItems(data), ...normalizedMovieItems(vsmovData)]);
+      const data = await fetchMovieJson(`/v1/api/tim-kiem?keyword=${encodeURIComponent(q)}&page=${page}&limit=48`);
+      if (data) {
+        const items = uniqueMovies(normalizedMovieItems(data));
         return Response.json({
           query: q,
           items,
@@ -330,12 +325,9 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
     }
 
     if (endpoint === '/api/movies/catalog') {
-      const [data, vsmovData] = await Promise.all([
-        fetchMovieJson(`/v1/api/danh-sach/phim-moi-cap-nhat?page=${page}&limit=48&sort_field=modified.time&sort_type=desc`),
-        fetchMovieJson(`/api/danh-sach/phim-moi-cap-nhat?page=${page}`, VSMOV_ORIGIN),
-      ]);
-      if (data || vsmovData) {
-        const items = uniqueMovies([...normalizedMovieItems(data), ...normalizedMovieItems(vsmovData)]);
+      const data = await fetchMovieJson(`/v1/api/danh-sach/phim-moi-cap-nhat?page=${page}&limit=48&sort_field=modified.time&sort_type=desc`);
+      if (data) {
+        const items = uniqueMovies(normalizedMovieItems(data));
         return Response.json({
           title: 'Toàn bộ kho phim',
           items,
@@ -367,14 +359,9 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
 
     if (endpoint.startsWith('/api/movies/category/')) {
       const cat = endpoint.split('/api/movies/category/')[1];
-      const [data, vsmovData] = await Promise.all([
-        fetchMovieJson(`/v1/api/danh-sach/${encodeURIComponent(cat)}?page=${page}&limit=48`),
-        ['phim-le', 'phim-bo'].includes(cat)
-          ? fetchMovieJson(`/api/danh-sach/${encodeURIComponent(cat)}?page=${page}&limit=24`, VSMOV_ORIGIN)
-          : Promise.resolve(null),
-      ]);
-      if (data || vsmovData) {
-        const items = uniqueMovies([...normalizedMovieItems(data), ...normalizedMovieItems(vsmovData)]);
+      const data = await fetchMovieJson(`/v1/api/danh-sach/${encodeURIComponent(cat)}?page=${page}&limit=48`);
+      if (data) {
+        const items = uniqueMovies(normalizedMovieItems(data));
         return Response.json({
           category: cat,
           items,
@@ -467,7 +454,7 @@ export default {
     // approvals and movie reports survive Cloudflare Pages isolate restarts.
     const authoritativeApi = url.pathname.startsWith('/api/auth/')
       || url.pathname.startsWith('/api/admin/')
-      || ['/api/app/access-policy', '/api/app/downloads', '/api/app/check-update', '/api/app/version', '/api/app/announcement', '/api/telemetry', '/api/watch-progress', '/api/movies/report-issue', '/api/movies/play'].includes(url.pathname);
+      || ['/api/app/access-policy', '/api/app/downloads', '/api/app/check-update', '/api/app/version', '/api/app/announcement', '/api/telemetry', '/api/feedback', '/api/watch-progress', '/api/movies/report-issue', '/api/movies/play'].includes(url.pathname);
     if (authoritativeApi) {
       return proxyTo(request, LICENSE_ORIGIN, {
         'x-forwarded-host': url.host,
@@ -912,7 +899,7 @@ export default {
 
     if (url.pathname === '/api/admin/content-status') {
       return Response.json({
-        source: 'phimapi + vsmov + ensmovie',
+        source: 'phimapi + ensmovie',
         cacheActive: true,
         lastSuccessfulRefreshAt: new Date().toISOString(),
         refreshIntervalSeconds: 30
@@ -942,9 +929,10 @@ export default {
       }, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
     }
 
-    // 6. Every client uses the provider contract proven by the stable web
-    // player. Keep link_embed/link_m3u8 instead of an expiring relay reference.
-    if (request.method === 'GET' && url.pathname.startsWith('/api/movies/detail/')) {
+    // 6. Movie browsing and details go directly through the same provider
+    // contract used by ENSMovie. This avoids waiting for the legacy backend
+    // before falling back and keeps link_embed/link_m3u8 intact on every client.
+    if (request.method === 'GET' && url.pathname.startsWith('/api/movies/')) {
       const movieCache = globalThis.caches?.default;
       const movieCacheKey = publicMovieCacheRequest(url);
       if (movieCache && movieCacheKey) {

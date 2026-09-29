@@ -165,3 +165,22 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(id DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs(actor_telegram_id, id DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_target ON audit_logs(target_telegram_id, id DESC);
+
+CREATE TABLE IF NOT EXISTS feedback_tickets (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  category TEXT NOT NULL CHECK(category IN ('feedback', 'issue')),
+  subject TEXT NOT NULL,
+  message TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'answered', 'closed')),
+  admin_reply TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  replied_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_feedback_owner_updated
+  ON feedback_tickets(owner_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_feedback_status_updated
+  ON feedback_tickets(status, updated_at DESC);

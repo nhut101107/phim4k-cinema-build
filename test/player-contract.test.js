@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
 const player = fs.readFileSync(path.join(root, 'public/js/player.js'), 'utf8');
@@ -45,10 +46,36 @@ test('desktop and mobile playback use only the stable EnsMovie embed', () => {
   assert.match(player, /playEmbedStream\(embedUrl\)[\s\S]*?iframe\.src = safeEmbedUrl/);
   const authoritativeApi = pagesWorker.match(/const authoritativeApi =[\s\S]*?;\n    if \(authoritativeApi\)/)?.[0] || '';
   assert.doesNotMatch(authoritativeApi, /\/api\/movies\/detail\//);
-  assert.match(pagesWorker, /request\.method === 'GET' && url\.pathname\.startsWith\('\/api\/movies\/detail\/'\)[\s\S]*?fetchDirectMovieCatalog/);
+  assert.match(pagesWorker, /request\.method === 'GET' && url\.pathname\.startsWith\('\/api\/movies\/'\)[\s\S]*?fetchDirectMovieCatalog/);
   assert.match(app, /if \(episode\?\.stream_ref\) return episode;[\s\S]*?stream_ref:/);
   assert.doesNotMatch(pagesWorker, /usesBrowserPlayer/);
   assert.match(player, /resolutionBadge\.className = 'badge-real-res hidden'/);
+  assert.match(backend, /embed\.hostname !== "player\.phimapi\.com"/);
+  assert.match(backend, /link_embed: embed\.href/);
+  assert.match(backend, /_source_id, 40\)\.toLowerCase\(\) === "phimapi"/);
+});
+
+test('broken catalogue artwork is removed instead of showing the generic 4K poster', () => {
+  assert.match(app, /image\.closest\?\.\('\.movie-card, \.schedule-card, \.search-item, \.coverflow-item'\)/);
+  assert.match(app, /if \(brokenCard\) \{[\s\S]*?brokenCard\.remove\(\);[\s\S]*?return;/);
+});
+
+test('server labels come from provider language metadata without fake regions', () => {
+  const source = player.match(/function formatMovieServerName\([\s\S]*?\n\}/)?.[0];
+  assert.ok(source);
+  const format = vm.runInNewContext(`${source}; formatMovieServerName`);
+  assert.equal(format({ server_name: 'Vietsub #1' }, 0, { lang: 'Lồng Tiếng' }), 'Vietsub');
+  assert.equal(format({ server_name: 'Thuyết minh #2' }, 1, { lang: 'Vietsub' }), 'Thuyết minh');
+  assert.equal(format({ server_name: 'Lồng Tiếng' }, 2, { lang: 'Vietsub' }), 'Lồng tiếng');
+  assert.equal(format({ server_name: 'Server 4' }, 3, {}), 'Server 4');
+});
+
+test('ENSMovie iframe chrome auto-hides after 2.6 seconds and retains a wake edge', () => {
+  assert.match(player, /const embedActive = this\.wrapper\?\.classList\.contains\('embed-active'\)/);
+  assert.match(player, /playEmbedStream\(embedUrl\)[\s\S]*?this\.resetInactivityTimer\(\)/);
+  assert.match(player, /\}, 2600\);/);
+  assert.match(css, /\.cinema-player-wrapper\.inactive\.embed-active::after/);
+  assert.match(css, /\.cinema-player-wrapper\.inactive\.embed-active #playerTopBar > \*/);
 });
 
 test('hidden native video cannot cover an active EnsMovie embed with a false stall warning', () => {

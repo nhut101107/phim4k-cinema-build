@@ -901,7 +901,7 @@ const App = {
       <div class="card-poster-wrapper">
         <img class="card-poster" src="${this.escapeHtml(posterUrl)}" alt="${this.escapeHtml(movie.name || 'Poster phim')}" loading="${railIndex !== null && railIndex < 2 ? 'eager' : 'lazy'}" fetchpriority="${railIndex !== null && railIndex < 2 ? 'high' : 'auto'}" decoding="async" width="300" height="450" />
         ${railIndex !== null ? `<span class="card-rail-number" aria-hidden="true">${String(railIndex + 1).padStart(2, '0')}</span>` : ''}
-        <span class="card-badge-quality">${this.escapeHtml(movie.quality || 'FHD')}</span>
+        <span class="card-badge-quality">${this.escapeHtml(movie.quality || 'Theo nguồn')}</span>
         ${epCurrent ? `<span class="card-badge-ep">${this.escapeHtml(epCurrent)}</span>` : ''}
         <span class="card-quick-play" aria-hidden="true"><b>▶</b><small>MỞ PHIM</small></span>
       </div>
@@ -961,6 +961,11 @@ const App = {
       if (finished) return;
       if (sourceIndex >= sources.length) {
         finished = true;
+        const brokenCard = image.closest?.('.movie-card, .schedule-card, .search-item, .coverflow-item');
+        if (brokenCard) {
+          brokenCard.remove();
+          return;
+        }
         image.dataset.posterFallback = '1';
         image.src = fallback;
         return;
@@ -1257,7 +1262,7 @@ const App = {
     // Badges
     const badgesBox = document.getElementById('detailBadges');
     badgesBox.innerHTML = `
-      <span class="detail-badge badge-red">${this.escapeHtml(movie.quality || 'FHD')}</span>
+      <span class="detail-badge badge-red">${this.escapeHtml(movie.quality || 'Theo nguồn')}</span>
       <span class="detail-badge">${this.escapeHtml(movie.year || '2026')}</span>
       <span class="detail-badge">${this.escapeHtml(movie.time || 'Đang cập nhật')}</span>
       <span class="detail-badge">${this.escapeHtml(movie.episode_current || movie.episode_total || 'Trọn bộ')}</span>

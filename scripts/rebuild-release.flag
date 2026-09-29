@@ -12,3 +12,4 @@
 2026-09-28 MNHUT rebuild #16: keep every player action visible in phone landscape mode
 2026-09-28 MNHUT rebuild #17: sync protected desktop playback, real admin actions and low-lag rails to all clients
 2026-09-29 MNHUT rebuild #18: restore stable ENS embed playback and live movie details on all clients
+2026-09-29 MNHUT rebuild #19: remove VSMOV, publish ENSMovie-only playback and repair broken artwork on all clients

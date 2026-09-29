@@ -30,7 +30,7 @@ const detailPayload = {
       slug: 'tap-1',
       filename: 'tap-1',
       link_m3u8: 'https://video.example/path/master.m3u8',
-      link_embed: 'https://embed.example/watch/secret',
+      link_embed: 'https://player.phimapi.com/player/?url=https%3A%2F%2Fvideo.example%2Fpath%2Fmaster.m3u8',
     }],
   }],
 };
@@ -42,7 +42,7 @@ function viewerRequest(path, init = {}) {
   });
 }
 
-test('catalog detail strips raw media links and playback uses encrypted Worker capabilities', async () => {
+test('catalog detail exposes only the ENSMovie iframe and keeps raw streams protected', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const target = String(input);
@@ -67,7 +67,8 @@ test('catalog detail strips raw media links and playback uses encrypted Worker c
     assert.equal(detail.status, 200);
     const detailJson = await detail.json();
     const serializedDetail = JSON.stringify(detailJson);
-    assert.doesNotMatch(serializedDetail, /video\.example|embed\.example|link_m3u8|link_embed/i);
+    assert.doesNotMatch(serializedDetail, /link_m3u8|embed\.example/i);
+    assert.equal(detailJson.episodes[0].server_data[0].link_embed, 'https://player.phimapi.com/player/?url=https%3A%2F%2Fvideo.example%2Fpath%2Fmaster.m3u8');
     assert.match(detailJson.movie.poster_url, /^https:\/\/example\.workers\.dev\/api\/media\/image\?t=/);
     assert.equal(detailJson.episodes[0].server_name, 'Server 1');
     assert.equal(detailJson.episodes[0].source_name, 'Server');

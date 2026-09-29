@@ -15,6 +15,17 @@ const Admin = {
     return window.fetch(input, secured);
   },
 
+  formatVietnamTime(value, { seconds = true } = {}) {
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return 'Không rõ thời gian';
+    return new Intl.DateTimeFormat('vi-VN', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', ...(seconds ? { second: '2-digit' } : {}),
+      hour12: false,
+    }).format(date);
+  },
+
   async loadAccessPolicy() {
     const toggle = document.getElementById('adminFreeAccess');
     const save = document.getElementById('saveAccessPolicy');
@@ -178,14 +189,11 @@ const Admin = {
     }
     if (tab === 'users') {
       this.loadUsers();
-      this.startUserAutoRefresh();
     }
     if (tab === 'downloads') return Promise.all([this.loadDownloadsConfig(), this.loadAccessPolicy()]);
-    if (tab === 'content') return Promise.all([this.loadContentStatus(), this.loadAnnouncementEditor(), this.loadMovieReports()]);
+    if (tab === 'content') return Promise.all([this.loadContentStatus(), this.loadAnnouncementEditor(), this.loadMovieReports(), this.loadFeedbackInbox()]);
     if (tab === 'logs') {
-      const loading = this.loadLogs();
-      this.startLogAutoRefresh();
-      return loading;
+      return this.loadLogs();
     }
   },
 
@@ -346,6 +354,66 @@ const Admin = {
   async decideMovieReport(id, status) {
     await API.request('/api/admin/report-decision', { method: 'POST', body: JSON.stringify({ id, status }) });
     await this.loadMovieReports();
+  },
+
+  async loadFeedbackInbox() {
+    const container = document.getElementById('feedbackInboxList');
+    if (!container) return;
+    container.textContent = 'Đang tải góp ý người dùng…';
+    try {
+      const data = await API.request('/api/admin/feedback', { cache: 'no-store' });
+      const tickets = Array.isArray(data.tickets) ? data.tickets : [];
+      container.replaceChildren();
+      if (!tickets.length) {
+        const empty = document.createElement('p');
+        empty.className = 'admin-desc';
+        empty.textContent = 'Chưa có góp ý hoặc báo lỗi chung nào.';
+        container.appendChild(empty);
+        return;
+      }
+      tickets.forEach((ticket) => {
+        const card = document.createElement('article');
+        card.className = `device-request-card feedback-admin-card status-${ticket.status || 'open'}`;
+        const info = document.createElement('div');
+        info.className = 'device-request-info';
+        const title = document.createElement('strong');
+        title.textContent = `${ticket.category === 'issue' ? '🐞 Báo lỗi' : '💡 Góp ý'} · ${ticket.subject}`;
+        const body = document.createElement('span');
+        body.textContent = ticket.message;
+        const meta = document.createElement('small');
+        meta.textContent = `${ticket.device_id || 'Không rõ thiết bị'} · ${this.formatVietnamTime(ticket.created_at)}`;
+        info.append(title, body, meta);
+        if (ticket.admin_reply) {
+          const reply = document.createElement('span');
+          reply.className = 'feedback-admin-existing-reply';
+          reply.textContent = `Đã trả lời: ${ticket.admin_reply}`;
+          info.appendChild(reply);
+        }
+        const actions = document.createElement('div');
+        actions.className = 'device-request-actions';
+        const answer = document.createElement('button');
+        answer.type = 'button';
+        answer.className = 'btn-action-mini btn-time';
+        answer.textContent = ticket.admin_reply ? 'Sửa trả lời' : 'Trả lời user';
+        answer.onclick = () => this.replyFeedback(ticket);
+        actions.appendChild(answer);
+        card.append(info, actions);
+        container.appendChild(card);
+      });
+    } catch (error) {
+      container.textContent = `Không đọc được góp ý: ${error.message}`;
+    }
+  },
+
+  async replyFeedback(ticket) {
+    const reply = prompt(`Trả lời user về “${ticket.subject}”:`, ticket.admin_reply || '');
+    if (reply === null || !reply.trim()) return;
+    const data = await API.request('/api/admin/feedback/reply', {
+      method: 'POST',
+      body: JSON.stringify({ id: ticket.id, reply: reply.trim(), status: 'answered' }),
+    });
+    alert(`✔ ${data.message}`);
+    await this.loadFeedbackInbox();
   },
 
   async setMovieAvailability(report, closed) {
@@ -828,10 +896,9 @@ const Admin = {
   },
 
   startUserAutoRefresh() {
+    // Danh sách user chỉ cập nhật khi Admin chủ động bấm Làm mới.
+    // Tự tải lại làm nhảy vị trí đang đọc giống phần nhật ký.
     this.stopUserAutoRefresh();
-    this.userRefreshTimer = window.setInterval(() => {
-      if (this.currentTab === 'users' && !document.hidden) void this.loadUsers();
-    }, 10000);
   },
 
   stopUserAutoRefresh() {
@@ -864,10 +931,9 @@ const Admin = {
   },
 
   startLogAutoRefresh() {
+    // Nhật ký chỉ làm mới khi Admin chủ động bấm nút. Tự tải lại làm mất vị
+    // trí đang đọc trên điện thoại và tạo truy vấn thừa mỗi 10 giây.
     this.stopLogAutoRefresh();
-    this.logRefreshTimer = window.setInterval(() => {
-      if (this.currentTab === 'logs' && !document.hidden) this.loadLogs();
-    }, 10000);
   },
 
   stopLogAutoRefresh() {
@@ -885,14 +951,15 @@ const Admin = {
     this.logLoading = true;
     const more = document.getElementById('logsLoadMoreBtn');
     if (more) more.disabled = true;
-    if (!append) container.innerHTML = '<div class="log-line log-dim">Đang tải nhật ký người dùng…</div>';
+    const previousScrollTop = container.scrollTop;
+    if (!append && !this.loadedLogs.length) container.innerHTML = '<div class="log-line log-dim">Đang tải nhật ký người dùng…</div>';
     const filter = this.logAccountFilter || document.getElementById('logAccountFilter')?.value.trim() || '';
     const type = this.logTypeFilter || document.getElementById('logTypeFilter')?.value || 'ALL';
     const query = new URLSearchParams({ limit: '100', type });
     if (filter) query.set('identity', filter);
     if (append && this.logCursor) query.set('before', String(this.logCursor));
     const liveState = document.getElementById('logLiveState');
-    if (liveState) liveState.textContent = '● ĐANG ĐỒNG BỘ';
+    if (liveState) liveState.textContent = '● ĐANG LÀM MỚI';
 
     try {
       const data = await API.request(`/api/admin/logs?${query.toString()}`, { cache: 'no-store' });
@@ -900,8 +967,9 @@ const Admin = {
       this.loadedLogs = append ? [...this.loadedLogs, ...incoming] : incoming;
       this.logCursor = data.nextCursor || null;
       this.renderLogs(this.loadedLogs);
+      if (!append) container.scrollTop = previousScrollTop;
       if (more) more.classList.toggle('hidden', !data.hasMore);
-      if (liveState) liveState.textContent = '● LIVE';
+      if (liveState) liveState.textContent = '● THỦ CÔNG';
     } catch (err) {
       if (!append) {
         container.innerHTML = '';
@@ -919,6 +987,11 @@ const Admin = {
 
   loadMoreLogs() {
     if (this.logCursor) return this.loadLogs({ append: true });
+  },
+
+  refreshLogs() {
+    this.logCursor = null;
+    return this.loadLogs();
   },
 
   // ====================================================
@@ -1126,15 +1199,16 @@ const Admin = {
       country: 'Quốc gia', query: 'Từ khóa', results: 'Kết quả', server: 'Server', quality: 'Chất lượng',
       seconds: 'Vị trí', duration: 'Thời lượng', watched: 'Đã xem', error: 'Lỗi', entry: 'Cách vào', version: 'Phiên bản',
       session: 'Phiên', runtime: 'Nền tảng', screen: 'Màn hình', language: 'Ngôn ngữ', network: 'Mạng',
-      viewport: 'Vùng hiển thị', visibility: 'Hiển thị', uptime: 'Thời gian mở (giây)', buffered: 'Đệm (giây)', readyState: 'Trạng thái video', eventAt: 'Giờ thiết bị', device: 'Thiết bị (đã che)', os: 'Hệ điều hành', browser: 'Trình duyệt'
-      , deviceName: 'Tên thiết bị', ip: 'IP mạng'
+      viewport: 'Vùng hiển thị', visibility: 'Hiển thị', uptime: 'Thời gian mở (giây)', buffered: 'Đệm (giây)', readyState: 'Trạng thái video', eventAt: 'Giờ thiết bị', device: 'Thiết bị (đã che)', deviceId: 'Mã thiết bị đầy đủ', os: 'Hệ điều hành', browser: 'Trình duyệt',
+      deviceName: 'Tên thiết bị', ip: 'IP mạng'
     };
 
     logs.forEach(l => {
       const line = document.createElement('div');
       line.className = 'log-line';
 
-      const time = new Date(l.timestamp).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'medium' });
+      const timestamp = l.timestamp || l.createdAt || l.created_at;
+      const time = this.formatVietnamTime(timestamp);
       
       let typeClass = 'log-tag-info';
       if (l.type === 'ADMIN') typeClass = 'log-tag-admin';
@@ -1164,7 +1238,7 @@ const Admin = {
         const label = document.createElement('b');
         label.textContent = contextLabels[key] || key;
         const content = document.createElement('em');
-        content.textContent = String(value);
+        content.textContent = key === 'eventAt' ? this.formatVietnamTime(value) : String(value);
         item.append(label, content);
         details.appendChild(item);
       });
@@ -1190,9 +1264,9 @@ const Admin = {
       : `${Math.round(watchedSeconds / 60)} phút`;
     const latestMovie = logs.find((log) => log.context?.movie)?.context?.movie || '—';
     document.getElementById('logLatestMovie').textContent = latestMovie;
-    const latestTimestamp = logs[0]?.timestamp;
+    const latestTimestamp = logs[0]?.timestamp || logs[0]?.createdAt || logs[0]?.created_at;
     document.getElementById('logLastSeen').textContent = latestTimestamp
-      ? new Date(latestTimestamp).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })
+      ? this.formatVietnamTime(latestTimestamp, { seconds: false })
       : '—';
   },
 

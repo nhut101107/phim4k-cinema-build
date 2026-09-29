@@ -352,6 +352,26 @@ video::cue {
 }
 .cinema-player-wrapper.inactive .player-top-bar,
 .cinema-player-wrapper.inactive .player-controls { opacity: 0; pointer-events: none; }
+.cinema-player-wrapper.inactive .player-top-bar {
+  visibility: hidden;
+}
+.cinema-player-wrapper.inactive.embed-active #playerTopBar > * {
+  pointer-events: none !important;
+}
+
+/* Embedded players live in a cross-origin iframe, so their pointer events do
+   not bubble to the wrapper. Keep only a thin invisible top-edge wake zone;
+   the rest of the movie stays completely unobstructed. */
+.cinema-player-wrapper.inactive.embed-active::after {
+  content: "";
+  position: absolute;
+  z-index: 45;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 24px;
+  pointer-events: auto;
+}
 
 .progress-bar-container {
   position: relative;

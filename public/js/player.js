@@ -2,12 +2,23 @@
 // subtitles and the selected server keep their context on every platform.
 
 function formatMovieServerName(server, index = 0, movie = null) {
-  const raw = `${server?.server_name || ''} ${movie?.lang || ''}`.toLocaleLowerCase('vi');
-  const language = /lồng tiếng|long tieng/.test(raw) ? 'Lồng tiếng'
-    : /thuyết minh|thuyet minh/.test(raw) ? 'Thuyết minh'
-      : /vietsub|việt sub|phụ đề|phu de/.test(raw) ? 'Vietsub' : '';
-  const city = Number(index) % 2 === 0 ? 'Sài Gòn' : 'Đà Nẵng';
-  return language ? `${city} · ${language}` : city;
+  const nativeName = server?._source_server_name
+    || server?.source_server_name
+    || server?.server_data?.[0]?.stream_ref?.serverName
+    || server?.server_name
+    || '';
+  const normalize = (value) => String(value || '').normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase();
+  const classify = (value) => {
+    const raw = normalize(value);
+    if (/long\s*tieng|dubbed|\blt\b/.test(raw)) return 'Lồng tiếng';
+    if (/thuyet\s*minh|voice[ -]?over|\btm\b/.test(raw)) return 'Thuyết minh';
+    if (/viet\s*sub|phu\s*de|subbed|\bvs\b/.test(raw)) return 'Vietsub';
+    return '';
+  };
+  // Provider-native server metadata is authoritative. Movie.lang is only a
+  // fallback when that server genuinely has no language marker.
+  return classify(nativeName) || classify(movie?.lang) || `Server ${Number(index) + 1}`;
 }
 window.formatMovieServerName = formatMovieServerName;
 
@@ -285,6 +296,9 @@ const Player = {
       resolutionBadge.textContent = '';
       resolutionBadge.className = 'badge-real-res hidden';
     }
+    // The cross-origin ENSMovie iframe cannot emit pointer/play events to this
+    // wrapper. Start our chrome timer as soon as the embed is mounted.
+    this.resetInactivityTimer();
   },
 
   loadStream(streamUrl, options = {}) {
@@ -1033,11 +1047,12 @@ const Player = {
     window.requestAnimationFrame?.(() => this.updateSubtitleSafeArea());
     clearTimeout(this.inactivityTimer);
     this.inactivityTimer = window.setTimeout(() => {
-      if (!this.video?.paused) {
+      const embedActive = this.wrapper?.classList.contains('embed-active');
+      if (embedActive || !this.video?.paused) {
         this.wrapper.classList.add('inactive');
         this.updateSubtitleSafeArea();
       }
-    }, 3200);
+    }, 2600);
   },
 
   formatTime(seconds) {

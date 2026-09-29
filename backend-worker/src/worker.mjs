@@ -526,6 +526,37 @@ function requestDeviceName(request) {
   return runtime === "web" ? "Trình duyệt web" : runtime;
 }
 
+function requestOsName(request) {
+  const userAgent = String(request.headers.get("user-agent") || "");
+  const ios = userAgent.match(/(?:CPU (?:iPhone )?OS|iPhone OS) ([\d_]+)/i)?.[1];
+  if (ios) return `iOS ${ios.replaceAll("_", ".")}`;
+  const android = userAgent.match(/Android\s+([\d.]+)/i)?.[1];
+  if (android) return `Android ${android}`;
+  const windows = userAgent.match(/Windows NT\s+([\d.]+)/i)?.[1];
+  if (windows) return windows === "10.0" ? "Windows 10/11" : `Windows ${windows}`;
+  const mac = userAgent.match(/Mac OS X\s+([\d_]+)/i)?.[1];
+  if (mac) return `macOS ${mac.replaceAll("_", ".")}`;
+  return requestRuntime(request);
+}
+
+function requestBrowserName(request) {
+  const userAgent = String(request.headers.get("user-agent") || "");
+  const match = userAgent.match(/Edg\/([\d.]+)/i)
+    || userAgent.match(/CriOS\/([\d.]+)/i)
+    || userAgent.match(/Chrome\/([\d.]+)/i)
+    || userAgent.match(/FxiOS\/([\d.]+)/i)
+    || userAgent.match(/Firefox\/([\d.]+)/i)
+    || userAgent.match(/Version\/([\d.]+).*Safari/i);
+  if (!match) return "Không xác định";
+  const major = String(match[1] || "").split(".")[0];
+  const name = /Edg\//i.test(userAgent) ? "Edge"
+    : /CriOS\//i.test(userAgent) ? "Chrome iOS"
+      : /Chrome\//i.test(userAgent) ? "Chrome"
+        : /FxiOS\//i.test(userAgent) ? "Firefox iOS"
+          : /Firefox\//i.test(userAgent) ? "Firefox" : "Safari";
+  return major ? `${name} ${major}` : name;
+}
+
 function ratePolicy(pathname) {
   if (pathname === "/api/auth/activate" || pathname === "/api/auth/request-device-access") return RATE_LIMITS.authActivate;
   if (pathname === "/api/auth/status" || pathname === "/api/auth/device-status") return RATE_LIMITS.authStatus;
@@ -1048,11 +1079,15 @@ async function handleTelemetry(request, env) {
   const device = maskedValue(identity.deviceId, 6);
   for (const event of events) {
     const context = {
+      ...event.context,
       device,
+      deviceId: identity.deviceId,
       deviceName: requestDeviceName(request),
       ip: getClientIp(request),
       version: String(appVersion(request)).slice(0, 24),
-      ...event.context,
+      runtime: requestRuntime(request),
+      os: requestOsName(request),
+      browser: requestBrowserName(request),
     };
     // Preserve valid JSON rather than slicing a serialized object mid-field.
     for (const key of Object.keys(event.context).reverse()) {
@@ -1356,6 +1391,69 @@ async function getMaintenance(db) {
 async function ensureMovieReportSchema(db) {
   await db.prepare("CREATE TABLE IF NOT EXISTS movie_reports (id TEXT PRIMARY KEY, movie_slug TEXT NOT NULL, movie_name TEXT NOT NULL, episode TEXT, reason TEXT NOT NULL, device_id TEXT, status TEXT NOT NULL DEFAULT 'open', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)").bind().run();
   await db.prepare("CREATE TABLE IF NOT EXISTS closed_movies (movie_slug TEXT PRIMARY KEY, movie_name TEXT, reason TEXT, closed_at TEXT NOT NULL, closed_by TEXT)").bind().run();
+}
+
+async function ensureFeedbackSchema(db) {
+  await db.prepare("CREATE TABLE IF NOT EXISTS feedback_tickets (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, device_id TEXT NOT NULL, category TEXT NOT NULL CHECK(category IN ('feedback', 'issue')), subject TEXT NOT NULL, message TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'answered', 'closed')), admin_reply TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, replied_at TEXT)").bind().run();
+  await db.prepare("CREATE INDEX IF NOT EXISTS idx_feedback_owner_updated ON feedback_tickets(owner_id, updated_at DESC)").run();
+  await db.prepare("CREATE INDEX IF NOT EXISTS idx_feedback_status_updated ON feedback_tickets(status, updated_at DESC)").run();
+}
+
+function feedbackOwner(identity) {
+  const telegramId = normalizeId(identity?.telegramId);
+  const deviceId = normalizeDeviceId(identity?.deviceId);
+  return telegramId ? `telegram:${telegramId}` : `device:${deviceId}`;
+}
+
+async function handleViewerFeedback(request, env) {
+  const identity = await verifyTelemetryViewer(request, env);
+  if (identity.error) return identity.error;
+  await ensureFeedbackSchema(env.DB);
+  const ownerId = feedbackOwner(identity);
+  if (request.method === "GET") {
+    const result = await env.DB.prepare("SELECT id, category, subject, message, status, admin_reply, created_at, updated_at, replied_at FROM feedback_tickets WHERE owner_id = ? ORDER BY updated_at DESC LIMIT 50")
+      .bind(ownerId).all();
+    return json({ success: true, tickets: result.results || [] });
+  }
+  const body = await parseBody(request);
+  const category = String(body.category || "feedback").trim() === "issue" ? "issue" : "feedback";
+  const subject = cleanProgressText(body.subject || (category === "issue" ? "Báo lỗi" : "Góp ý"), 120);
+  const message = cleanProgressText(body.message, 1200);
+  if (!subject || !message || message.length < 3) return textError("Nội dung góp ý quá ngắn.", 400, "INVALID_FEEDBACK");
+  const timestamp = now();
+  const id = crypto.randomUUID();
+  await env.DB.prepare("INSERT INTO feedback_tickets (id, owner_id, device_id, category, subject, message, status, admin_reply, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'open', '', ?, ?)")
+    .bind(id, ownerId, identity.deviceId, category, subject, message, timestamp, timestamp).run();
+  await logEvent(env.DB, "feedback_submitted", {
+    actorTelegramId: identity.telegramId,
+    detail: JSON.stringify({ id, category, device: maskedValue(identity.deviceId, 6), subject }),
+  });
+  return json({ success: true, id, message: "Đã gửi đến Admin. Phản hồi sẽ hiện ngay trong hộp thư này." }, 201);
+}
+
+async function listAdminFeedback(request, env) {
+  const denied = await requireVerifiedAdmin(request, env);
+  if (denied) return denied;
+  await ensureFeedbackSchema(env.DB);
+  const result = await env.DB.prepare("SELECT * FROM feedback_tickets ORDER BY CASE status WHEN 'open' THEN 0 WHEN 'answered' THEN 1 ELSE 2 END, updated_at DESC LIMIT 200").all();
+  return json({ success: true, tickets: result.results || [] });
+}
+
+async function replyAdminFeedback(request, env) {
+  const denied = await requireVerifiedAdmin(request, env);
+  if (denied) return denied;
+  const body = await parseBody(request);
+  const id = String(body.id || "").trim();
+  const reply = cleanProgressText(body.reply, 1200);
+  const status = String(body.status || "answered").trim();
+  if (!id || !reply || !["answered", "closed"].includes(status)) return textError("Phản hồi Admin không hợp lệ.", 400, "INVALID_FEEDBACK_REPLY");
+  await ensureFeedbackSchema(env.DB);
+  const timestamp = now();
+  const result = await env.DB.prepare("UPDATE feedback_tickets SET admin_reply = ?, status = ?, replied_at = ?, updated_at = ? WHERE id = ?")
+    .bind(reply, status, timestamp, timestamp, id).run();
+  if (!Number(result?.meta?.changes || 0)) return textError("Không tìm thấy góp ý này.", 404, "FEEDBACK_NOT_FOUND");
+  await logEvent(env.DB, "admin_feedback_replied", { actorTelegramId: requestTelegram(request), detail: JSON.stringify({ id, status }) });
+  return json({ success: true, message: status === "closed" ? "Đã trả lời và đóng góp ý." : "Đã gửi phản hồi đến người dùng." });
 }
 
 async function closedMovieSlugs(db) {
@@ -3461,8 +3559,12 @@ async function protectCatalogImages(value, request, env, expiresAt = Math.floor(
 async function protectMovieDetail(data, request, env, slug) {
   const resolved = resolveCatalogImageReferences(data, catalogImageBase(data, env));
   const output = await protectCatalogImages(resolved, request, env);
-  if (output?.movie && typeof output.movie === "object") delete output.movie.trailer_url;
-  const servers = Array.isArray(output?.episodes) ? output.episodes : [];
+  if (output?.movie && typeof output.movie === "object") {
+    delete output.movie.trailer_url;
+    delete output.movie._source_candidates;
+  }
+  const servers = (Array.isArray(output?.episodes) ? output.episodes : [])
+    .filter((server) => cleanProgressText(server?._source_id, 40).toLowerCase() === "phimapi");
   output.episodes = servers.map((server, serverIndex) => {
     const sourceId = cleanProgressText(server?._source_id, 40).toLowerCase();
     const sourceMovieSlug = catalogSlug(server?._source_movie_slug) || slug;
@@ -3471,25 +3573,30 @@ async function protectMovieDetail(data, request, env, slug) {
       server_name: cleanProgressText(server?.server_name, 100) || `Server ${serverIndex + 1}`,
       source_id: sourceId,
       source_name: cleanProgressText(server?._source_name, 80),
-      server_data: (Array.isArray(server?.server_data) ? server.server_data : []).map((episode, episodeIndex) => ({
-        name: cleanProgressText(episode?.name, 120) || `Tập ${episodeIndex + 1}`,
-        slug: cleanProgressText(episode?.slug, 160),
-        filename: cleanProgressText(episode?.filename, 160),
-        stream_ref: {
-          movie: slug,
-          server: serverIndex,
-          episode: episodeIndex,
-          source: sourceId,
-          sourceMovieSlug,
-          serverName: sourceServerName,
-          episodeSlug: cleanProgressText(episode?.slug, 160),
-          episodeName: cleanProgressText(episode?.name, 120),
-          episodeFilename: cleanProgressText(episode?.filename, 160),
-          episodeNumber: episodeOrdinalHint(episode),
-        },
-      })),
+      server_data: (Array.isArray(server?.server_data) ? server.server_data : []).flatMap((episode, episodeIndex) => {
+        const embed = safePublicHttpsUrl(episode?.link_embed || episode?.linkEmbed);
+        if (!embed || embed.hostname !== "player.phimapi.com" || !embed.pathname.startsWith("/player/")) return [];
+        return [{
+          name: cleanProgressText(episode?.name, 120) || `Tập ${episodeIndex + 1}`,
+          slug: cleanProgressText(episode?.slug, 160),
+          filename: cleanProgressText(episode?.filename, 160),
+          link_embed: embed.href,
+          stream_ref: {
+            movie: slug,
+            server: serverIndex,
+            episode: episodeIndex,
+            source: sourceId,
+            sourceMovieSlug,
+            serverName: sourceServerName,
+            episodeSlug: cleanProgressText(episode?.slug, 160),
+            episodeName: cleanProgressText(episode?.name, 120),
+            episodeFilename: cleanProgressText(episode?.filename, 160),
+            episodeNumber: episodeOrdinalHint(episode),
+          },
+        }];
+      }),
     };
-  });
+  }).filter((server) => server.server_data.length);
   return output;
 }
 
@@ -3662,7 +3769,7 @@ async function handleProtectedMovieCatalog(request, env, executionContext) {
     if (!data) return textError("Chưa tải được thông tin phim từ các nguồn.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
     prewarmBackupStreams(data, slug, executionContext);
     const output = await protectMovieDetail(data, request, env, slug);
-    output.sources = entries.map((entry, index) => ({
+    output.sources = entries.filter((entry) => entry.id === "phimapi").map((entry, index) => ({
       id: entry.id,
       name: `Server ${index + 1}`,
       servers: Array.isArray(entry.data?.episodes) ? entry.data.episodes.length : 0,
@@ -4151,6 +4258,7 @@ export default {
       }
       if (request.method === "GET" && pathname === "/api/app/announcement") return json(await getAnnouncement(env.DB));
       if (request.method === "POST" && pathname === "/api/telemetry") return await handleTelemetry(request, env);
+      if (["GET", "POST"].includes(request.method) && pathname === "/api/feedback") return await handleViewerFeedback(request, env);
       if (["GET", "POST", "DELETE"].includes(request.method) && pathname === "/api/watch-progress") return await handleWatchProgress(request, env);
       if ((request.method === "GET" || request.method === "POST") && pathname === "/api/app/downloads") return await handleDownloads(request, env);
       if (request.method === "POST" && pathname === "/api/admin/update-downloads") return await handleDownloads(request, env);
@@ -4158,6 +4266,8 @@ export default {
       if (request.method === "GET" && pathname === "/api/admin/device-access-requests") return await listDeviceAccessRequests(request, env);
       if (request.method === "POST" && pathname === "/api/admin/device-access-decision") return await decideDeviceAccess(request, env);
       if (request.method === "GET" && pathname === "/api/admin/reports") return await listMovieReports(request, env);
+      if (request.method === "GET" && pathname === "/api/admin/feedback") return await listAdminFeedback(request, env);
+      if (request.method === "POST" && pathname === "/api/admin/feedback/reply") return await replyAdminFeedback(request, env);
       if (request.method === "POST" && pathname === "/api/admin/report-decision") return await decideMovieReport(request, env);
       if (request.method === "POST" && pathname === "/api/admin/movie-availability") return await setMovieAvailability(request, env);
       if (request.method === "POST" && pathname === "/api/admin/rotate-master-key") return await rotateMasterKey(request, env);

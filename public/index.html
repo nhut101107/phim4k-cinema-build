@@ -13,11 +13,11 @@
   
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#080b11">
-  <link rel="stylesheet" href="/css/style.css?v=3.56.14">
-  <link rel="stylesheet" href="/css/modal.css?v=3.56.14">
-  <link rel="stylesheet" href="/css/player.css?v=3.56.14">
-  <link rel="stylesheet" href="/css/tv.css?v=3.56.14">
-  <link rel="stylesheet" href="/css/web-premium.css?v=3.56.14">
+  <link rel="stylesheet" href="/css/style.css?v=3.56.15">
+  <link rel="stylesheet" href="/css/modal.css?v=3.56.15">
+  <link rel="stylesheet" href="/css/player.css?v=3.56.16">
+  <link rel="stylesheet" href="/css/tv.css?v=3.56.15">
+  <link rel="stylesheet" href="/css/web-premium.css?v=3.56.15">
 </head>
 <body class="activation-locked">
   <script>document.body.classList.add('web-preview');</script>
@@ -446,6 +446,7 @@
             ⚙️ MỞ PANEL QUẢN TRỊ ADMIN
           </button>
           <button type="button" id="accLogsBtn" class="btn-secondary hidden" onclick="Admin.open('logs')">📜 Đọc log người dùng</button>
+          <button type="button" class="btn-secondary" onclick="openFeedbackModal()">💬 Góp ý / Báo lỗi cho Admin</button>
           <button class="btn-secondary" onclick="checkAppUpdate(true)">
             🔄 Kiểm Tra Cập Nhật Bản Mới
           </button>
@@ -968,6 +969,17 @@
           <div id="movieReportsList" class="device-requests-list"><p class="admin-desc">Đang tải báo lỗi…</p></div>
         </div>
 
+        <div class="admin-section-box feedback-admin-inbox">
+          <div class="table-header-row">
+            <div>
+              <h3>💬 Góp ý & báo lỗi từ người dùng</h3>
+              <p class="admin-desc">Đọc nội dung và trả lời trực tiếp; user sẽ thấy phản hồi trong hộp thư của họ.</p>
+            </div>
+            <button class="btn-refresh-keys" type="button" onclick="Admin.loadFeedbackInbox()">Làm mới</button>
+          </div>
+          <div id="feedbackInboxList" class="device-requests-list"><p class="admin-desc">Đang tải góp ý…</p></div>
+        </div>
+
         <div class="admin-section-box announcement-editor">
           <div class="table-header-row">
             <div>
@@ -1023,7 +1035,7 @@
               </select>
               <button class="btn-action-mini btn-time" onclick="Admin.applyLogFilter()">Lọc</button>
               <button class="btn-action-mini" onclick="Admin.clearLogFilter()">Bỏ lọc</button>
-              <button class="btn-refresh-keys" onclick="Admin.loadLogs()">🔄 Làm mới</button>
+              <button class="btn-refresh-keys" onclick="Admin.refreshLogs()">🔄 Cập nhật log mới</button>
               <button class="btn-action-mini btn-delete" onclick="Admin.clearLogs()">🗑 Xóa Sạch Log</button>
             </div>
           </div>
@@ -1047,8 +1059,8 @@
               <span class="terminal-dot red"></span>
               <span class="terminal-dot yellow"></span>
               <span class="terminal-dot green"></span>
-              <span class="terminal-title">activity.log — tự làm mới mỗi 10 giây</span>
-              <span id="logLiveState" class="log-live-state">● LIVE</span>
+              <span class="terminal-title">activity.log — chỉ cập nhật khi Admin yêu cầu</span>
+              <span id="logLiveState" class="log-live-state">● THỦ CÔNG</span>
             </div>
             <div class="terminal-body" id="terminalLogsBody">
               <div class="log-line">Đang tải dữ liệu nhật ký hoạt động...</div>
@@ -1248,6 +1260,30 @@
     </div>
   </div>
 
+  <button id="feedbackFab" class="feedback-fab" type="button" onclick="openFeedbackModal()" aria-label="Góp ý hoặc báo lỗi">💬 Góp ý</button>
+
+  <div id="feedbackModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="feedbackTitle" onclick="closeFeedbackModal(event)">
+    <div class="modal-dialog feedback-dialog" onclick="event.stopPropagation()">
+      <button class="modal-close-btn" type="button" aria-label="Đóng góp ý" onclick="hideFeedbackModal()">✕</button>
+      <div class="feedback-header">
+        <span>HỘP THƯ MNHUT</span>
+        <h2 id="feedbackTitle">Góp ý hoặc báo lỗi</h2>
+        <p>Nhắn chi tiết cho Admin. Khi Admin trả lời, phản hồi sẽ hiện bên dưới.</p>
+      </div>
+      <form class="feedback-form" onsubmit="submitFeedback(event)">
+        <label><span>Loại nội dung</span>
+          <select id="feedbackCategory"><option value="feedback">Góp ý hoàn thiện</option><option value="issue">Báo lỗi ứng dụng/phim</option></select>
+        </label>
+        <label><span>Tiêu đề</span><input id="feedbackSubject" maxlength="120" placeholder="Ví dụ: lỗi trên iPhone, đề xuất thêm phim…" /></label>
+        <label><span>Nội dung chi tiết</span><textarea id="feedbackMessage" maxlength="1200" rows="5" required placeholder="Mô tả lỗi, tên phim, thiết bị hoặc phần muốn cải thiện…"></textarea></label>
+        <button id="feedbackSubmitBtn" class="btn-primary" type="submit">Gửi đến Admin</button>
+        <p id="feedbackStatus" class="gate-message hidden" role="status"></p>
+      </form>
+      <div class="feedback-thread-heading"><h3>Lịch sử & phản hồi</h3><button type="button" class="btn-action-mini" onclick="Feedback.load()">Làm mới</button></div>
+      <div id="feedbackThreadList" class="feedback-thread-list"><p class="feedback-empty">Đang tải…</p></div>
+    </div>
+  </div>
+
   <!-- ================================================= -->
   <!-- 7. DOWNLOAD LATEST VERSION MODAL (ADR, IPA, EXE)  -->
   <!-- ================================================= -->
@@ -1423,23 +1459,24 @@
   </div>
 
   <!-- Scripts -->
-  <script src="/js/mobile-config.js?v=3.56.14"></script>
-  <script src="/js/session-vault.js?v=3.56.14"></script>
-  <script src="/js/runtime-config.js?v=3.56.14"></script>
-  <script src="/js/catalog-fallback.js?v=3.56.14"></script>
-  <script src="/js/home-curation.js?v=3.56.14"></script>
-  <script src="/js/api.js?v=3.56.14"></script>
-  <script src="/js/platform.js?v=3.56.14"></script>
-  <script src="/js/release-copy.js?v=3.56.14"></script>
-  <script src="/js/native-downloads.js?v=3.56.14"></script>
-  <script src="/js/auth.js?v=3.56.14"></script>
-  <script src="/js/admin.js?v=3.56.14"></script>
-  <script src="/js/player-core.js?v=3.56.14"></script>
-  <script src="/js/audio-enhancer.js?v=3.56.14"></script>
-  <script src="/js/player.js?v=3.56.14"></script>
-  <script src="/js/coverflow.js?v=3.56.14"></script>
-  <script src="/js/app.js?v=3.56.14"></script>
-  <script src="/js/tv.js?v=3.56.14"></script>
-  <script src="/js/diagnostics.js?v=3.56.14"></script>
+  <script src="/js/mobile-config.js?v=3.56.15"></script>
+  <script src="/js/session-vault.js?v=3.56.15"></script>
+  <script src="/js/runtime-config.js?v=3.56.15"></script>
+  <script src="/js/catalog-fallback.js?v=3.56.15"></script>
+  <script src="/js/home-curation.js?v=3.56.15"></script>
+  <script src="/js/api.js?v=3.56.15"></script>
+  <script src="/js/platform.js?v=3.56.15"></script>
+  <script src="/js/release-copy.js?v=3.56.15"></script>
+  <script src="/js/native-downloads.js?v=3.56.15"></script>
+  <script src="/js/auth.js?v=3.56.15"></script>
+  <script src="/js/admin.js?v=3.56.16"></script>
+  <script src="/js/feedback.js?v=3.56.15"></script>
+  <script src="/js/player-core.js?v=3.56.15"></script>
+  <script src="/js/audio-enhancer.js?v=3.56.15"></script>
+  <script src="/js/player.js?v=3.56.16"></script>
+  <script src="/js/coverflow.js?v=3.56.15"></script>
+  <script src="/js/app.js?v=3.56.17"></script>
+  <script src="/js/tv.js?v=3.56.15"></script>
+  <script src="/js/diagnostics.js?v=3.56.15"></script>
 </body>
 </html>
