@@ -232,15 +232,11 @@ const Player = {
     this.currentEpisode = episode;
     this.suppressBuffering = false;
 
-    const runtime = API.getRuntimeTag();
-    const preferProtectedPlayer = runtime === 'web' || runtime === 'windows';
-
-    // Native phone/TV builds retain the provider embed that is already stable.
-    // Desktop web and Windows resolve the same provider through the protected
-    // EnsMovie-style player first; raw catalogue embeds were the old PC path
-    // that intermittently returned a stuck third-party frame.
+    // The EnsMovie provider embed is the proven playback surface on web, PC
+    // and native apps. Always use it first when the selected episode exposes
+    // one; protected tickets and raw HLS are recovery paths only.
     const providerEmbedUrl = episode?.link_embed || '';
-    if (providerEmbedUrl && !preferProtectedPlayer) {
+    if (providerEmbedUrl) {
       this.playEmbedStream(providerEmbedUrl);
       return;
     }
@@ -285,11 +281,6 @@ const Player = {
       this.showBuffering(true, 'Đang mở luồng phát…');
       this.setResolutionBadge(0, 0, '4K Ultra HD');
       this.loadStream(directStreamUrl, { ...options, isHls: true, nativeDirectHls: false });
-      return;
-    }
-
-    if (providerEmbedUrl) {
-      this.playEmbedStream(providerEmbedUrl);
       return;
     }
 
