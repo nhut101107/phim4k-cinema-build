@@ -1,4 +1,4 @@
-name: Apply tested Codex update f728112
+name: Apply final web fast-load patch
 
 on:
   push:
@@ -32,5 +32,5 @@ jobs:
           git diff --cached --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'Apply feedback, catalog and ENSMovie fixes to all clients'
+          git commit -m 'Render the movie catalog immediately on web'
           git push origin HEAD:main
