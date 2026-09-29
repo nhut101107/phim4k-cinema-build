@@ -1,4 +1,4 @@
-name: Apply final web fast-load patch
+name: Restore tap-to-show player controls
 
 on:
   push:
@@ -32,5 +32,5 @@ jobs:
           git diff --cached --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'Render the movie catalog immediately on web'
+          git commit -m 'Restore tap-to-show player controls'
           git push origin HEAD:main
