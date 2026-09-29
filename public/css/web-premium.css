@@ -1987,7 +1987,22 @@ body {
     padding: 4px 2px 14px !important;
     overflow-x: auto !important;
     -webkit-overflow-scrolling: touch !important;
-    scroll-snap-type: x mandatory !important;
+    scroll-snap-type: x proximity !important;
+  }
+
+  /* Keep scrolling compositor-only on phones. Large live blur layers and
+     mandatory snapping forced repaints and made fast rails feel sticky. */
+  body.web-preview .navbar,
+  body.web-preview .bottom-tab-bar,
+  body.web-preview .card-quick-play,
+  body.web-preview .search-dropdown {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  body.web-preview .cinema-rail,
+  body.web-preview .movie-card {
+    transform: translateZ(0);
   }
 
   body.web-preview .cinema-rail .movie-card {

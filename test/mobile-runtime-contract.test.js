@@ -179,7 +179,7 @@ test('iOS entry point cache-busts every bundled script and stylesheet', () => {
   const localAssets = [...html.matchAll(/(?:src|href)="\/(?:js|css|vendor)\/[^"?]+(?:\?[^" ]+)?"/g)].map(match => match[0]);
   assert.ok(localAssets.length >= 20);
   assert.ok(localAssets.every(asset => asset.includes('?v=')), localAssets.join('\n'));
-  assert.match(html, /\/js\/player\.js\?v=3\.56\.13/);
+  assert.match(html, /\/js\/player\.js\?v=3\.56\.14/);
   assert.match(html, /MNHUT Cinema 3\.56[^<]*BẢN ĐỒNG BỘ ĐA THIẾT BỊ/);
 });
 
@@ -375,8 +375,9 @@ test('native runtime shares the stable provider playback path with web', () => {
   assert.doesNotMatch(bundled, /phimapi|ophim1|phimimg|api\/media\/image\?url=|\/v1\/api|\/danh-sach\/phim-moi-cap-nhat/i);
   assert.doesNotMatch(bundled, /publicWebFallback|publicWebPlayback/);
   assert.match(bundled, /const providerEmbedUrl = episode\?\.link_embed \|\| ''/);
-  assert.match(bundled, /getPlaybackTicket/);
-  assert.match(read('../public/js/player.js'), /stream_ref/);
+  const player = read('../public/js/player.js');
+  const loadEpisode = player.match(/async loadEpisode\(episode,[\s\S]*?\n  \},\n\n  playEmbedStream/)?.[0] || '';
+  assert.doesNotMatch(loadEpisode, /getPlaybackTicket|link_m3u8|loadStream|stream_ref/);
 });
 
 test('slow backup playback is not aborted by the normal API or startup watchdog budget', () => {

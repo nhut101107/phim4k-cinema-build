@@ -28,6 +28,8 @@ const App = {
   searchDebounceTimer: null,
   searchRequestId: 0,
   scrollFrame: 0,
+  lastCatalogInteractionAt: 0,
+  heroRenderSignature: '',
   detailRequestId: 0,
   railInitialItems: 14,
   railBatchItems: 12,
@@ -51,7 +53,12 @@ const App = {
     const clear = () => document.querySelectorAll('.is-pressing').forEach((element) => element.classList.remove('is-pressing'));
     document.addEventListener('pointerdown', (event) => {
       const target = event.target.closest?.(selector);
-      if (target && !target.disabled) target.classList.add('is-pressing');
+      if (target && !target.disabled) {
+        target.classList.add('is-pressing');
+        if (target.closest?.('.cinema-rail, .movie-grid, .coverflow-section')) {
+          this.lastCatalogInteractionAt = Date.now();
+        }
+      }
     }, { passive: true });
     document.addEventListener('pointerup', clear, { passive: true });
     document.addEventListener('pointercancel', clear, { passive: true });
@@ -61,6 +68,7 @@ const App = {
   bindEvents() {
     // Navbar scroll effect
     window.addEventListener('scroll', () => {
+      this.lastCatalogInteractionAt = Date.now();
       if (this.scrollFrame) return;
       this.scrollFrame = requestAnimationFrame(() => {
         document.getElementById('navbar')?.classList.toggle('scrolled', window.scrollY > 30);
@@ -264,6 +272,13 @@ const App = {
   },
 
   applyHomeFeed(data) {
+    const visibleAnchor = [...document.querySelectorAll('#dynamicSections [data-section-id]')]
+      .map((section) => ({
+        id: section.dataset.sectionId,
+        top: section.getBoundingClientRect().top,
+      }))
+      .filter((entry) => entry.id && entry.top < innerHeight * 0.72)
+      .sort((a, b) => Math.abs(a.top) - Math.abs(b.top))[0] || null;
     const railPositions = new Map(
       [...document.querySelectorAll('#dynamicSections [data-section-id]')].map((section) => [
         section.dataset.sectionId,
@@ -293,8 +308,12 @@ const App = {
     this.homeCatalog = this.enrichCatalogFilters(rawCatalog);
     this.homeSections = this.buildHomeSections(sections);
     if (this.heroList.length > 0) {
-      if (window.Coverflow) {
+      const nextHeroSignature = this.heroList
+        .map((movie) => `${movie?.slug || movie?.name || ''}:${movie?.poster_url || movie?.thumb_url || ''}`)
+        .join('|');
+      if (window.Coverflow && nextHeroSignature !== this.heroRenderSignature) {
         Coverflow.init(this.heroList);
+        this.heroRenderSignature = nextHeroSignature;
       }
       this.renderHeroBillboard(this.heroList[0]);
       this.startHeroRotation();
@@ -311,6 +330,14 @@ const App = {
         const rail = section.querySelector('.cinema-rail');
         if (rail && Number.isFinite(previous) && previous > 0) rail.scrollLeft = previous;
       });
+      if (visibleAnchor) {
+        const nextAnchor = [...document.querySelectorAll('#dynamicSections [data-section-id]')]
+          .find((section) => section.dataset.sectionId === visibleAnchor.id);
+        if (nextAnchor) {
+          const delta = nextAnchor.getBoundingClientRect().top - visibleAnchor.top;
+          if (Math.abs(delta) > 1) window.scrollBy({ top: delta, left: 0, behavior: 'auto' });
+        }
+      }
     });
     this.renderSchedule();
   },
@@ -681,7 +708,8 @@ const App = {
     const isTv = Phim4KPlatform.detect(navigator.userAgent, window.PHIM4K_PLATFORM) === 'android_tv';
     this.feedRefreshTimer = setInterval(() => {
       const playerOpen = !document.getElementById('playerModal')?.classList.contains('hidden');
-      if (!document.hidden && !playerOpen && this.currentCategory === 'home') {
+      const catalogIdle = Date.now() - this.lastCatalogInteractionAt > 12000;
+      if (!document.hidden && !playerOpen && this.currentCategory === 'home' && catalogIdle) {
         this.loadHomeFeed({ silent: true });
       }
     // The Worker reads the public catalogue directly, so frequent metadata

@@ -27,8 +27,8 @@ test('admin route always receives the current login runtime instead of Safari ca
   assert.ok(auth.includes("window.location.pathname.replace(/\\/+$/, '') === '/admin'"));
   assert.match(worker, /new URL\('\/web-index\.html', request\.url\)/);
   assert.match(worker, /headers\.set\('cache-control', 'no-store, max-age=0'\)/);
-  assert.match(index, /\/js\/auth\.js\?v=3\.56\.12/);
-  assert.match(webIndex, /\/js\/auth\.js\?v=3\.56\.12/);
+  assert.match(index, /\/js\/auth\.js\?v=3\.56\.14/);
+  assert.match(webIndex, /\/js\/auth\.js\?v=3\.56\.14/);
   assert.doesNotMatch(`${index}\n${webIndex}`, /\/js\/auth\.js\?v=3\.56["']/);
 });
 
@@ -57,9 +57,11 @@ test('admin receives movie reports and can close or reopen a movie', () => {
   assert.match(html, /id="movieReportsList"/);
 });
 
-test('protected playback keeps native controls, history and regional server labels', () => {
+test('ENSMovie-only playback keeps history and regional server labels', () => {
   const player = read('public/js/player.js');
-  assert.match(player, /API\.getPlaybackTicket\(episode\.stream_ref\)/);
+  const loadEpisode = player.match(/async loadEpisode\(episode,[\s\S]*?\n  \},\n\n  playEmbedStream/)?.[0] || '';
+  assert.match(loadEpisode, /this\.playEmbedStream\(providerEmbedUrl\)/);
+  assert.doesNotMatch(loadEpisode, /getPlaybackTicket|link_m3u8|loadStream/);
   assert.match(player, /this\.setAspectRatio\('contain'/);
   assert.match(player, /void this\.enterCinemaFullscreen\(\)/);
   assert.match(player, /'Sài Gòn' : 'Đà Nẵng'/);

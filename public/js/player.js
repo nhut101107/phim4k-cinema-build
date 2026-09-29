@@ -227,65 +227,23 @@ const Player = {
     this.activePlayStartedAt = 0;
   },
 
-  async loadEpisode(episode, options = {}) {
-    const requestId = ++this.playbackTicketRequest;
+  async loadEpisode(episode, _options = {}) {
+    ++this.playbackTicketRequest;
     this.currentEpisode = episode;
     this.suppressBuffering = false;
 
-    // The EnsMovie provider embed is the proven playback surface on web, PC
-    // and native apps. Always use it first when the selected episode exposes
-    // one; protected tickets and raw HLS are recovery paths only.
+    // ENSMovie is the single playback surface on web, PC and mobile. Do not
+    // fall back to the retired protected/raw-HLS player: that path behaved
+    // differently across browsers and was the source of intermittent black
+    // screens. A server without an ENSMovie embed is skipped instead.
     const providerEmbedUrl = episode?.link_embed || '';
     if (providerEmbedUrl) {
       this.playEmbedStream(providerEmbedUrl);
       return;
     }
 
-    // Protected catalog entries resolve through the same backend source into
-    // our native video surface. This keeps seek/history/double-tap controls
-    // working without changing the provider selected by the user.
-    if (episode?.stream_ref) {
-      this.showBuffering(true, 'Đang kết nối server phát…');
-      try {
-        const ticket = await API.getPlaybackTicket(episode.stream_ref);
-        if (requestId !== this.playbackTicketRequest) return;
-        if (ticket?.streamUrl) {
-          this.video?.classList.remove('hidden');
-          document.getElementById('playerEmbed')?.classList.add('hidden');
-          this.wrapper?.classList.remove('embed-active');
-          document.getElementById('playerControls')?.classList.remove('hidden');
-          document.getElementById('btnCenterPlayPause')?.classList.remove('hidden');
-          this.loadStream(ticket.streamUrl, {
-            ...options,
-            isHls: ticket.isHls !== false,
-            nativeDirectHls: false,
-          });
-          return;
-        }
-      } catch (error) {
-        if (requestId !== this.playbackTicketRequest) return;
-        console.warn('Protected playback resolution failed:', error);
-      }
-    }
-
-    // Keep the provider's direct stream contract as the universal fallback
-    // whenever a title has no embed URL.
-    const directStreamUrl = episode?.link_m3u8 || episode?.m3u8
-      || episode?.stream_url || episode?.url || '';
-    if (directStreamUrl) {
-      this.video?.classList.remove('hidden');
-      document.getElementById('playerEmbed')?.classList.add('hidden');
-      this.wrapper?.classList.remove('embed-active');
-      document.getElementById('playerControls')?.classList.remove('hidden');
-      document.getElementById('btnCenterPlayPause')?.classList.remove('hidden');
-      this.showBuffering(true, 'Đang mở luồng phát…');
-      this.setResolutionBadge(0, 0, '4K Ultra HD');
-      this.loadStream(directStreamUrl, { ...options, isHls: true, nativeDirectHls: false });
-      return;
-    }
-
     this.showBuffering(false);
-    this.showAlert('Server này hiện không có luồng phát. Đang thử server khác…');
+    this.showAlert('Server này chưa có trình phát ENSMovie. Đang thử server khác…');
     this.fallbackToNextServer();
   },
 

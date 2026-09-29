@@ -20,25 +20,27 @@ test('tapping any movie opens its description before playback', () => {
   assert.match(index, /class="btn-play-large"[^>]*onclick="playCurrentFirstEpisode\(\)"/);
 });
 
-test('web fallback episodes use the native EnsMovie playback identity contract', () => {
+test('catalog episodes retain the EnsMovie playback identity contract', () => {
   assert.match(app, /withPlaybackReference\(episode, server, serverIndex, episodeIndex\)/);
   for (const field of ['sourceMovieSlug', 'serverName', 'episodeSlug', 'episodeName', 'episodeFilename']) {
     assert.match(app, new RegExp(`${field}:`));
   }
-  assert.match(player, /API\.getPlaybackTicket\(episode\.stream_ref\)/);
+  assert.match(player, /episode\?\.link_embed \|\| ''/);
 });
 
 test('all clients keep the previously working provider player path', () => {
   assert.match(app, /return \{\s*\.\.\.episode,[\s\S]*?stream_ref:/);
   assert.match(player, /episode\?\.link_embed \|\| ''/);
-  assert.match(player, /episode\?\.link_m3u8 \|\| episode\?\.m3u8/);
+  const loadEpisode = player.match(/async loadEpisode\(episode,[\s\S]*?\n  \},\n\n  playEmbedStream/)?.[0] || '';
+  assert.doesNotMatch(loadEpisode, /getPlaybackTicket|link_m3u8|loadStream/);
   assert.doesNotMatch(player, /publicWebPlayback/);
 });
 
-test('desktop playback uses the stable EnsMovie embed before protected or raw fallbacks', () => {
+test('desktop and mobile playback use only the stable EnsMovie embed', () => {
   const embed = player.indexOf('this.playEmbedStream(providerEmbedUrl)');
-  const ticket = player.indexOf('API.getPlaybackTicket(episode.stream_ref)');
-  assert.ok(embed >= 0 && ticket >= 0 && embed < ticket);
+  assert.ok(embed >= 0);
+  const loadEpisode = player.match(/async loadEpisode\(episode,[\s\S]*?\n  \},\n\n  playEmbedStream/)?.[0] || '';
+  assert.doesNotMatch(loadEpisode, /getPlaybackTicket|link_m3u8|loadStream/);
   assert.doesNotMatch(player, /preferProtectedPlayer/);
   assert.match(player, /playEmbedStream\(embedUrl\)[\s\S]*?iframe\.src = safeEmbedUrl/);
   const authoritativeApi = pagesWorker.match(/const authoritativeApi =[\s\S]*?;\n    if \(authoritativeApi\)/)?.[0] || '';
@@ -57,7 +59,7 @@ test('hidden native video cannot cover an active EnsMovie embed with a false sta
 test('exhausted servers stop the failed media element instead of buffering forever', () => {
   assert.match(player, /onVideo\('waiting',[\s\S]*?if \(this\.suppressBuffering\) return/);
   assert.match(player, /Tất cả server hiện có đều không phản hồi[\s\S]*?this\.suppressBuffering = true;[\s\S]*?this\.video\.removeAttribute\('src'\)/);
-  assert.match(player, /async loadEpisode\(episode, options = \{\}\)[\s\S]*?this\.suppressBuffering = false/);
+  assert.match(player, /async loadEpisode\(episode, _options = \{\}\)[\s\S]*?this\.suppressBuffering = false/);
 });
 
 test('backend accepts every direct stream field exposed by the EnsMovie gateway', () => {
