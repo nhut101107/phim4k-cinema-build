@@ -1,0 +1,36 @@
+name: Apply tested Codex update f728112
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-phim4k-f728112.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-phim4k-f728112
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply the locally tested update
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f codex-f728112.patch
+          git apply --index --check codex-f728112.patch
+          git apply --index codex-f728112.patch
+          git rm codex-f728112.patch
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Apply feedback, catalog and ENSMovie fixes to all clients'
+          git push origin HEAD:main
