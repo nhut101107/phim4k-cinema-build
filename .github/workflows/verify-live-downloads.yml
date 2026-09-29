@@ -19,15 +19,15 @@ jobs:
           import json, time, urllib.parse, urllib.request, urllib.error
           origin='https://phim4k-license-api.phim4k-pwdbhdz.workers.dev'
           releases={
-            'android':('1cIKz4nVb1ODD5TFqRx_yxc6bn02QB8pS',4004825,'7e96fc1e24387ef7ee257e3e0415a9c86d1532adcd942b883eba22cba8588b73'),
-            'android_tv':('132cxRcOetx_AsOm6m9vgDFoVJCZOwWhs',4004825,'8d06fc04357deb40557646541a41a9cd7acdfefdd55a49f7f0a4d897adc92f60'),
-            'ios':('14AOZdrCewKFU2Rn52oySmgXNqQiWzNW_',4460514,'866e950907c134676918d253c8d047b82e9c8e08a644840bb4fca3ac6ab8112c'),
-            'windows':('1uOmdX9AwTPVHFYQsTlQp0ifyvNmSYU4_',120999359,'5bd381fb5f9a4b329b3ddd9c83fddef50e4be12a5475db87a691c3ceea14156b'),
+            'android':('/download/android',4008995,'3ee59d6a36d8ce2a7374025e678be1f30eac49d44e15399c9e574e4729d73a6e'),
+            'android_tv':('/download/android-tv',4008995,'2a3b13e550e08014eae3fbadfa4befa717aa81d512f46381b5a6c1fa6a41d578'),
+            'ios':('/download/ios',4466491,'c70f3fb4c649da28b6e09da6a09b78bc1816c85569b2fba05b83ac706dfefb15'),
+            'windows':('/download/windows',121000862,'643018f823a4602fb180227a8f16a5c894b7e2f70ea5a8d160591014f6d617e6'),
           }
           def get(path):
             for attempt in range(4):
               try:
-                with urllib.request.urlopen(urllib.request.Request(origin+path,headers={'Accept':'application/json','User-Agent':'4K-Cinema-Release-QA/3.56'}),timeout=25) as r:
+                with urllib.request.urlopen(urllib.request.Request(origin+path,headers={'Accept':'application/json','User-Agent':'MNHUT-Cinema-Release-QA/3.57'}),timeout=25) as r:
                   print('HTTP',path,r.status,r.headers.get('content-type'),flush=True)
                   assert r.status==200,(path,r.status)
                   return json.load(r)
@@ -41,17 +41,17 @@ jobs:
                 if attempt==3:raise
                 time.sleep(3)
           manifest=get('/api/app/downloads')
-          for platform,(file_id,size,sha) in releases.items():
+          for platform,(download_path,size,sha) in releases.items():
             entry=manifest[platform]
             url=urllib.parse.urlsplit(entry['url'])
-            assert url.hostname=='drive.usercontent.google.com',(platform,url.hostname)
-            assert urllib.parse.parse_qs(url.query).get('id')==[file_id],platform
-            assert entry['version']=='3.56',platform
+            assert url.hostname=='phim4k-license-api.phim4k-pwdbhdz.workers.dev',(platform,url.hostname)
+            assert url.path==download_path,(platform,url.path)
+            assert entry['version']=='3.57',platform
             assert entry['sha256']==sha,platform
             assert entry['sizeBytes']==size,platform
-            print('PASS live app downloads:',platform,'v3.56 Drive URL, size, SHA-256',flush=True)
-            status=get('/api/app/check-update?'+urllib.parse.urlencode({'platform':platform,'version':'3.55'}))
-            assert status['latestVersion']=='3.56',(platform,status)
+            print('PASS live app downloads:',platform,'v3.57 first-party route, size, SHA-256',flush=True)
+            status=get('/api/app/check-update?'+urllib.parse.urlencode({'platform':platform,'version':'3.56'}))
+            assert status['latestVersion']=='3.57',(platform,status)
             assert status['downloadSha256']==sha,platform
             assert status['downloadSizeBytes']==size,platform
             print('PASS live check-update:',platform,flush=True)

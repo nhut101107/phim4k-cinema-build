@@ -59,54 +59,54 @@ const RATE_LIMITS = Object.freeze({
 
 const INSTALLER_RELEASES = Object.freeze({
   "/download/android": {
-    filename: "4K-Cinema-Android-3.56.apk",
+    filename: "4K-Cinema-Android-3.57.apk",
     contentType: "application/vnd.android.package-archive",
-    url: "https://drive.usercontent.google.com/download?id=1cIKz4nVb1ODD5TFqRx_yxc6bn02QB8pS&export=download&confirm=t",
+    url: "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.57/4K-Cinema-Android-3.57.apk",
   },
   "/download/android-tv": {
-    filename: "4K-Cinema-Android-TV-3.56.apk",
+    filename: "4K-Cinema-Android-TV-3.57.apk",
     contentType: "application/vnd.android.package-archive",
-    url: "https://drive.usercontent.google.com/download?id=132cxRcOetx_AsOm6m9vgDFoVJCZOwWhs&export=download&confirm=t",
+    url: "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.57/4K-Cinema-Android-TV-3.57.apk",
   },
   "/download/ios": {
-    filename: "4K-Cinema-iOS-3.56-unsigned.ipa",
+    filename: "4K-Cinema-iOS-3.57-unsigned.ipa",
     contentType: "application/octet-stream",
-    url: "https://drive.usercontent.google.com/download?id=14AOZdrCewKFU2Rn52oySmgXNqQiWzNW_&export=download&confirm=t",
+    url: "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.57/4K-Cinema-iOS-3.57-unsigned.ipa",
   },
   "/download/windows": {
-    filename: "MNHUT-Cinema-Windows-3.56-x64.exe",
+    filename: "MNHUT-Cinema-Windows-3.57-x64.exe",
     contentType: "application/vnd.microsoft.portable-executable",
-    url: "https://drive.usercontent.google.com/download?id=1uOmdX9AwTPVHFYQsTlQp0ifyvNmSYU4_&export=download&confirm=t",
+    url: "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.57/4K-Cinema-Windows-3.57-x64.exe",
   },
 });
 
 const PUBLIC_RELEASES = Object.freeze({
   android: Object.freeze({
-    url: INSTALLER_RELEASES["/download/android"].url,
-    version: "3.56",
-    sha256: "7e96fc1e24387ef7ee257e3e0415a9c86d1532adcd942b883eba22cba8588b73",
-    sizeBytes: 4004825,
+    url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android",
+    version: "3.57",
+    sha256: "3ee59d6a36d8ce2a7374025e678be1f30eac49d44e15399c9e574e4729d73a6e",
+    sizeBytes: 4008995,
     signer: "github-actions[bot]",
   }),
   android_tv: Object.freeze({
-    url: INSTALLER_RELEASES["/download/android-tv"].url,
-    version: "3.56",
-    sha256: "8d06fc04357deb40557646541a41a9cd7acdfefdd55a49f7f0a4d897adc92f60",
-    sizeBytes: 4004825,
+    url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android-tv",
+    version: "3.57",
+    sha256: "2a3b13e550e08014eae3fbadfa4befa717aa81d512f46381b5a6c1fa6a41d578",
+    sizeBytes: 4008995,
     signer: "github-actions[bot]",
   }),
   ios: Object.freeze({
-    url: INSTALLER_RELEASES["/download/ios"].url,
-    version: "3.56",
-    sha256: "866e950907c134676918d253c8d047b82e9c8e08a644840bb4fca3ac6ab8112c",
-    sizeBytes: 4460514,
+    url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/ios",
+    version: "3.57",
+    sha256: "c70f3fb4c649da28b6e09da6a09b78bc1816c85569b2fba05b83ac706dfefb15",
+    sizeBytes: 4466491,
     signer: "github-actions[bot]",
   }),
   windows: Object.freeze({
-    url: INSTALLER_RELEASES["/download/windows"].url,
-    version: "3.56",
-    sha256: "5bd381fb5f9a4b329b3ddd9c83fddef50e4be12a5475db87a691c3ceea14156b",
-    sizeBytes: 120999359,
+    url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/windows",
+    version: "3.57",
+    sha256: "643018f823a4602fb180227a8f16a5c894b7e2f70ea5a8d160591014f6d617e6",
+    sizeBytes: 121000862,
     signer: "github-actions[bot]",
   }),
 });
@@ -344,7 +344,7 @@ async function handleInstallerDownload(request, pathname) {
   if (!release || !["GET", "HEAD"].includes(request.method)) {
     return textError("Không tìm thấy bản cài đặt.", 404, "INSTALLER_NOT_FOUND");
   }
-  const upstreamHeaders = new Headers({ "user-agent": "4K-Cinema-Release/3.56" });
+  const upstreamHeaders = new Headers({ "user-agent": "MNHUT-Cinema-Release/3.57" });
   const range = request.headers.get("range");
   if (range && /^bytes=\d*-\d*$/.test(range)) upstreamHeaders.set("range", range);
   const upstream = await fetch(release.url, {

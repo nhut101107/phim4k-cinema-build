@@ -191,10 +191,10 @@ test('verified admin on an outdated iPhone is directed to the current iOS releas
     assert.equal(iosAdmin.isAdmin,true);
     assert.equal(iosAdmin.active,false);
     assert.equal(iosAdmin.forceUpdate,true);
-    assert.equal(iosAdmin.latestVersion,'3.56');
-    assert.equal(iosAdmin.minVersion,'3.56');
-    assert.match(iosAdmin.downloadUrl,/^https:\/\/drive\.usercontent\.google\.com\/download/);
-    assert.equal(iosAdmin.downloadSha256,'866e950907c134676918d253c8d047b82e9c8e08a644840bb4fca3ac6ab8112c');
+    assert.equal(iosAdmin.latestVersion,'3.57');
+    assert.equal(iosAdmin.minVersion,'3.57');
+    assert.equal(iosAdmin.downloadUrl,'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/ios');
+    assert.equal(iosAdmin.downloadSha256,'c70f3fb4c649da28b6e09da6a09b78bc1816c85569b2fba05b83ac706dfefb15');
 
     const windowsAdmin=await (await f.request('/api/auth/status',undefined,{
       ...f.admin,
@@ -204,8 +204,8 @@ test('verified admin on an outdated iPhone is directed to the current iOS releas
     })).json();
     assert.equal(windowsAdmin.active,false);
     assert.equal(windowsAdmin.forceUpdate,true);
-    assert.equal(windowsAdmin.latestVersion,'3.56');
-    assert.match(windowsAdmin.downloadUrl,/^https:\/\/drive\.usercontent\.google\.com\/download/);
+    assert.equal(windowsAdmin.latestVersion,'3.57');
+    assert.equal(windowsAdmin.downloadUrl,'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/windows');
 
     f.seed('P4K-REGULAR-KEY');
     await f.request('/api/auth/activate',{key:'P4K-REGULAR-KEY',deviceId:'viewer-iphone'},{
