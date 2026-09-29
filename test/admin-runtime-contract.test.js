@@ -27,9 +27,9 @@ test('admin route always receives the current login runtime instead of Safari ca
   assert.ok(auth.includes("window.location.pathname.replace(/\\/+$/, '') === '/admin'"));
   assert.match(worker, /new URL\('\/web-index\.html', request\.url\)/);
   assert.match(worker, /headers\.set\('cache-control', 'no-store, max-age=0'\)/);
-  assert.match(index, /\/js\/auth\.js\?v=3\.56\.15/);
-  assert.match(webIndex, /\/js\/auth\.js\?v=3\.56\.15/);
-  assert.doesNotMatch(`${index}\n${webIndex}`, /\/js\/auth\.js\?v=3\.56["']/);
+  assert.match(index, /\/js\/auth\.js\?v=3\.57\.1/);
+  assert.match(webIndex, /\/js\/auth\.js\?v=3\.57\.1/);
+  assert.doesNotMatch(`${index}\n${webIndex}`, /\/js\/auth\.js\?v=3\.57["']/);
 });
 
 test('viewer-facing access copy does not advertise the service as free', () => {

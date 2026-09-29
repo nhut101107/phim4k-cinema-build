@@ -6,7 +6,7 @@ function fixture() {
   const classes = new Set();
   const storage = new Map();
   const wrapper = { classList: { contains: c => classes.has(c), add: c => classes.add(c), remove: c => classes.delete(c), toggle: (c, on) => on ? classes.add(c) : classes.delete(c) } };
-  const ctx = { document: { readyState: 'loading', addEventListener() {}, getElementById: () => null }, window: { matchMedia: () => ({ matches: true }), setTimeout: () => 1 }, localStorage: { getItem: k => storage.get(k), setItem: (k,v) => storage.set(k,v), removeItem: k => storage.delete(k) }, clearTimeout() {} };
+  const ctx = { document: { readyState: 'loading', addEventListener() {}, getElementById: () => null }, window: { matchMedia: () => ({ matches: true }), setTimeout: () => 1, requestAnimationFrame: () => 1, cancelAnimationFrame() {} }, performance: { now: () => 0 }, localStorage: { getItem: k => storage.get(k), setItem: (k,v) => storage.set(k,v), removeItem: k => storage.delete(k) }, clearTimeout() {} };
   vm.runInNewContext(fs.readFileSync('public/js/player.js','utf8') + '\nglobalThis.subject=Player;',ctx);
   const p = ctx.subject; p.wrapper = wrapper; p.modal = { classList: { contains: () => false } }; p.video = { paused: false, pause() { this.paused = true; } };
   return p;

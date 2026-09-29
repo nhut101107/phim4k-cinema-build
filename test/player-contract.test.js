@@ -75,7 +75,7 @@ test('ENSMovie iframe chrome auto-hides after 2.6 seconds and wakes from a full-
   assert.match(player, /playEmbedStream\(embedUrl\)[\s\S]*?this\.resetInactivityTimer\(\)/);
   assert.match(player, /embed\?\.addEventListener\('load'[\s\S]*?this\.resetInactivityTimer\(\)/);
   assert.match(player, /enterCinemaFullscreen\(\)\.finally[\s\S]*?this\.resetInactivityTimer\(\)/);
-  assert.match(player, /\}, 2600\);/);
+  assert.match(player, /window\.setTimeout\(hideWhenDue, 2700\)/);
   assert.match(player, /event\.target === this\.wrapper[\s\S]*?contains\('embed-active'\)[\s\S]*?contains\('inactive'\)/);
   assert.match(css, /\.cinema-player-wrapper\.inactive\.embed-active::after/);
   assert.match(css, /\.cinema-player-wrapper\.inactive\.embed-active::after\s*\{[\s\S]*?inset:\s*0;/);
@@ -122,6 +122,14 @@ test('landscape player header keeps server and report actions clear of the title
   assert.match(css, /orientation: landscape\) and \(max-height: 760px\) and \(max-width: 1600px/);
   assert.match(css, /\.player-top-actions \.btn-player-report\s*\{[\s\S]*?white-space: nowrap !important/);
   assert.match(css, /env\(safe-area-inset-right\)[\s\S]*?env\(safe-area-inset-left\)/);
+});
+
+test('embedded player chrome uses a WKWebView-safe deadline and direct hidden state', () => {
+  assert.match(player, /chromeHideDeadline = performance\.now\(\) \+ 2600/);
+  assert.match(player, /requestAnimationFrame\?\.\(hideWhenDue\)/);
+  assert.match(player, /setControlsHidden\(hidden\)[\s\S]*?player-chrome-hidden/);
+  assert.match(player, /if \(!this\.embedReady[\s\S]*?this\.embedReady = true/);
+  assert.match(css, /\.player-top-bar\.player-chrome-hidden\s*\{[\s\S]*?visibility:\s*hidden !important/);
 });
 
 test('admin owns a block scroll layout so horizontal tabs cannot flex-shrink away', () => {

@@ -34,6 +34,9 @@ const Player = {
   allServers: [],
   currentServerIndex: 0,
   inactivityTimer: null,
+  inactivityFrame: null,
+  chromeHideDeadline: 0,
+  embedReady: false,
   saveInterval: null,
   alertTimer: null,
   aspectMode: 'contain',
@@ -122,10 +125,11 @@ const Player = {
     }, { passive: true });
     const embed = document.getElementById('playerEmbed');
     embed?.addEventListener('load', () => {
-      // Native WebViews may finish the cross-origin navigation after the
-      // fullscreen transition. Re-arm from the real iframe load so app chrome
-      // cannot remain pinned on top of the movie.
-      if (this.wrapper?.classList.contains('embed-active') && !this.modal?.classList.contains('hidden')) {
+      // Only the first provider navigation belongs to the movie opening. Some
+      // embedded players navigate internally while starting playback; treating
+      // every navigation as user activity pins our chrome forever in WKWebView.
+      if (!this.embedReady && this.wrapper?.classList.contains('embed-active') && !this.modal?.classList.contains('hidden')) {
+        this.embedReady = true;
         this.resetInactivityTimer();
       }
     });
@@ -222,6 +226,7 @@ const Player = {
     this.playbackTicketRequest += 1;
     this.activeStreamUrl = '';
     this.suppressBuffering = true;
+    this.embedReady = false;
     this.closeDropdowns();
     this.clearStallWatchdog();
     this.recoveryInFlight = false;
@@ -244,7 +249,10 @@ const Player = {
     if (this.saveInterval) clearInterval(this.saveInterval);
     this.saveInterval = null;
     clearTimeout(this.inactivityTimer);
-    this.wrapper?.classList.remove('inactive');
+    window.cancelAnimationFrame?.(this.inactivityFrame);
+    this.inactivityFrame = null;
+    this.chromeHideDeadline = 0;
+    this.setControlsHidden(false);
     this.modal?.classList.add('hidden');
     document.body.classList.remove('player-open');
     this.activePlayStartedAt = 0;
@@ -303,6 +311,7 @@ const Player = {
     document.getElementById('btnCenterPlayPause')?.classList.add('hidden');
     document.getElementById('playerControls')?.classList.add('hidden');
     this.wrapper?.classList.add('embed-active');
+    this.embedReady = false;
     const iframe = document.getElementById('playerEmbed');
     if (iframe) {
       iframe.src = safeEmbedUrl;
@@ -1053,24 +1062,51 @@ const Player = {
     if (this.wrapper.classList.contains('inactive')) this.resetInactivityTimer();
     else {
       clearTimeout(this.inactivityTimer);
+      window.cancelAnimationFrame?.(this.inactivityFrame);
+      this.inactivityFrame = null;
       this.closeDropdowns();
-      this.wrapper.classList.add('inactive');
+      this.setControlsHidden(true);
     }
     window.requestAnimationFrame?.(() => this.updateSubtitleSafeArea());
   },
 
+  setControlsHidden(hidden) {
+    if (!this.wrapper) return;
+    this.wrapper.classList.toggle('inactive', hidden);
+    const topBar = document.getElementById('playerTopBar');
+    topBar?.classList.toggle('player-chrome-hidden', hidden);
+    topBar?.setAttribute('aria-hidden', String(hidden));
+  },
+
   resetInactivityTimer() {
     if (!this.wrapper || this.modal?.classList.contains('hidden')) return;
-    this.wrapper.classList.remove('inactive');
+    this.setControlsHidden(false);
     window.requestAnimationFrame?.(() => this.updateSubtitleSafeArea());
     clearTimeout(this.inactivityTimer);
-    this.inactivityTimer = window.setTimeout(() => {
+    window.cancelAnimationFrame?.(this.inactivityFrame);
+    this.chromeHideDeadline = performance.now() + 2600;
+
+    const hideWhenDue = () => {
+      if (!this.wrapper || this.modal?.classList.contains('hidden')) return;
+      const remaining = this.chromeHideDeadline - performance.now();
+      if (remaining > 0) {
+        this.inactivityFrame = window.requestAnimationFrame?.(hideWhenDue) || null;
+        return;
+      }
       const embedActive = this.wrapper?.classList.contains('embed-active');
       if (embedActive || !this.video?.paused) {
-        this.wrapper.classList.add('inactive');
+        this.closeDropdowns();
+        this.setControlsHidden(true);
         this.updateSubtitleSafeArea();
       }
-    }, 2600);
+      this.inactivityFrame = null;
+    };
+
+    // requestAnimationFrame follows the visible WKWebView clock and avoids the
+    // aggressive timer coalescing used by iOS. The timeout remains a fallback
+    // for desktop/background transitions and both paths are idempotent.
+    this.inactivityFrame = window.requestAnimationFrame?.(hideWhenDue) || null;
+    this.inactivityTimer = window.setTimeout(hideWhenDue, 2700);
   },
 
   formatTime(seconds) {

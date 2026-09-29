@@ -355,6 +355,11 @@ video::cue {
 .cinema-player-wrapper.inactive .player-top-bar {
   visibility: hidden;
 }
+.player-top-bar.player-chrome-hidden {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
 .cinema-player-wrapper.inactive.embed-active #playerTopBar > * {
   pointer-events: none !important;
 }
