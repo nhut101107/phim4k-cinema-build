@@ -29,7 +29,7 @@ test('web fallback episodes use the native EnsMovie playback identity contract',
 });
 
 test('all clients keep the previously working provider player path', () => {
-  assert.match(app, /episode\?\.link_embed \|\| episode\?\.link_m3u8/);
+  assert.match(app, /return \{\s*\.\.\.episode,[\s\S]*?stream_ref:/);
   assert.match(player, /episode\?\.link_embed \|\| ''/);
   assert.match(player, /episode\?\.link_m3u8 \|\| episode\?\.m3u8/);
   assert.doesNotMatch(player, /publicWebPlayback/);
@@ -41,7 +41,10 @@ test('desktop playback resolves the protected EnsMovie path before the raw embed
   assert.ok(embed >= 0 && ticket >= 0 && ticket < embed);
   assert.match(player, /preferProtectedPlayer = runtime === 'web' \|\| runtime === 'windows'/);
   assert.match(player, /playEmbedStream\(embedUrl\)[\s\S]*?iframe\.src = safeEmbedUrl/);
-  assert.match(pagesWorker, /url\.pathname\.startsWith\('\/api\/movies\/detail\/'\)[\s\S]*?return proxyTo\(request, LICENSE_ORIGIN/);
+  const authoritativeApi = pagesWorker.match(/const authoritativeApi =[\s\S]*?;\n    if \(authoritativeApi\)/)?.[0] || '';
+  assert.doesNotMatch(authoritativeApi, /\/api\/movies\/detail\//);
+  assert.match(pagesWorker, /request\.method === 'GET' && url\.pathname\.startsWith\('\/api\/movies\/detail\/'\)[\s\S]*?fetchDirectMovieCatalog/);
+  assert.match(app, /if \(episode\?\.stream_ref\) return episode;[\s\S]*?stream_ref:/);
   assert.doesNotMatch(pagesWorker, /usesBrowserPlayer/);
   assert.match(player, /resolutionBadge\.className = 'badge-real-res hidden'/);
 });
