@@ -19,15 +19,15 @@ jobs:
           import json, time, urllib.parse, urllib.request, urllib.error
           origin='https://phim4k-license-api.phim4k-pwdbhdz.workers.dev'
           releases={
-            'android':('/download/android',4008995,'3ee59d6a36d8ce2a7374025e678be1f30eac49d44e15399c9e574e4729d73a6e'),
-            'android_tv':('/download/android-tv',4008995,'2a3b13e550e08014eae3fbadfa4befa717aa81d512f46381b5a6c1fa6a41d578'),
-            'ios':('/download/ios',4466491,'c70f3fb4c649da28b6e09da6a09b78bc1816c85569b2fba05b83ac706dfefb15'),
-            'windows':('/download/windows',121000862,'643018f823a4602fb180227a8f16a5c894b7e2f70ea5a8d160591014f6d617e6'),
+            'android':('/download/android',4008995,'4fec8989a358c0a861a4d7d4b93b8ffb270300c65cea22346fc42e95d4c8e883'),
+            'android_tv':('/download/android-tv',4008995,'9c7b7411d113533522e3b350aad621d7f3c4ef2016a6acb646b4bd85b473c606'),
+            'ios':('/download/ios',4467194,'298f39b23eda513861930e0cb5b47afaadbfc3402fd8e5da710e930e3e3bfba0'),
+            'windows':('/download/windows',121003139,'ee5550d251a7a1230e98fef6c6061e591a242177a2812df4b817dfc2ecc9048b'),
           }
           def get(path):
             for attempt in range(4):
               try:
-                with urllib.request.urlopen(urllib.request.Request(origin+path,headers={'Accept':'application/json','User-Agent':'MNHUT-Cinema-Release-QA/3.57'}),timeout=25) as r:
+                with urllib.request.urlopen(urllib.request.Request(origin+path,headers={'Accept':'application/json','User-Agent':'MNHUT-Cinema-Release-QA/3.58'}),timeout=25) as r:
                   print('HTTP',path,r.status,r.headers.get('content-type'),flush=True)
                   assert r.status==200,(path,r.status)
                   return json.load(r)
@@ -46,12 +46,12 @@ jobs:
             url=urllib.parse.urlsplit(entry['url'])
             assert url.hostname=='phim4k-license-api.phim4k-pwdbhdz.workers.dev',(platform,url.hostname)
             assert url.path==download_path,(platform,url.path)
-            assert entry['version']=='3.57',platform
+            assert entry['version']=='3.58',platform
             assert entry['sha256']==sha,platform
             assert entry['sizeBytes']==size,platform
-            print('PASS live app downloads:',platform,'v3.57 first-party route, size, SHA-256',flush=True)
-            status=get('/api/app/check-update?'+urllib.parse.urlencode({'platform':platform,'version':'3.56'}))
-            assert status['latestVersion']=='3.57',(platform,status)
+            print('PASS live app downloads:',platform,'v3.58 first-party route, size, SHA-256',flush=True)
+            status=get('/api/app/check-update?'+urllib.parse.urlencode({'platform':platform,'version':'3.57'}))
+            assert status['latestVersion']=='3.58',(platform,status)
             assert status['downloadSha256']==sha,platform
             assert status['downloadSizeBytes']==size,platform
             print('PASS live check-update:',platform,flush=True)
