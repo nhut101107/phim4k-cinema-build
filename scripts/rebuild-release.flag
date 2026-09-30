@@ -16,3 +16,4 @@
 2026-09-30 MNHUT rebuild #20: release 3.57 with deterministic iOS player chrome auto-hide
 
 2026-09-30 MNHUT rebuild #21: release 3.58 safe-area, fill mode, low-latency chrome, ENSMovie watch time and real client IP
+2026-09-30 MNHUT rebuild #22: release 3.59 stable ENSMovie settings row without viewport or chrome resize jank

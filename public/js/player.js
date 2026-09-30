@@ -137,12 +137,15 @@ const Player = {
     });
     window.addEventListener('resize', () => {
       if (!this.modal.classList.contains('hidden')) {
-        this.syncFullscreenViewport();
+        this.scheduleFullscreenViewportSync();
         this.applyPreferredAspect();
       }
     });
     window.visualViewport?.addEventListener('resize', () => {
-      if (!this.modal.classList.contains('hidden')) this.syncFullscreenViewport();
+      if (!this.modal.classList.contains('hidden')) this.scheduleFullscreenViewportSync();
+    });
+    window.addEventListener('orientationchange', () => {
+      if (!this.modal.classList.contains('hidden')) this.scheduleFullscreenViewportSync(220);
     });
     const progressContainer = document.getElementById('progressContainer');
     if (progressContainer) {
@@ -626,14 +629,22 @@ const Player = {
       }
       return;
     }
-    const viewport = window.visualViewport;
-    const width = Math.max(1, Math.round(viewport?.width || document.documentElement?.clientWidth || window.innerWidth));
-    const height = Math.max(1, Math.round(viewport?.height || document.documentElement?.clientHeight || window.innerHeight));
+    // Use the stable layout viewport. Safari animates visualViewport while its
+    // bars and an embedded settings sheet open, which used to resize the
+    // cross-origin ENSMovie iframe several times per tap and made its entire
+    // transport row jump. Rotation still updates clientWidth/clientHeight.
+    const width = Math.max(1, Math.round(document.documentElement?.clientWidth || window.innerWidth));
+    const height = Math.max(1, Math.round(document.documentElement?.clientHeight || window.innerHeight));
     this.modal.style.setProperty('--player-viewport-width', `${width}px`);
     this.modal.style.setProperty('--player-viewport-height', `${height}px`);
-    this.modal.style.setProperty('--player-viewport-left', `${Math.round(viewport?.offsetLeft || 0)}px`);
-    this.modal.style.setProperty('--player-viewport-top', `${Math.round(viewport?.offsetTop || 0)}px`);
+    this.modal.style.setProperty('--player-viewport-left', '0px');
+    this.modal.style.setProperty('--player-viewport-top', '0px');
     window.requestAnimationFrame?.(() => this.updateSubtitleSafeArea());
+  },
+
+  scheduleFullscreenViewportSync(delay = 120) {
+    clearTimeout(this.viewportSyncTimer);
+    this.viewportSyncTimer = window.setTimeout(() => this.syncFullscreenViewport(), delay);
   },
 
   renderInPlayerServerMenu() {

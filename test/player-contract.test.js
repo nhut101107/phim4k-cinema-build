@@ -10,6 +10,7 @@ const app = fs.readFileSync(path.join(root, 'public/js/app.js'), 'utf8');
 const coverflow = fs.readFileSync(path.join(root, 'public/js/coverflow.js'), 'utf8');
 const index = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'public/css/player.css'), 'utf8');
+const webPremium = fs.readFileSync(path.join(root, 'public/css/web-premium.css'), 'utf8');
 const backend = fs.readFileSync(path.join(root, 'backend-worker/src/worker.mjs'), 'utf8');
 const pagesWorker = fs.readFileSync(path.join(root, 'public/_worker.js'), 'utf8');
 
@@ -111,9 +112,11 @@ test('player exposes only subtitle-safe contain and explicit fullscreen fill mod
   assert.match(css, /\.cinema-player-wrapper\.aspect-contain \.video-element\s*\{[\s\S]*?object-fit:\s*contain/);
 });
 
-test('fullscreen follows the live visual viewport after native rotation', () => {
+test('fullscreen follows rotation without reacting to Safari toolbar or provider settings resize', () => {
   assert.match(player, /window\.visualViewport\?\.addEventListener\('resize'/);
-  assert.match(player, /syncFullscreenViewport\(\)/);
+  assert.match(player, /scheduleFullscreenViewportSync\(delay = 120\)/);
+  assert.match(player, /document\.documentElement\?\.clientWidth \|\| window\.innerWidth/);
+  assert.doesNotMatch(player, /Math\.round\(viewport\?\.width/);
   assert.match(css, /width: var\(--player-viewport-width, 100%\)/);
   assert.match(css, /height: var\(--player-viewport-height, 100%\)/);
 });
@@ -139,6 +142,13 @@ test('ENSMovie controls respect host safe areas on every cutout shape', () => {
     assert.match(css, new RegExp(`--player-safe-${edge}: max\\(0px, env\\(safe-area-inset-${edge}\\)\\)`));
   }
   assert.match(css, /cinema-player-wrapper:not\(\.aspect-cover\) #playerEmbed[\s\S]*?left: var\(--player-safe-left\)/);
+});
+
+test('ENSMovie iframe geometry stays fixed when host chrome hides or provider settings open', () => {
+  assert.match(css, /aspect-contain:not\(\.inactive\):not\(\.embed-active\) \.video-element/);
+  assert.match(css, /not\(\.cinema-fullscreen\):not\(\.embed-active\) \.video-element/);
+  assert.match(webPremium, /aspect-contain:not\(\.inactive\):not\(\.embed-active\) \.video-element/);
+  assert.doesNotMatch(webPremium, /aspect-contain:not\(\.inactive\) \.video-element/);
 });
 
 test('ENSMovie watch time is reported incrementally without exposing its URL', () => {
@@ -222,7 +232,7 @@ test('uses black bars without poster ambience and reserves subtitle space in con
   assert.doesNotMatch(player, /setAmbientBackdrop|layoutVideoSurface/);
   assert.doesNotMatch(css, /player-ambient-backdrop/);
   assert.match(css, /\.video-element\s*\{[\s\S]*?background:\s*#000/);
-  assert.match(css, /aspect-contain:not\(\.inactive\) \.video-element\s*\{[\s\S]*?subtitle-safe-area/);
+  assert.match(css, /aspect-contain:not\(\.inactive\):not\(\.embed-active\) \.video-element\s*\{[\s\S]*?subtitle-safe-area/);
 });
 
 test('uses a compact portrait video stage instead of centering video in the full viewport', () => {

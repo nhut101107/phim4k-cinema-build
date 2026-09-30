@@ -138,7 +138,7 @@ body.player-open #bottomTabBar {
 /* Portrait playback is a real video stage, not a full-height box that leaves
    the picture stranded in the middle of a black screen. */
 @media (orientation: portrait) {
-  .cinema-player-wrapper:not(.cinema-fullscreen) .video-element {
+  .cinema-player-wrapper:not(.cinema-fullscreen):not(.embed-active) .video-element {
     position: absolute;
     top: max(62px, calc(env(safe-area-inset-top) + 54px));
     right: 0;
@@ -149,7 +149,7 @@ body.player-open #bottomTabBar {
     object-position: center top;
   }
 
-  .player-modal-overlay .cinema-player-wrapper.aspect-contain:not(.cinema-fullscreen):not(.inactive) .video-element {
+  .player-modal-overlay .cinema-player-wrapper.aspect-contain:not(.cinema-fullscreen):not(.inactive):not(.embed-active) .video-element {
     height: min(56.25vw, calc(100dvh - 224px));
     margin-bottom: 0;
   }
@@ -157,7 +157,7 @@ body.player-open #bottomTabBar {
 
 /* While controls are visible, create a small real safe strip below the video.
    This protects native captions without wasting the former 12vh black band. */
-.cinema-player-wrapper.aspect-contain:not(.inactive) .video-element {
+.cinema-player-wrapper.aspect-contain:not(.inactive):not(.embed-active) .video-element {
   height: calc(100% - var(--subtitle-safe-area));
   margin-bottom: var(--subtitle-safe-area);
 }
