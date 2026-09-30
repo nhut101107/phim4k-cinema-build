@@ -1,0 +1,30 @@
+name: Inspect ENSMovie Player
+on:
+  push:
+    paths:
+      - ".github/workflows/inspect-ensmovie.yml"
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Download provider bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          html="$(curl -fsSL --retry 3 https://player.phimapi.com/player/)"
+          asset="$(printf '%s' "$html" | sed -n 's/.*src="\([^"]*\/assets\/index-[^"]*\.js\)".*/\1/p' | head -1)"
+          test -n "$asset"
+          case "$asset" in
+            http*) url="$asset" ;;
+            *) url="https://player.phimapi.com$asset" ;;
+          esac
+          curl -fsSL --retry 3 "$url" -o ensmovie-player.js
+          sha256sum ensmovie-player.js
+      - name: Upload provider bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: ensmovie-player-bundle
+          path: ensmovie-player.js
+          retention-days: 1
