@@ -874,6 +874,7 @@ const App = {
   createMovieCard(movie, railIndex = null) {
     const card = document.createElement('div');
     card.className = 'movie-card';
+    card.dataset.movieSlug = movie.slug || '';
     card.onclick = () => this.openMovieDetail(movie.slug);
     card.tabIndex = 0;
     card.setAttribute('role', 'button');
@@ -1228,16 +1229,29 @@ const App = {
     document.getElementById('episodesList').innerHTML = '<div class="spinner"></div>';
 
     try {
-      const data = await API.getDetail(slug);
+      let data;
+      try {
+        data = await API.getDetail(slug);
+      } catch (_firstError) {
+        // Bypass both browser and Worker edge caches once. This fixes the
+        // transient catalogue/detail race without making the user press retry.
+        data = await API.getDetail(slug, { refresh: true });
+      }
       if (requestId !== this.detailRequestId) return;
+      if (!data?.movie || !Array.isArray(data?.episodes) || !data.episodes.some((server) => Array.isArray(server?.server_data) && server.server_data.length)) {
+        const error = new Error('ENSMOVIE_STREAM_UNAVAILABLE');
+        error.code = 'ENSMOVIE_STREAM_UNAVAILABLE';
+        throw error;
+      }
       this.activeMovieDetail = data;
       this.activeServerIndex = 0;
       this.renderDetailModalContent(data);
       API.trackUsage('movie_open', { movie: data.movie?.name || slug });
     } catch (err) {
       if (requestId !== this.detailRequestId) return;
+      document.querySelectorAll(`[data-movie-slug="${slug}"]`).forEach((card) => card.remove());
       document.getElementById('detailName').textContent = 'Không thể tải chi tiết phim';
-      document.getElementById('detailContent').textContent = 'Đã có lỗi xảy ra hoặc phim này không tồn tại trên hệ thống.';
+      document.getElementById('detailContent').textContent = 'Phim này chưa có luồng ENSMovie hoạt động và đã được gỡ khỏi danh sách hiện tại.';
       document.getElementById('serverTabs').innerHTML = '';
       document.getElementById('episodesList').innerHTML = '<button type="button" class="ep-btn" onclick="App.openMovieDetail(App.lastDetailSlug)">Thử tải lại</button>';
     }

@@ -3233,6 +3233,16 @@ function mergeCatalogMovieItems(sourceLists) {
   return output;
 }
 
+// Playback is intentionally ENSMovie-only. Secondary catalogues may enrich an
+// ENSMovie title with artwork/metadata, but a secondary-only row must never be
+// exposed as a playable card: it has no player.phimapi.com episode and opens as
+// a dead detail modal. Keep the catalogue and the playback contract aligned.
+function ensMovieCatalogItems(items) {
+  return (Array.isArray(items) ? items : []).filter((item) =>
+    (Array.isArray(item?._source_candidates) ? item._source_candidates : [])
+      .some((source) => String(source?.id || "").toLowerCase() === "phimapi"));
+}
+
 async function fetchOphimMovieBySlug(slug, env) {
   const origin = configuredOphimOrigin(env);
   if (!origin || !slug) return null;
@@ -3292,6 +3302,14 @@ function countPlayableEpisodes(data) {
   return (Array.isArray(data?.episodes) ? data.episodes : []).reduce((total, server) => total + (Array.isArray(server?.server_data) ? server.server_data.length : 0), 0);
 }
 
+function countEnsMovieIframeEpisodes(data) {
+  return (Array.isArray(data?.episodes) ? data.episodes : []).reduce((total, server) => total +
+    (Array.isArray(server?.server_data) ? server.server_data : []).filter((episode) => {
+      const embed = safePublicHttpsUrl(episode?.link_embed || episode?.linkEmbed);
+      return embed?.hostname === "player.phimapi.com" && embed.pathname.startsWith("/player/");
+    }).length, 0);
+}
+
 function sourceDetailScore(entry) {
   if (!entry?.data?.movie) return -1;
   const movie = entry.data.movie;
@@ -3322,8 +3340,8 @@ function tagMovieSource(data, id, name, requestedSlug) {
   };
 }
 
-async function resolveEnsMovieStyleSources(slug, env) {
-  const primaryPromise = fetchProtectedCatalogJson(`/phim/${slug}`, env, { ttl: 120 })
+async function resolveEnsMovieStyleSources(slug, env, { forcePrimary = false } = {}) {
+  const primaryPromise = fetchProtectedCatalogJson(`/phim/${slug}`, env, { ttl: 120, force: forcePrimary })
     .then((data) => tagMovieSource(data, "phimapi", "PhimAPI", slug))
     .catch(() => null);
   const ophimPromise = fetchOphimMovieDetail(slug, env).then((data) => tagMovieSource(data, "ophim", "OPhim", slug)).catch(() => null);
@@ -3639,7 +3657,7 @@ async function fetchEnsMovieStyleCatalog(mode, env, { page = 1, query = "", cate
   const settled = (await Promise.all(sourceRequests)).filter(Boolean);
   return {
     sources: settled.map((entry) => ({ id: entry.id, name: entry.name, count: entry.items.length })),
-    items: mergeCatalogMovieItems(settled),
+    items: ensMovieCatalogItems(mergeCatalogMovieItems(settled)),
     primaryRaw: settled.find((entry) => entry.id === "phimapi")?.raw || settled[0]?.raw || null,
   };
 }
@@ -3673,7 +3691,7 @@ async function fetchEnsMovieStyleHomeCatalog(env) {
 
   return {
     sources: sourceEntries.map((entry) => ({ id: entry.id, name: entry.name, count: entry.items.length })),
-    items: mergeCatalogMovieItems(sourceEntries),
+    items: ensMovieCatalogItems(mergeCatalogMovieItems(sourceEntries)),
   };
 }
 
@@ -3764,7 +3782,18 @@ async function handleProtectedMovieCatalog(request, env, executionContext) {
     if (!slug) return textError("Mã phim không hợp lệ.", 400, "INVALID_MOVIE_SLUG");
     if (closed.has(slug)) return textError("Phim đang tạm đóng để Admin sửa nguồn phát.", 423, "MOVIE_TEMPORARILY_CLOSED");
     if (await movieIsUnavailable(env, slug)) return textError("Phim hiện không còn nguồn phát hoạt động.", 404, "MOVIE_SOURCE_OFFLINE");
-    const entries = await resolveEnsMovieStyleSources(slug, env);
+    const forcePrimary = url.searchParams.get("refresh") === "1";
+    let entries = await resolveEnsMovieStyleSources(slug, env, { forcePrimary });
+    let ensMovieEntry = entries.find((entry) => entry.id === "phimapi" && countEnsMovieIframeEpisodes(entry.data) > 0);
+    // A stale edge response must not turn a valid card into a permanent error.
+    // Retry the authoritative ENSMovie detail once without cache before failing.
+    if (!ensMovieEntry && !forcePrimary) {
+      entries = await resolveEnsMovieStyleSources(slug, env, { forcePrimary: true });
+      ensMovieEntry = entries.find((entry) => entry.id === "phimapi" && countEnsMovieIframeEpisodes(entry.data) > 0);
+    }
+    if (!ensMovieEntry) {
+      return textError("Phim này chưa có luồng ENSMovie hoạt động.", 404, "ENSMOVIE_STREAM_UNAVAILABLE");
+    }
     const data = mergeResolvedMovieSources(entries);
     if (!data) return textError("Chưa tải được thông tin phim từ các nguồn.", 502, "MOVIE_UPSTREAM_UNAVAILABLE");
     prewarmBackupStreams(data, slug, executionContext);

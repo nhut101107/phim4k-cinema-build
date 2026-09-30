@@ -73,6 +73,24 @@ test('full catalog exposes real paginated inventory above one thousand without b
   } finally {globalThis.fetch=original;}
 });
 
+test('secondary-only metadata never becomes a dead ENSMovie card',async()=>{
+  const original=globalThis.fetch;
+  const sourceEnv={...env,MOVIE_OPHIM_ORIGIN:'https://ophim.example'};
+  globalThis.fetch=async(input)=>{
+    const url=new URL(input);
+    const items=url.origin==='https://catalog.example'
+      ? [{slug:'ensmovie-title',name:'ENSMovie title'}]
+      : [{slug:'metadata-only-title',name:'Metadata only title'}];
+    return new Response(JSON.stringify({data:{items,params:{pagination:{currentPage:1,totalPages:1,totalItems:2}}}}),{headers:{'content-type':'application/json'}});
+  };
+  try {
+    const res=await worker.fetch(new Request('https://example.workers.dev/api/movies/catalog?page=1',{headers:{'x-device-id':'catalog-fixture'}}),sourceEnv);
+    const data=await res.json();
+    assert.equal(res.status,200);
+    assert.deepEqual(data.items.map(item=>item.slug),['ensmovie-title']);
+  } finally {globalThis.fetch=original;}
+});
+
 
 test('a stale OPhim origin migrates to the live catalog and phimimg CDN remains allowed',async()=>{
   const fallbackEnv={...env,MOVIE_CATALOG_ORIGIN:'https://ophim1.com',MOVIE_IMAGE_HOSTS:''};

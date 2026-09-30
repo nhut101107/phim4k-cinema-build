@@ -19,7 +19,7 @@ const API = {
   },
 
   getVersion() {
-    return '3.60';
+    return '3.61';
   },
 
   getRuntimeTag() {
@@ -406,9 +406,10 @@ const API = {
     }
   },
 
-  async getDetail(slug) {
+  async getDetail(slug, { refresh = false } = {}) {
+    const endpoint = `/api/movies/detail/${slug}${refresh ? '?refresh=1' : ''}`;
     try {
-      return await this.cachedMovieRequest(`/api/movies/detail/${slug}`, 300000);
+      return await this.cachedMovieRequest(endpoint, 300000);
     } catch (_error) {
       const movie = this.getBundledMovie(slug);
       if (movie) return { movie, episodes: [] };

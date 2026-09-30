@@ -22,6 +22,14 @@ test('tapping any movie opens its description before playback', () => {
   assert.match(index, /class="btn-play-large"[^>]*onclick="playCurrentFirstEpisode\(\)"/);
 });
 
+test('a detail race self-recovers and removes an ENSMovie-dead card', () => {
+  assert.match(app, /API\.getDetail\(slug, \{ refresh: true \}\)/);
+  assert.match(app, /data-movie-slug/);
+  assert.match(app, /chưa có luồng ENSMovie hoạt động và đã được gỡ/);
+  const api = fs.readFileSync('public/js/api.js', 'utf8');
+  assert.match(api, /\?refresh=1/);
+});
+
 test('catalog episodes retain the EnsMovie playback identity contract', () => {
   assert.match(app, /withPlaybackReference\(episode, server, serverIndex, episodeIndex\)/);
   for (const field of ['sourceMovieSlug', 'serverName', 'episodeSlug', 'episodeName', 'episodeFilename']) {

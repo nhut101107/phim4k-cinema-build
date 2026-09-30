@@ -167,7 +167,7 @@ test('a stale volatile HLS master is rejected and playback uses the live StreamC
   }
 });
 
-test('a direct HLS backup provider is never exposed in the ENSMovie-only detail', async () => {
+test('a title without an ENSMovie iframe is rejected instead of opening a dead detail', async () => {
   const f = fixture();
   const originalFetch = globalThis.fetch;
   const primary = {
@@ -193,9 +193,9 @@ test('a direct HLS backup provider is never exposed in the ENSMovie-only detail'
   };
   try {
     const detail = await worker.fetch(viewerRequest('/api/movies/detail/backup-movie'), f.env);
-    assert.equal(detail.status, 200);
+    assert.equal(detail.status, 404);
     const detailJson = await detail.json();
-    assert.equal(detailJson.episodes.length, 0);
+    assert.equal(detailJson.code, 'ENSMOVIE_STREAM_UNAVAILABLE');
     assert.doesNotMatch(JSON.stringify(detailJson), /backup-video|ads\.example|nguonphim/i);
 
     const playback = await worker.fetch(viewerRequest('/api/movies/play', {
@@ -204,6 +204,37 @@ test('a direct HLS backup provider is never exposed in the ENSMovie-only detail'
     }), f.env);
     assert.equal(playback.status, 200);
     assert.equal((await playback.json()).selectedServer, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    f.sqlite.close();
+  }
+});
+
+test('detail retries the authoritative ENSMovie source once without edge cache', async () => {
+  const f = fixture();
+  const originalFetch = globalThis.fetch;
+  let detailCalls = 0;
+  globalThis.fetch = async (input) => {
+    const url = new URL(input);
+    if (url.origin === 'https://catalog.example' && url.pathname === '/phim/recovered-movie') {
+      detailCalls += 1;
+      if (detailCalls === 1) return new Response('temporary failure', { status: 502 });
+      return new Response(JSON.stringify({
+        movie: { slug: 'recovered-movie', name: 'Recovered movie' },
+        episodes: [{ server_name: 'Vietsub', server_data: [{
+          name: 'Full', slug: 'full',
+          link_embed: 'https://player.phimapi.com/player/?url=https%3A%2F%2Fvideo.example%2Frecovered.m3u8',
+        }] }],
+      }), { headers: { 'content-type': 'application/json' } });
+    }
+    if (url.origin === 'https://phim.nguonc.com') return new Response('{}', { status: 404, headers: { 'content-type': 'application/json' } });
+    throw new Error(`unexpected upstream: ${url.href}`);
+  };
+  try {
+    const detail = await worker.fetch(viewerRequest('/api/movies/detail/recovered-movie'), f.env);
+    assert.equal(detail.status, 200);
+    assert.equal(detailCalls, 2);
+    assert.equal((await detail.json()).episodes[0].server_data.length, 1);
   } finally {
     globalThis.fetch = originalFetch;
     f.sqlite.close();

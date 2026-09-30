@@ -422,6 +422,18 @@ video::cue {
   pointer-events: auto;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Keep the provider stage mathematically centred on every portrait viewport,
+   including iOS dynamic toolbars. Width is derived from the real safe area,
+   not 100vw, so notches/fold hinges cannot push the frame into a corner. */
+@media (orientation: portrait) {
+  .cinema-player-wrapper.embed-active #playerEmbed {
+    width: calc(100% - var(--player-safe-left) - var(--player-safe-right)) !important;
+    max-height: calc(100dvh - var(--player-safe-top) - var(--player-safe-bottom)) !important;
+    aspect-ratio: 16 / 9;
+  }
 }
 
 .progress-bar-container {

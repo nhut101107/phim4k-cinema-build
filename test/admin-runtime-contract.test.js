@@ -27,8 +27,8 @@ test('admin route always receives the current login runtime instead of Safari ca
   assert.ok(auth.includes("window.location.pathname.replace(/\\/+$/, '') === '/admin'"));
   assert.match(worker, /new URL\('\/web-index\.html', request\.url\)/);
   assert.match(worker, /headers\.set\('cache-control', 'no-store, max-age=0'\)/);
-  assert.match(index, /\/js\/auth\.js\?v=3\.60\.0/);
-  assert.match(webIndex, /\/js\/auth\.js\?v=3\.60\.0/);
+  assert.match(index, /\/js\/auth\.js\?v=3\.61\.0/);
+  assert.match(webIndex, /\/js\/auth\.js\?v=3\.61\.0/);
   assert.doesNotMatch(`${index}\n${webIndex}`, /\/js\/auth\.js\?v=3\.58["']/);
 });
 
