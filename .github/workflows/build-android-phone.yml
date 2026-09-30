@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - scripts/rebuild-release.flag
+      - .github/workflows/build-android-phone.yml
+      - android/app/src/androidTest/**
+      - public/media/qa-original.webm
 permissions:
   contents: write
 

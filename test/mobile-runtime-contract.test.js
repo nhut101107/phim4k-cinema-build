@@ -164,6 +164,7 @@ test('Android CI builds, signs and device-tests the correct flavor', () => {
   const tvWorkflow = read('../.github/workflows/build-tv-windows.yml');
   assert.match(phoneWorkflow, /assemblePhoneRelease/);
   assert.match(phoneWorkflow, /connectedPhoneDebugAndroidTest/);
+  assert.match(read('../android/app/src/androidTest/java/com/phim4k/cinema/TvSmokeTest.java'), /qa-original\.webm/);
   assert.match(phoneWorkflow, /package: name='com\.phim4k\.cinema'/);
   assert.match(phoneWorkflow, /4K-Cinema-Android-3\.61\.apk/);
   assert.match(phoneWorkflow, /application-label:'MNHUT Cinema'/);

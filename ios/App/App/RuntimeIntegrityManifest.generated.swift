@@ -35,6 +35,7 @@ enum RuntimeIntegrityManifest {
         "public/media/killer_shop_4k.jpg": "cc85f3ae2bbab87c5c53d661b12b075e890705eb56bfb230d3f922ef07b500d6",
         "public/media/phim4k-avatar.png": "d642f4f713d22fb37651ecff7e47368ad03b79d8a9164732a2f2fef269e1e104",
         "public/media/poster-fallback.svg": "0dedb95cd60973a3677b66d330e80a20ece8c0752d6b2de178b5960bfd3a607f",
+        "public/media/qa-original.webm": "e98b9406d173fda158bc11e7a63b6b020edb0411f6f4640877df6a1c50830b88",
         "public/media/spider_man_4k.jpg": "1e6356bf1dfce786b534026aa48e9776a77090599380881a982fa1eaba7f79b0",
         "public/media/superman_4k.jpg": "9339c63a766caa26647be0b64cacf0c95e3db29859ce4445b5e9db15a05ab7fe",
         "public/media/the_boys_4k.jpg": "572cb16dfb429292bb9fc690a0c5bfa28a8d688ed23588595e396b454067971a",

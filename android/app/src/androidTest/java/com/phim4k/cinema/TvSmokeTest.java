@@ -57,7 +57,11 @@ public class TvSmokeTest {
             assertTrue("System Back did not close the top app layer", waitFor(activity, "qaBackClosed===true && !document.getElementById('qaBackOverlay')", 20, 100));
             assertFalse("Activity exited while a modal was open", activity.isFinishing());
 
-            js(activity, "window.qaVideo=Player.video; Player.modal.classList.remove('hidden'); qaVideo.muted=true; qaVideo.loop=true; qaVideo.src=location.origin+'/media/qa-original.mp4'; qaVideo.play(); true");
+            // Hosted Android runners do not expose NVIDIA/H.264 decode and can
+            // fail before app code is exercised. VP8/WebM is decoded in
+            // software by WebView, so this remains a real video playback test
+            // without depending on runner GPU capabilities.
+            js(activity, "window.qaVideo=Player.video; Player.modal.classList.remove('hidden'); qaVideo.muted=true; qaVideo.loop=true; qaVideo.src=location.origin+'/media/qa-original.webm'; qaVideo.play(); true");
             assertTrue("Original video could not be decoded", waitFor(activity, "qaVideo.currentTime > 0.1 && qaVideo.videoWidth > 0", 40, 250));
             assertEquals("true", js(activity, "Player.aspectMode==='contain' && getComputedStyle(qaVideo).objectFit==='contain' && qaVideo.getBoundingClientRect().width<=innerWidth+1 && qaVideo.getBoundingClientRect().bottom<=innerHeight+1"));
 
