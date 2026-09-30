@@ -110,6 +110,7 @@ test('player exposes only subtitle-safe contain and explicit fullscreen fill mod
   assert.match(index, /id="btnAspectCoverTop"[^>]*>⛶ Lấp đầy</);
   assert.match(css, /\.cinema-player-wrapper\.aspect-cover \.video-element\s*\{[\s\S]*?object-fit:\s*cover/);
   assert.match(css, /\.cinema-player-wrapper\.aspect-contain \.video-element\s*\{[\s\S]*?object-fit:\s*contain/);
+  assert.match(css, /@media \(orientation: landscape\)\s*\{\s*\.cinema-player-wrapper\.aspect-cover #playerEmbed/);
 });
 
 test('fullscreen follows rotation without reacting to Safari toolbar or provider settings resize', () => {

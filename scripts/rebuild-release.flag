@@ -17,3 +17,4 @@
 
 2026-09-30 MNHUT rebuild #21: release 3.58 safe-area, fill mode, low-latency chrome, ENSMovie watch time and real client IP
 2026-09-30 MNHUT rebuild #22: release 3.59 stable ENSMovie settings row without viewport or chrome resize jank
+2026-09-30 MNHUT rebuild #23: keep ENSMovie iframe stable when fill is tapped before iPhone reaches landscape

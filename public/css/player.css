@@ -62,13 +62,19 @@
   object-fit: cover;
 }
 
-.cinema-player-wrapper.aspect-cover #playerEmbed {
-  inset: 50% auto auto 50% !important;
-  width: max(100vw, 177.78vh) !important;
-  width: max(100dvw, 177.78dvh) !important;
-  height: max(100vh, 56.25vw) !important;
-  height: max(100dvh, 56.25dvw) !important;
-  transform: translate(-50%, -50%);
+/* Never stretch the cross-origin provider to landscape dimensions while the
+   phone is still portrait. That changes ENSMovie's responsive breakpoint,
+   collapses its video to a tiny play button and can trigger a reload. Crop is
+   enabled only after the device has actually reached landscape. */
+@media (orientation: landscape) {
+  .cinema-player-wrapper.aspect-cover #playerEmbed {
+    inset: 50% auto auto 50% !important;
+    width: max(100vw, 177.78vh) !important;
+    width: max(100dvw, 177.78dvh) !important;
+    height: max(100vh, 56.25vw) !important;
+    height: max(100dvh, 56.25dvw) !important;
+    transform: translate(-50%, -50%);
+  }
 }
 
 /* ENSMovie is cross-origin, so its document cannot read the host WebView's
