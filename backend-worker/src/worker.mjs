@@ -59,54 +59,54 @@ const RATE_LIMITS = Object.freeze({
 
 const INSTALLER_RELEASES = Object.freeze({
   "/download/android": {
-    filename: "4K-Cinema-Android-3.60.apk",
+    filename: "4K-Cinema-Android-3.61.apk",
     contentType: "application/vnd.android.package-archive",
-    url: "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.60/4K-Cinema-Android-3.60.apk",
+    url: "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.61/4K-Cinema-Android-3.61.apk",
   },
   "/download/android-tv": {
-    filename: "4K-Cinema-Android-TV-3.60.apk",
+    filename: "4K-Cinema-Android-TV-3.61.apk",
     contentType: "application/vnd.android.package-archive",
-    url: "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.60/4K-Cinema-Android-TV-3.60.apk",
+    url: "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.61/4K-Cinema-Android-TV-3.61.apk",
   },
   "/download/ios": {
-    filename: "4K-Cinema-iOS-3.60-unsigned.ipa",
+    filename: "4K-Cinema-iOS-3.61-unsigned.ipa",
     contentType: "application/octet-stream",
-    url: "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.60/4K-Cinema-iOS-3.60-unsigned.ipa",
+    url: "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.61/4K-Cinema-iOS-3.61-unsigned.ipa",
   },
   "/download/windows": {
-    filename: "4K-Cinema-Windows-3.60-x64.exe",
+    filename: "4K-Cinema-Windows-3.61-x64.exe",
     contentType: "application/vnd.microsoft.portable-executable",
-    url: "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.60/4K-Cinema-Windows-3.60-x64.exe",
+    url: "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.61/4K-Cinema-Windows-3.61-x64.exe",
   },
 });
 
 const PUBLIC_RELEASES = Object.freeze({
   android: Object.freeze({
     url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android",
-    version: "3.60",
-    sha256: "df15f6f4b0cd7a19063b5da37ba54f225ac482a5c9e1587a2f517197be436947",
-    sizeBytes: 4008995,
+    version: "3.61",
+    sha256: "cb18d4f78f0a9922188d75380c1e812a02ce912e4970846275fcbf05b5f852fb",
+    sizeBytes: 4058229,
     signer: "github-actions[bot]",
   }),
   android_tv: Object.freeze({
     url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android-tv",
-    version: "3.60",
-    sha256: "b6287e4bb4dee6fd280737715653570e8eb64e13eb630c21263f2751bcc59349",
-    sizeBytes: 4008995,
+    version: "3.61",
+    sha256: "73bbb1842c0f31100688973c3565ef7fd46c600a2a9a2813d9b403d778fb88bd",
+    sizeBytes: 4058229,
     signer: "github-actions[bot]",
   }),
   ios: Object.freeze({
     url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/ios",
-    version: "3.60",
-    sha256: "c174d9a59af504d79b4d5f2283d09d905509c12fa4a7443ec5da13aa42d080b1",
-    sizeBytes: 4467551,
+    version: "3.61",
+    sha256: "acccef62134da5a08b198fc2d604d4d965feb3057e339cbe3bbe4b2d37541d1a",
+    sizeBytes: 4513723,
     signer: "github-actions[bot]",
   }),
   windows: Object.freeze({
     url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/windows",
-    version: "3.60",
-    sha256: "684b36b6c1de9723fe11578e1d9031b488b11ff7dc5a25c8799a70f003d4a2ee",
-    sizeBytes: 121003329,
+    version: "3.61",
+    sha256: "4133a03894e91aae69a09f20a5bd7ac948e2c6b14eeed350c9eccb002f25cc30",
+    sizeBytes: 121047659,
     signer: "github-actions[bot]",
   }),
 });
@@ -344,7 +344,7 @@ async function handleInstallerDownload(request, pathname) {
   if (!release || !["GET", "HEAD"].includes(request.method)) {
     return textError("Không tìm thấy bản cài đặt.", 404, "INSTALLER_NOT_FOUND");
   }
-  const upstreamHeaders = new Headers({ "user-agent": "MNHUT-Cinema-Release/3.60" });
+  const upstreamHeaders = new Headers({ "user-agent": "MNHUT-Cinema-Release/3.61" });
   const range = request.headers.get("range");
   if (range && /^bytes=\d*-\d*$/.test(range)) upstreamHeaders.set("range", range);
   const upstream = await fetch(release.url, {

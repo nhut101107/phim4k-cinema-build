@@ -27,7 +27,7 @@ jobs:
           def get(path):
             for attempt in range(4):
               try:
-                with urllib.request.urlopen(urllib.request.Request(origin+path,headers={'Accept':'application/json','User-Agent':'MNHUT-Cinema-Release-QA/3.60'}),timeout=25) as r:
+                with urllib.request.urlopen(urllib.request.Request(origin+path,headers={'Accept':'application/json','User-Agent':'MNHUT-Cinema-Release-QA/3.61'}),timeout=25) as r:
                   print('HTTP',path,r.status,r.headers.get('content-type'),flush=True)
                   assert r.status==200,(path,r.status)
                   return json.load(r)
@@ -46,12 +46,12 @@ jobs:
             url=urllib.parse.urlsplit(entry['url'])
             assert url.hostname=='phim4k-license-api.phim4k-pwdbhdz.workers.dev',(platform,url.hostname)
             assert url.path==download_path,(platform,url.path)
-            assert entry['version']=='3.60',platform
+            assert entry['version']=='3.61',platform
             assert entry['sha256']==sha,platform
             assert entry['sizeBytes']==size,platform
-            print('PASS live app downloads:',platform,'v3.60 first-party route, size, SHA-256',flush=True)
+            print('PASS live app downloads:',platform,'v3.61 first-party route, size, SHA-256',flush=True)
             status=get('/api/app/check-update?'+urllib.parse.urlencode({'platform':platform,'version':'3.59'}))
-            assert status['latestVersion']=='3.60',(platform,status)
+            assert status['latestVersion']=='3.61',(platform,status)
             assert status['downloadSha256']==sha,platform
             assert status['downloadSizeBytes']==size,platform
             print('PASS live check-update:',platform,flush=True)
