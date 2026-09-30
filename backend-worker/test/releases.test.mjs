@@ -33,10 +33,10 @@ test('public installer routes stream the current immutable release without expos
       headers: { range: 'bytes=0-2' },
     }), {});
     assert.equal(response.status, 206);
-    assert.equal(response.headers.get('content-disposition'), 'attachment; filename="4K-Cinema-iOS-3.58-unsigned.ipa"');
+    assert.equal(response.headers.get('content-disposition'), 'attachment; filename="4K-Cinema-iOS-3.59-unsigned.ipa"');
     assert.equal(response.headers.get('content-range'), 'bytes 0-2/4422377');
     assert.equal(requests[0].options.headers.get('range'), 'bytes=0-2');
-    assert.equal(requests[0].url, 'https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.58/4K-Cinema-iOS-3.58-unsigned.ipa');
+    assert.equal(requests[0].url, 'https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.59/4K-Cinema-iOS-3.59-unsigned.ipa');
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -53,9 +53,9 @@ test('downloads admin route is authorized, atomic and compatible with clients', 
   const response = await worker.fetch(new Request('https://example.test/api/app/downloads'), env);
   const data = await response.json();
   assert.equal(data.windows.url, data.windowsUrl);
-    assert.equal(data.android_tv.version, '3.58');
+    assert.equal(data.android_tv.version, '3.59');
   assert.equal(data.android_tv.url, 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android-tv');
-    assert.equal(data.android_tv.sha256, '9c7b7411d113533522e3b350aad621d7f3c4ef2016a6acb646b4bd85b473c606');
+    assert.equal(data.android_tv.sha256, 'f66af1b1f715040227c6fd4de3317bd80afec6b5eabcd0faf049ac48ea366e88');
 });
 test('streamed JSON body is bounded even without Content-Length', async () => {
   const f = fixture();

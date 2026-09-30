@@ -59,54 +59,54 @@ const RATE_LIMITS = Object.freeze({
 
 const INSTALLER_RELEASES = Object.freeze({
   "/download/android": {
-    filename: "4K-Cinema-Android-3.58.apk",
+    filename: "4K-Cinema-Android-3.59.apk",
     contentType: "application/vnd.android.package-archive",
-    url: "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.58/4K-Cinema-Android-3.58.apk",
+    url: "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.59/4K-Cinema-Android-3.59.apk",
   },
   "/download/android-tv": {
-    filename: "4K-Cinema-Android-TV-3.58.apk",
+    filename: "4K-Cinema-Android-TV-3.59.apk",
     contentType: "application/vnd.android.package-archive",
-    url: "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.58/4K-Cinema-Android-TV-3.58.apk",
+    url: "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.59/4K-Cinema-Android-TV-3.59.apk",
   },
   "/download/ios": {
-    filename: "4K-Cinema-iOS-3.58-unsigned.ipa",
+    filename: "4K-Cinema-iOS-3.59-unsigned.ipa",
     contentType: "application/octet-stream",
-    url: "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.58/4K-Cinema-iOS-3.58-unsigned.ipa",
+    url: "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.59/4K-Cinema-iOS-3.59-unsigned.ipa",
   },
   "/download/windows": {
-    filename: "4K-Cinema-Windows-3.58-x64.exe",
+    filename: "4K-Cinema-Windows-3.59-x64.exe",
     contentType: "application/vnd.microsoft.portable-executable",
-    url: "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.58/4K-Cinema-Windows-3.58-x64.exe",
+    url: "https://github.com/nhut101107/phim4k-cinema-build/releases/download/ios-v3.59/4K-Cinema-Windows-3.59-x64.exe",
   },
 });
 
 const PUBLIC_RELEASES = Object.freeze({
   android: Object.freeze({
     url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android",
-    version: "3.58",
-    sha256: "4fec8989a358c0a861a4d7d4b93b8ffb270300c65cea22346fc42e95d4c8e883",
+    version: "3.59",
+    sha256: "36503b3c3273d75fa20c2832f372875708b7064020d8b8e818823cbf21bd3171",
     sizeBytes: 4008995,
     signer: "github-actions[bot]",
   }),
   android_tv: Object.freeze({
     url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android-tv",
-    version: "3.58",
-    sha256: "9c7b7411d113533522e3b350aad621d7f3c4ef2016a6acb646b4bd85b473c606",
+    version: "3.59",
+    sha256: "f66af1b1f715040227c6fd4de3317bd80afec6b5eabcd0faf049ac48ea366e88",
     sizeBytes: 4008995,
     signer: "github-actions[bot]",
   }),
   ios: Object.freeze({
     url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/ios",
-    version: "3.58",
-    sha256: "298f39b23eda513861930e0cb5b47afaadbfc3402fd8e5da710e930e3e3bfba0",
-    sizeBytes: 4467194,
+    version: "3.59",
+    sha256: "e0206621e4dfd19fabc90f1a81c719929c8b4de26abff7fdb8141a6a6bb1d6e8",
+    sizeBytes: 4467400,
     signer: "github-actions[bot]",
   }),
   windows: Object.freeze({
     url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/windows",
-    version: "3.58",
-    sha256: "ee5550d251a7a1230e98fef6c6061e591a242177a2812df4b817dfc2ecc9048b",
-    sizeBytes: 121003139,
+    version: "3.59",
+    sha256: "e499b29f92804f06d9bf931650f7ff08a8ad863380f99d5e258a2e450a463a49",
+    sizeBytes: 121001913,
     signer: "github-actions[bot]",
   }),
 });
@@ -344,7 +344,7 @@ async function handleInstallerDownload(request, pathname) {
   if (!release || !["GET", "HEAD"].includes(request.method)) {
     return textError("Không tìm thấy bản cài đặt.", 404, "INSTALLER_NOT_FOUND");
   }
-  const upstreamHeaders = new Headers({ "user-agent": "MNHUT-Cinema-Release/3.58" });
+  const upstreamHeaders = new Headers({ "user-agent": "MNHUT-Cinema-Release/3.59" });
   const range = request.headers.get("range");
   if (range && /^bytes=\d*-\d*$/.test(range)) upstreamHeaders.set("range", range);
   const upstream = await fetch(release.url, {
