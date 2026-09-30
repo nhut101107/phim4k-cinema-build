@@ -394,7 +394,8 @@ const Admin = {
         const answer = document.createElement('button');
         answer.type = 'button';
         answer.className = 'btn-action-mini btn-time';
-        answer.textContent = ticket.admin_reply ? 'Sửa trả lời' : 'Trả lời user';
+        answer.textContent = ticket.admin_reply ? '✏️ Sửa tin nhắn trả lời User' : '💬 Nhắn tin trả lời User';
+        answer.title = 'Mở ô nhập tin nhắn phản hồi trực tiếp cho người dùng';
         answer.onclick = () => this.replyFeedback(ticket);
         actions.appendChild(answer);
         card.append(info, actions);

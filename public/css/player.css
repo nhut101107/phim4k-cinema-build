@@ -30,6 +30,10 @@
   isolation: isolate;
   background: #000;
   --subtitle-safe-area: clamp(52px, 8vh, 74px);
+  --player-safe-top: max(0px, env(safe-area-inset-top));
+  --player-safe-right: max(0px, env(safe-area-inset-right));
+  --player-safe-bottom: max(0px, env(safe-area-inset-bottom));
+  --player-safe-left: max(0px, env(safe-area-inset-left));
 }
 
 .player-modal-overlay.cinema-fullscreen,
@@ -65,6 +69,18 @@
   height: max(100vh, 56.25vw) !important;
   height: max(100dvh, 56.25dvw) !important;
   transform: translate(-50%, -50%);
+}
+
+/* ENSMovie is cross-origin, so its document cannot read the host WebView's
+   cutout. Keep the provider's lock and transport controls inside the real
+   hardware-safe viewport on notched, rounded and foldable displays. */
+.cinema-player-wrapper:not(.aspect-cover) #playerEmbed {
+  top: var(--player-safe-top);
+  right: var(--player-safe-right);
+  bottom: var(--player-safe-bottom);
+  left: var(--player-safe-left);
+  width: auto;
+  height: auto;
 }
 
 .cinema-player-wrapper.aspect-contain .video-element {
@@ -302,6 +318,12 @@ video::cue {
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.btn-player-fill.active {
+  border-color: rgba(250, 204, 21, .72) !important;
+  color: #111827 !important;
+  background: #facc15 !important;
 }
 
 .badge-real-res,
@@ -644,6 +666,7 @@ video::cue {
     font-size: 11px !important;
     white-space: nowrap !important;
   }
+  .player-top-actions .btn-player-fill { display: inline-flex !important; }
   .btn-close-player {
     width: 36px;
     height: 36px;
@@ -658,9 +681,12 @@ video::cue {
 /* --- EnsMovie Embed Player Integration --- */
 #playerEmbed {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  top: var(--player-safe-top);
+  right: var(--player-safe-right);
+  bottom: var(--player-safe-bottom);
+  left: var(--player-safe-left);
+  width: auto;
+  height: auto;
   border: none;
   background: #000;
   z-index: 20;

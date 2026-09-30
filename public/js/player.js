@@ -34,7 +34,6 @@ const Player = {
   allServers: [],
   currentServerIndex: 0,
   inactivityTimer: null,
-  inactivityFrame: null,
   chromeHideDeadline: 0,
   embedReady: false,
   saveInterval: null,
@@ -56,6 +55,8 @@ const Player = {
   lastProgressTime: 0,
   playbackStartLogged: false,
   watchedSeconds: 0,
+  reportedWatchedSeconds: 0,
+  watchReportInterval: null,
   activePlayStartedAt: 0,
   autoSkipAdsEnabled: true,
   skippedAdMarkers: new Set(),
@@ -130,6 +131,7 @@ const Player = {
       // every navigation as user activity pins our chrome forever in WKWebView.
       if (!this.embedReady && this.wrapper?.classList.contains('embed-active') && !this.modal?.classList.contains('hidden')) {
         this.embedReady = true;
+        this.beginEmbedWatchSession();
         this.resetInactivityTimer();
       }
     });
@@ -156,9 +158,17 @@ const Player = {
       });
     }
     window.addEventListener('keydown', (event) => this.onKeyDown(event));
-    window.addEventListener('pagehide', () => this.saveProgressNow({ flush: true }));
+    window.addEventListener('pagehide', () => {
+      this.saveProgressNow({ flush: true });
+      this.reportEmbedWatchTime({ keepalive: true });
+    });
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') this.saveProgressNow({ flush: true });
+      if (document.visibilityState === 'hidden') {
+        this.saveProgressNow({ flush: true });
+        this.reportEmbedWatchTime({ keepalive: true });
+      } else if (this.wrapper?.classList.contains('embed-active') && !this.modal?.classList.contains('hidden')) {
+        this.beginEmbedWatchSession();
+      }
     });
     document.addEventListener('fullscreenchange', () => this.onBrowserFullscreenChange());
     this.loadAutoSkipPreference();
@@ -181,6 +191,7 @@ const Player = {
     this.suppressBuffering = false;
     this.playbackStartLogged = false;
     this.watchedSeconds = 0;
+    this.reportedWatchedSeconds = 0;
     this.activePlayStartedAt = 0;
     this.skippedAdMarkers.clear();
     this.streamRefreshAttempts = 0;
@@ -213,7 +224,9 @@ const Player = {
     this.clearSurfaceTap();
     this.saveProgressNow({ flush: true });
     this.captureWatchedTime();
-    if (Number(this.video?.currentTime) > 1) {
+    const embedWasActive = this.wrapper?.classList.contains('embed-active');
+    if (embedWasActive) this.reportEmbedWatchTime({ keepalive: true });
+    if (!embedWasActive && Number(this.video?.currentTime) > 1) {
       API.trackUsage('playback_stop', {
         ...this.usageContext(),
         seconds: this.video.currentTime,
@@ -248,9 +261,9 @@ const Player = {
     }
     if (this.saveInterval) clearInterval(this.saveInterval);
     this.saveInterval = null;
+    if (this.watchReportInterval) clearInterval(this.watchReportInterval);
+    this.watchReportInterval = null;
     clearTimeout(this.inactivityTimer);
-    window.cancelAnimationFrame?.(this.inactivityFrame);
-    this.inactivityFrame = null;
     this.chromeHideDeadline = 0;
     this.setControlsHidden(false);
     this.modal?.classList.add('hidden');
@@ -262,6 +275,32 @@ const Player = {
     if (!this.activePlayStartedAt) return;
     this.watchedSeconds += Math.max(0, (performance.now() - this.activePlayStartedAt) / 1000);
     this.activePlayStartedAt = 0;
+  },
+
+  beginEmbedWatchSession() {
+    if (!this.wrapper?.classList.contains('embed-active') || this.modal?.classList.contains('hidden') || document.visibilityState === 'hidden') return;
+    if (!this.activePlayStartedAt) this.activePlayStartedAt = performance.now();
+    if (!this.playbackStartLogged) {
+      this.playbackStartLogged = true;
+      API.trackUsage('playback_start', { ...this.usageContext(), entry: 'ENSMovie' });
+    }
+    if (!this.watchReportInterval) {
+      this.watchReportInterval = window.setInterval(() => this.reportEmbedWatchTime(), 30000);
+    }
+  },
+
+  reportEmbedWatchTime({ keepalive = false } = {}) {
+    if (!this.wrapper?.classList.contains('embed-active')) return;
+    this.captureWatchedTime();
+    const delta = Math.max(0, this.watchedSeconds - this.reportedWatchedSeconds);
+    if (delta >= 1) {
+      API.trackUsage('playback_watch', { ...this.usageContext(), watched: delta, entry: 'ENSMovie' });
+      this.reportedWatchedSeconds = this.watchedSeconds;
+      if (keepalive) void API.flushUsage?.({ keepalive: true });
+    }
+    if (document.visibilityState !== 'hidden' && !this.modal?.classList.contains('hidden')) {
+      this.activePlayStartedAt = performance.now();
+    }
   },
 
   async loadEpisode(episode, _options = {}) {
@@ -546,10 +585,14 @@ const Player = {
     window.requestAnimationFrame?.(() => this.updateSubtitleSafeArea());
     const contain = document.getElementById('btnAspectContain');
     const cover = document.getElementById('btnAspectCover');
+    const coverTop = document.getElementById('btnAspectCoverTop');
     contain?.classList.toggle('active', nextMode === 'contain');
     cover?.classList.toggle('active', nextMode === 'cover');
+    coverTop?.classList.toggle('active', nextMode === 'cover');
     contain?.setAttribute('aria-pressed', String(nextMode === 'contain'));
     cover?.setAttribute('aria-pressed', String(nextMode === 'cover'));
+    coverTop?.setAttribute('aria-pressed', String(nextMode === 'cover'));
+    if (coverTop) coverTop.textContent = nextMode === 'cover' ? '▣ Giữ trọn' : '⛶ Lấp đầy';
     try { localStorage.setItem('phim4k-player-aspect-v3', nextMode); } catch (_) {}
     if (!silent) this.showAlert(nextMode === 'cover'
       ? 'Lấp đầy màn hình: mép hình và phụ đề sát mép có thể bị cắt.'
@@ -1062,8 +1105,6 @@ const Player = {
     if (this.wrapper.classList.contains('inactive')) this.resetInactivityTimer();
     else {
       clearTimeout(this.inactivityTimer);
-      window.cancelAnimationFrame?.(this.inactivityFrame);
-      this.inactivityFrame = null;
       this.closeDropdowns();
       this.setControlsHidden(true);
     }
@@ -1083,30 +1124,22 @@ const Player = {
     this.setControlsHidden(false);
     window.requestAnimationFrame?.(() => this.updateSubtitleSafeArea());
     clearTimeout(this.inactivityTimer);
-    window.cancelAnimationFrame?.(this.inactivityFrame);
     this.chromeHideDeadline = performance.now() + 2600;
 
     const hideWhenDue = () => {
       if (!this.wrapper || this.modal?.classList.contains('hidden')) return;
-      const remaining = this.chromeHideDeadline - performance.now();
-      if (remaining > 0) {
-        this.inactivityFrame = window.requestAnimationFrame?.(hideWhenDue) || null;
-        return;
-      }
+      if (this.chromeHideDeadline - performance.now() > 40) return;
       const embedActive = this.wrapper?.classList.contains('embed-active');
       if (embedActive || !this.video?.paused) {
         this.closeDropdowns();
         this.setControlsHidden(true);
         this.updateSubtitleSafeArea();
       }
-      this.inactivityFrame = null;
     };
 
-    // requestAnimationFrame follows the visible WKWebView clock and avoids the
-    // aggressive timer coalescing used by iOS. The timeout remains a fallback
-    // for desktop/background transitions and both paths are idempotent.
-    this.inactivityFrame = window.requestAnimationFrame?.(hideWhenDue) || null;
-    this.inactivityTimer = window.setTimeout(hideWhenDue, 2700);
+    // A single deadline timer avoids a 60-fps JavaScript loop competing with
+    // ENSMovie's video compositor on older phones, laptops and Android TVs.
+    this.inactivityTimer = window.setTimeout(hideWhenDue, 2640);
   },
 
   formatTime(seconds) {

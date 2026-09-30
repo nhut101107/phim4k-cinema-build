@@ -19,7 +19,7 @@ const API = {
   },
 
   getVersion() {
-    return '3.57';
+    return '3.58';
   },
 
   getRuntimeTag() {

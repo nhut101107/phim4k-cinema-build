@@ -40,7 +40,7 @@ const MAX_MAINTENANCE_MINUTES = 7 * 24 * 60;
 const TELEMETRY_ACTIONS = new Set([
   "app_open", "tab_view", "category_view", "filter_applied", "search",
   "movie_open", "episode_open", "playback_start", "playback_ready",
-  "playback_stop", "playback_complete", "playback_error", "server_change",
+  "playback_stop", "playback_watch", "playback_complete", "playback_error", "server_change",
   "heartbeat", "app_visibility", "network_change", "client_error", "download_open",
 ]);
 const TELEMETRY_FIELDS = new Set([

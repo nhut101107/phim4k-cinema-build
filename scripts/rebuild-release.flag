@@ -14,3 +14,5 @@
 2026-09-29 MNHUT rebuild #18: restore stable ENS embed playback and live movie details on all clients
 2026-09-29 MNHUT rebuild #19: remove VSMOV, publish ENSMovie-only playback and repair broken artwork on all clients
 2026-09-30 MNHUT rebuild #20: release 3.57 with deterministic iOS player chrome auto-hide
+
+2026-09-30 MNHUT rebuild #21: release 3.58 safe-area, fill mode, low-latency chrome, ENSMovie watch time and real client IP
