@@ -418,11 +418,32 @@ video::cue {
   content: "";
   position: absolute;
   z-index: 45;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: max(142px, calc(env(safe-area-inset-bottom) + 118px));
+  left: 0;
   pointer-events: auto;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+}
+
+/* ENSMovie owns the real ad markers and renders its native “Bỏ qua quảng
+   cáo” action at the lower-right of the iframe. Keep that whole transport
+   strip outside our wake-up layer so the first tap reaches ENSMovie on web,
+   Capacitor phones/tablets and desktop shells. */
+.player-ad-skip-status {
+  display: inline-flex;
+  min-height: 36px;
+  padding: 6px 10px;
+  align-items: center;
+  border: 1px solid rgba(74, 222, 128, .42);
+  border-radius: 9px;
+  color: #bbf7d0;
+  background: rgba(22, 101, 52, .24);
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 /* Keep the provider stage mathematically centred on every portrait viewport,
@@ -618,7 +639,7 @@ video::cue {
 }
 
 @media (max-width: 560px) and (orientation: portrait) {
-  .player-top-actions #btnAutoSkipAdsTop,
+  .player-top-actions .player-ad-skip-status,
   .player-top-actions #btnNextEpTop,
   .player-top-actions .player-noads-pill { display: none; }
   .controls-row { flex-direction: column; align-items: stretch; row-gap: 9px; }
@@ -644,7 +665,7 @@ video::cue {
   .player-top-bar { min-height: 46px; padding-top: max(5px, env(safe-area-inset-top)); padding-bottom: 5px; }
   .player-title-info,
   .player-noads-pill,
-  .player-top-actions #btnAutoSkipAdsTop,
+  .player-top-actions .player-ad-skip-status,
   .player-top-actions #btnNextEpTop { display: none; }
   .player-top-bar { grid-template-columns: 48px 1fr auto; }
   .btn-back { font-size: 0; min-height: 34px; }
@@ -686,7 +707,7 @@ video::cue {
   .player-title-info span,
   .badge-real-res,
   .player-noads-pill,
-  .player-top-actions #btnAutoSkipAdsTop { display: none !important; }
+  .player-top-actions .player-ad-skip-status { display: none !important; }
   .player-top-actions { gap: 5px; }
   .btn-player-server {
     max-width: 152px;

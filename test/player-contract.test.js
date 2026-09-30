@@ -79,7 +79,7 @@ test('server labels come from provider language metadata without fake regions', 
   assert.equal(format({ server_name: 'Server 4' }, 3, {}), 'Server 4');
 });
 
-test('ENSMovie iframe chrome auto-hides after 2.6 seconds and wakes from a full-screen tap', () => {
+test('ENSMovie iframe chrome auto-hides and the upper video surface wakes it', () => {
   assert.match(player, /const embedActive = this\.wrapper\?\.classList\.contains\('embed-active'\)/);
   assert.match(player, /playEmbedStream\(embedUrl\)[\s\S]*?this\.resetInactivityTimer\(\)/);
   assert.match(player, /embed\?\.addEventListener\('load'[\s\S]*?this\.resetInactivityTimer\(\)/);
@@ -87,7 +87,7 @@ test('ENSMovie iframe chrome auto-hides after 2.6 seconds and wakes from a full-
   assert.match(player, /window\.setTimeout\(hideWhenDue, 2640\)/);
   assert.match(player, /event\.target === this\.wrapper[\s\S]*?contains\('embed-active'\)[\s\S]*?contains\('inactive'\)/);
   assert.match(css, /\.cinema-player-wrapper\.inactive\.embed-active::after/);
-  assert.match(css, /\.cinema-player-wrapper\.inactive\.embed-active::after\s*\{[\s\S]*?inset:\s*0;/);
+  assert.match(css, /\.cinema-player-wrapper\.inactive\.embed-active::after\s*\{[\s\S]*?top:\s*0;[\s\S]*?bottom:\s*max\(142px/);
   assert.match(css, /\.cinema-player-wrapper\.inactive\.embed-active #playerTopBar > \*/);
 });
 
@@ -264,13 +264,11 @@ test('native playback and HLS.js expose automatic quality only', () => {
   assert.doesNotMatch(index, /onclick="setQuality\((?!-1)/);
 });
 
-test('all platforms auto-skip embedded ad windows once and keep a user toggle', () => {
-  assert.match(index, /id="btnAutoSkipAds"[^>]*onclick="toggleAutoSkipAds\(\)"/);
-  assert.match(index, /id="btnAutoSkipAdsTop"[^>]*onclick="toggleAutoSkipAds\(\)"/);
-  assert.doesNotMatch(player, /this\.nativePlatform\(\) !== 'ios'/);
-  assert.match(player, /PlayerCore\.autoAdSkipTarget/);
-  assert.match(player, /this\.skippedAdMarkers\.add\(result\.marker\)/);
-  assert.match(player, /phim4k-auto-skip-ads-v2/);
+test('ENSMovie native ad-skip action remains reachable on the first tap', () => {
+  assert.match(index, /class="player-ad-skip-status"[^>]*>⏩ Tua QC ENSMovie</);
+  assert.doesNotMatch(index, /id="btnAutoSkipAds(?:Top)?"/);
+  assert.match(css, /inactive\.embed-active::after[\s\S]*?bottom:\s*max\(142px/);
+  assert.match(css, /first tap reaches ENSMovie/);
 });
 
 test('every movie displays the requested small faint handwritten mnhut watermark', () => {

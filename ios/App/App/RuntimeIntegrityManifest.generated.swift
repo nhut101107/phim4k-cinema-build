@@ -7,11 +7,11 @@ enum RuntimeIntegrityManifest {
         "public/cordova_plugins.js": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         "public/cordova.js": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         "public/css/modal.css": "5a52123feec537dba7197943c9289bbea836bfd03fd297d5ebba8b91c6109d3e",
-        "public/css/player.css": "0e3f7ed52b59989ae7d1ab0be9a4e85a29f553370a8dae603d45d94a390b83a1",
+        "public/css/player.css": "5633d579723063ad84a4312f037d473e1a0367139007740dffd2afecbe2aa1fd",
         "public/css/style.css": "fdeeec463d8381ed29d60a26e4592e764875fbab9428d158814a2fef9cd09add",
         "public/css/tv.css": "4ad38e4a9af9696fa99effd05e25e4bcfe05a5ea116b924dc467c71c5f43b192",
         "public/css/web-premium.css": "967e2e452f376c7a9f182b8cb53d6415959176102deb8fd79d274a6eb17c850b",
-        "public/index.html": "e981c7818713083ffcb67e35592145fe33d317bd7692442536ead0cd3c264c81",
+        "public/index.html": "e0c984424ec622a38c2d32b106018718e9baff4daf3dc983e70aac4c98d8420b",
         "public/js/admin.js": "c231359a790688ffcc66c59209a49d1b7277cd885994d7aa3d9b6952b6e33237",
         "public/js/api.js": "a4e35818ade969be3759d60b6228a463a18abf904b2c5281d69e84ca6281350a",
         "public/js/app.js": "563452591f79d2d105c369e77fa2b7a9a1c4b7e073ef14332d320e99f5ad1561",
@@ -40,7 +40,7 @@ enum RuntimeIntegrityManifest {
         "public/media/superman_4k.jpg": "9339c63a766caa26647be0b64cacf0c95e3db29859ce4445b5e9db15a05ab7fe",
         "public/media/the_boys_4k.jpg": "572cb16dfb429292bb9fc690a0c5bfa28a8d688ed23588595e396b454067971a",
         "public/vendor/hls.min.js": "afcde07437ec84b072fe8782e772ceb5046eac751b2719f73ae0d83d763bc3f5",
-        "public/web-index.html": "a60b6b33394de1798d5de84d805cbc971d807bc6b7ffa79d880ae62cf57d11d2",
+        "public/web-index.html": "393bcc742ed0a05b1e7e9a0c55920c9a7155e9091a212705d974701abe7c9171",
     ]
 
     static func verify(in bundle: Bundle = .main) -> Bool {

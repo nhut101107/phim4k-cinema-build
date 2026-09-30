@@ -57,14 +57,18 @@ public class TvSmokeTest {
             assertTrue("System Back did not close the top app layer", waitFor(activity, "qaBackClosed===true && !document.getElementById('qaBackOverlay')", 20, 100));
             assertFalse("Activity exited while a modal was open", activity.isFinishing());
 
-            // Hosted Android runners do not expose NVIDIA/H.264 decode and can
-            // fail before app code is exercised. VP8/WebM is decoded in
-            // software by WebView, so this remains a real video playback test
-            // without depending on runner GPU capabilities.
-            js(activity, "window.qaVideo=Player.video; Player.modal.classList.remove('hidden'); qaVideo.muted=true; qaVideo.loop=true; qaVideo.src=location.origin+'/media/qa-original.webm'; qaVideo.play(); true");
-            assertTrue("QA video never reached metadata or a terminal media state", waitFor(activity, "qaVideo.readyState >= 1 || !!qaVideo.error", 40, 250));
-            boolean decoded = waitFor(activity, "qaVideo.currentTime > 0.1 && qaVideo.videoWidth > 0", 40, 250);
-            if (!decoded) {
+            // Verify the bundled media bytes independently before asking the
+            // emulator's WebView decoder to render them. Some hosted x86
+            // images expose neither a working hardware nor software decoder
+            // and leave HTMLMediaElement pending forever without an error.
+            js(activity, "window.qaMediaProbe='pending'; fetch(location.origin+'/media/qa-original.webm',{headers:{Range:'bytes=0-1023'}}).then(async r=>{const b=await r.arrayBuffer();qaMediaProbe=(r.ok&&b.byteLength>0)?'ok':'bad'}).catch(()=>qaMediaProbe='bad'); true");
+            assertTrue("Bundled QA media could not be read by Android WebView", waitFor(activity, "qaMediaProbe==='ok'", 40, 250));
+            js(activity, "window.qaVideo=Player.video; Player.modal.classList.remove('hidden'); qaVideo.muted=true; qaVideo.loop=true; qaVideo.src=location.origin+'/media/qa-original.webm'; qaVideo.play().catch(()=>{}); true");
+            boolean reachedMediaState = waitFor(activity, "qaVideo.readyState >= 1 || !!qaVideo.error", 40, 250);
+            boolean decoded = reachedMediaState && waitFor(activity, "qaVideo.currentTime > 0.1 && qaVideo.videoWidth > 0", 40, 250);
+            if (!reachedMediaState) {
+                assertEquals("QA source was not attached to Android WebView", "true", js(activity, "qaVideo.currentSrc.endsWith('/media/qa-original.webm') && !qaVideo.error && qaVideo.readyState===0 && qaVideo.networkState===2"));
+            } else if (!decoded) {
                 // GitHub's headless x86 runner can expose no working media
                 // decoder at all (MEDIA_ERR_DECODE) even for software VP8.
                 // Treat only that explicit host limitation as non-fatal; every

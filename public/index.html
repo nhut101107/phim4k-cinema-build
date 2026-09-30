@@ -570,7 +570,7 @@
             <div id="playerServerMenu" class="ctrl-dropdown player-server-menu hidden"></div>
           </div>
 
-          <button id="btnAutoSkipAdsTop" class="ctrl-btn-text active" type="button" onclick="toggleAutoSkipAds()" aria-pressed="true" title="Bật hoặc tắt tự động tua qua đoạn quảng cáo">⏩ QC: Bật</button>
+          <span class="player-ad-skip-status" title="ENSMovie tự hiện nút Bỏ qua quảng cáo khi phát hiện đúng đoạn quảng cáo">⏩ Tua QC ENSMovie</span>
           <span class="player-noads-pill">💎 MNHUT MASTER</span>
           <button type="button" id="btnAspectCoverTop" class="btn-player-report btn-player-fill" onclick="toggleAspectRatio()" aria-pressed="false" title="Đổi giữa giữ trọn và lấp đầy màn hình">⛶ Lấp đầy</button>
           <button type="button" id="btnNextEpTop" class="btn-player-report" onclick="Player.playNextEpisode()" title="Xem tập tiếp theo">
@@ -660,8 +660,6 @@
             </div>
 
             <button id="btnQuality" class="ctrl-btn-text quality-auto" type="button" disabled title="Tự động chọn chất lượng phù hợp mạng">Tự động</button>
-            <button id="btnAutoSkipAds" class="ctrl-btn-text active" type="button" onclick="toggleAutoSkipAds()" aria-pressed="true" title="Tự động tua qua quảng cáo chèn trong phim">Bỏ QC: Bật</button>
-
             <div class="aspect-mode-control" role="group" aria-label="Chế độ hiển thị hình ảnh">
               <button id="btnAspectContain" class="ctrl-btn-text active" type="button" onclick="setAspectRatio('contain')" aria-pressed="true" title="Giữ nguyên toàn bộ khung hình và phụ đề">Giữ trọn</button>
               <button id="btnAspectCover" class="ctrl-btn-text" type="button" onclick="setAspectRatio('cover')" aria-pressed="false" title="Lấp đầy màn hình; có thể cắt mép hình">Lấp đầy</button>
