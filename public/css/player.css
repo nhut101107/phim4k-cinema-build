@@ -77,6 +77,24 @@
   }
 }
 
+/* ENSMovie lays its own 16:9 surface at the top of a tall iframe. On phones
+   held upright, give the provider a real 16:9 viewport and center that viewport
+   inside the usable screen. Landscape keeps the edge-to-edge geometry above. */
+@media (orientation: portrait) {
+  .cinema-player-wrapper.embed-active #playerEmbed {
+    top: 50% !important;
+    right: var(--player-safe-right) !important;
+    bottom: auto !important;
+    left: var(--player-safe-left) !important;
+    width: auto !important;
+    height: min(
+      56.25vw,
+      calc(100dvh - var(--player-safe-top) - var(--player-safe-bottom))
+    ) !important;
+    transform: translateY(-50%);
+  }
+}
+
 /* ENSMovie is cross-origin, so its document cannot read the host WebView's
    cutout. Keep the provider's lock and transport controls inside the real
    hardware-safe viewport on notched, rounded and foldable displays. */

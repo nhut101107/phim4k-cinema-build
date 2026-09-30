@@ -65,7 +65,7 @@ test('account version and a verified session do not fall back to stale WebView s
   const auth = read('../public/js/auth.js');
   assert.match(api, /window\.API = API/);
   assert.match(auth, /window\.Auth = Auth/);
-  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.59'/);
+  assert.match(account, /window\.API\?\.getVersion\?\.\(\) \|\| '3\.60'/);
   assert.match(auth, /SessionVault\.hasSession\(\)/);
   assert.match(auth, /await SessionVault\.save\(result\)/);
   assert.doesNotMatch(account, /localStorage\.getItem\('phim4k_key'\)/);
@@ -102,13 +102,13 @@ test('web, iOS and Windows release versions stay aligned', () => {
   const iosProject = read('../ios/App/App.xcodeproj/project.pbxproj');
   const desktop = JSON.parse(read('../electron-builder.json'));
   const webVersion = api.match(/return '(\d+\.\d+(?:\.\d+)?)'/)?.[1];
-  assert.equal(webVersion, '3.59');
+  assert.equal(webVersion, '3.60');
   assert.equal(desktop.extraMetadata.version, `${webVersion}.0`);
   assert.deepEqual([...iosProject.matchAll(/MARKETING_VERSION = ([^;]+);/g)].map((match) => match[1]), [webVersion, webVersion]);
-  assert.deepEqual([...iosProject.matchAll(/CURRENT_PROJECT_VERSION = ([^;]+);/g)].map((match) => match[1]), ['59', '59']);
+  assert.deepEqual([...iosProject.matchAll(/CURRENT_PROJECT_VERSION = ([^;]+);/g)].map((match) => match[1]), ['60', '60']);
   assert.equal(JSON.parse(read('../capacitor.config.json')).appName, 'MNHUT Cinema');
   assert.equal(desktop.productName, 'MNHUT Cinema');
-  assert.equal(desktop.win.artifactName, '4K-Cinema-Windows-3.59-x64.exe');
+  assert.equal(desktop.win.artifactName, '4K-Cinema-Windows-3.60-x64.exe');
   assert.equal(desktop.win.target[0].target, 'nsis');
   assert.equal(desktop.nsis.createDesktopShortcut, true);
   assert.equal(desktop.nsis.createStartMenuShortcut, true);
@@ -130,8 +130,8 @@ test('Android phone and TV are separate optimized release flavors', () => {
   const styles = read('../public/css/style.css');
   const player = read('../public/js/player.js');
 
-  assert.match(gradle, /versionCode 59/);
-  assert.match(gradle, /versionName "3\.59"/);
+  assert.match(gradle, /versionCode 60/);
+  assert.match(gradle, /versionName "3\.60"/);
   assert.match(gradle, /phone\s*\{[\s\S]*?applicationId "com\.phim4k\.cinema"[\s\S]*?PHIM4K_PLATFORM[^\n]*android/);
   assert.match(gradle, /tv\s*\{[\s\S]*?applicationId "com\.phim4k\.cinema\.tv"[\s\S]*?PHIM4K_PLATFORM[^\n]*android_tv/);
   assert.match(gradle, /debug\.assets\.srcDir\(layout\.buildDirectory\.dir\('generated\/qaAssets'\)\)/);
@@ -165,14 +165,14 @@ test('Android CI builds, signs and device-tests the correct flavor', () => {
   assert.match(phoneWorkflow, /assemblePhoneRelease/);
   assert.match(phoneWorkflow, /connectedPhoneDebugAndroidTest/);
   assert.match(phoneWorkflow, /package: name='com\.phim4k\.cinema'/);
-  assert.match(phoneWorkflow, /4K-Cinema-Android-3\.59\.apk/);
+  assert.match(phoneWorkflow, /4K-Cinema-Android-3\.60\.apk/);
   assert.match(phoneWorkflow, /application-label:'MNHUT Cinema'/);
   assert.match(phoneWorkflow, /apksigner" verify/);
   assert.match(phoneWorkflow, /ABAFDA2EAD9478B2540328C98774B4B0A9432014F7B31CBF40FB3EF1F6FECBC8/);
   assert.match(tvWorkflow, /assembleTvRelease/);
   assert.match(tvWorkflow, /connectedTvDebugAndroidTest/);
   assert.match(tvWorkflow, /package: name='com\.phim4k\.cinema\.tv'/);
-  assert.match(tvWorkflow, /4K-Cinema-Android-TV-3\.59\.apk/);
+  assert.match(tvWorkflow, /4K-Cinema-Android-TV-3\.60\.apk/);
   assert.match(tvWorkflow, /application-label:'MNHUT Cinema'/);
   assert.match(tvWorkflow, /ABAFDA2EAD9478B2540328C98774B4B0A9432014F7B31CBF40FB3EF1F6FECBC8/);
 });
@@ -182,8 +182,8 @@ test('iOS entry point cache-busts every bundled script and stylesheet', () => {
   const localAssets = [...html.matchAll(/(?:src|href)="\/(?:js|css|vendor)\/[^"?]+(?:\?[^" ]+)?"/g)].map(match => match[0]);
   assert.ok(localAssets.length >= 20);
   assert.ok(localAssets.every(asset => asset.includes('?v=')), localAssets.join('\n'));
-  assert.match(html, /\/js\/player\.js\?v=3\.59\.1/);
-  assert.match(html, /MNHUT Cinema 3\.59[^<]*BẢN ĐỒNG BỘ ĐA THIẾT BỊ/);
+  assert.match(html, /\/js\/player\.js\?v=3\.60\.0/);
+  assert.match(html, /MNHUT Cinema 3\.60[^<]*BẢN ĐỒNG BỘ ĐA THIẾT BỊ/);
 });
 
 test('movie modal is scrollable and sized for a phone viewport', () => {
@@ -233,7 +233,7 @@ test('native catalog falls back immediately instead of leaving the UI loading', 
   vm.runInContext(read('../public/js/home-curation.js'), sandbox);
   sandbox.Phim4KHome = sandbox.window.Phim4KHome;
   vm.runInContext(`${read('../public/js/api.js')}\nglobalThis.__api = API;`, sandbox);
-  assert.equal(sandbox.window.API.getVersion(), '3.59');
+  assert.equal(sandbox.window.API.getVersion(), '3.60');
   const home = await sandbox.__api.getHomeFeed();
   const detail = await sandbox.__api.getDetail(home.hero[0].slug);
   assert.ok(home.hero.length > 0);
@@ -397,7 +397,7 @@ test('iOS workflow audits the completed IPA before uploading it', () => {
   const upload = workflow.indexOf('actions/upload-artifact@');
   assert.ok(audit >= 0 && upload > audit);
   assert.match(workflow, /CFBundleDisplayName[^\n]*"MNHUT Cinema"/);
-  assert.match(workflow, /4K-Cinema-iOS-3\.59-unsigned\.ipa/);
+  assert.match(workflow, /4K-Cinema-iOS-3\.60-unsigned\.ipa/);
 });
 
 test('user activity is batched without stream URLs and admin logs support user filters and pagination', () => {

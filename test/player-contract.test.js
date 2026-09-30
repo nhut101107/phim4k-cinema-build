@@ -152,6 +152,13 @@ test('ENSMovie iframe geometry stays fixed when host chrome hides or provider se
   assert.doesNotMatch(webPremium, /aspect-contain:not\(\.inactive\) \.video-element/);
 });
 
+test('ENSMovie portrait iframe is a centered 16:9 stage instead of a top-corner surface', () => {
+  assert.match(css, /@media \(orientation: portrait\)[\s\S]*?\.cinema-player-wrapper\.embed-active #playerEmbed\s*\{/);
+  assert.match(css, /\.cinema-player-wrapper\.embed-active #playerEmbed\s*\{[\s\S]*?top:\s*50% !important/);
+  assert.match(css, /height:\s*min\([\s\S]*?56\.25vw,[\s\S]*?100dvh/);
+  assert.match(css, /transform:\s*translateY\(-50%\)/);
+});
+
 test('ENSMovie watch time is reported incrementally without exposing its URL', () => {
   assert.match(player, /beginEmbedWatchSession\(\)/);
   assert.match(player, /setInterval\(\(\) => this\.reportEmbedWatchTime\(\), 30000\)/);
