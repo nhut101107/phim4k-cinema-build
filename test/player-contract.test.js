@@ -118,7 +118,8 @@ test('player exposes only subtitle-safe contain and explicit fullscreen fill mod
   assert.match(index, /id="btnAspectCoverTop"[^>]*>⛶ Lấp đầy</);
   assert.match(css, /\.cinema-player-wrapper\.aspect-cover \.video-element\s*\{[\s\S]*?object-fit:\s*cover/);
   assert.match(css, /\.cinema-player-wrapper\.aspect-contain \.video-element\s*\{[\s\S]*?object-fit:\s*contain/);
-  assert.match(css, /@media \(orientation: landscape\)\s*\{\s*\.cinema-player-wrapper\.aspect-cover #playerEmbed/);
+  assert.doesNotMatch(css, /aspect-cover #playerEmbed/);
+  assert.match(css, /\.cinema-player-wrapper\.embed-active #playerEmbed\s*\{[\s\S]*?aspect-ratio:\s*auto !important/);
 });
 
 test('fullscreen follows rotation without reacting to Safari toolbar or provider settings resize', () => {
@@ -150,7 +151,9 @@ test('ENSMovie controls respect host safe areas on every cutout shape', () => {
   for (const edge of ['top', 'right', 'bottom', 'left']) {
     assert.match(css, new RegExp(`--player-safe-${edge}: max\\(0px, env\\(safe-area-inset-${edge}\\)\\)`));
   }
-  assert.match(css, /cinema-player-wrapper:not\(\.aspect-cover\) #playerEmbed[\s\S]*?left: var\(--player-safe-left\)/);
+  assert.match(css, /cinema-player-wrapper\.embed-active #playerEmbed[\s\S]*?left: var\(--player-safe-left\) !important/);
+  assert.match(css, /width:\s*calc\(100% - var\(--player-safe-left\) - var\(--player-safe-right\)\) !important/);
+  assert.match(css, /height:\s*calc\(100% - var\(--player-safe-top\) - var\(--player-safe-bottom\)\) !important/);
 });
 
 test('ENSMovie iframe geometry stays fixed when host chrome hides or provider settings open', () => {
@@ -160,11 +163,11 @@ test('ENSMovie iframe geometry stays fixed when host chrome hides or provider se
   assert.doesNotMatch(webPremium, /aspect-contain:not\(\.inactive\) \.video-element/);
 });
 
-test('ENSMovie portrait iframe is a centered 16:9 stage instead of a top-corner surface', () => {
-  assert.match(css, /@media \(orientation: portrait\)[\s\S]*?\.cinema-player-wrapper\.embed-active #playerEmbed\s*\{/);
-  assert.match(css, /\.cinema-player-wrapper\.embed-active #playerEmbed\s*\{[\s\S]*?top:\s*50% !important/);
-  assert.match(css, /height:\s*min\([\s\S]*?56\.25vw,[\s\S]*?100dvh/);
-  assert.match(css, /transform:\s*translateY\(-50%\)/);
+test('ENSMovie iframe always receives the full safe viewport instead of its 300x150 intrinsic size', () => {
+  assert.match(css, /\.cinema-player-wrapper\.embed-active #playerEmbed\s*\{[\s\S]*?width:\s*calc\(100% - var\(--player-safe-left\) - var\(--player-safe-right\)\) !important/);
+  assert.match(css, /\.cinema-player-wrapper\.embed-active #playerEmbed\s*\{[\s\S]*?height:\s*calc\(100% - var\(--player-safe-top\) - var\(--player-safe-bottom\)\) !important/);
+  assert.match(css, /transform:\s*none !important/);
+  assert.doesNotMatch(css, /aspect-cover #playerEmbed/);
 });
 
 test('ENSMovie watch time is reported incrementally without exposing its URL', () => {
