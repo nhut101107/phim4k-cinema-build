@@ -267,8 +267,9 @@ test('native playback and HLS.js expose automatic quality only', () => {
   assert.doesNotMatch(index, /onclick="setQuality\((?!-1)/);
 });
 
-test('ENSMovie native ad-skip action remains reachable on the first tap', () => {
-  assert.match(index, /class="player-ad-skip-status"[^>]*>⏩ Tua QC ENSMovie</);
+test('native ad-skip action remains reachable on the first tap without exposing the provider brand', () => {
+  assert.match(index, /class="player-ad-skip-status"[^>]*>⏩ Tua quảng cáo</);
+  assert.doesNotMatch(index, /Tua QC ENSMovie/);
   assert.doesNotMatch(index, /id="btnAutoSkipAds(?:Top)?"/);
   assert.match(css, /inactive\.embed-active::after[\s\S]*?bottom:\s*max\(142px/);
   assert.match(css, /first tap reaches ENSMovie/);

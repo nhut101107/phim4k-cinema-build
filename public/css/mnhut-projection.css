@@ -303,7 +303,7 @@ body.platform-tv button:focus {
 }
 
 .coverflow-section::before {
-  content: "MNHUT CINEMA  /  NOW SHOWING  /  ENSMOVIE  /  4K PROJECTION  /  MNHUT CINEMA  /  NOW SHOWING";
+  content: "MNHUT CINEMA  /  NOW SHOWING  /  MNHUT PROJECTION  /  4K CINEMA  /  MNHUT CINEMA  /  NOW SHOWING";
   top: auto !important;
   right: 0;
   bottom: 0;
