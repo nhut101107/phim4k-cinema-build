@@ -194,7 +194,7 @@ test('verified admin on an outdated iPhone is directed to the current iOS releas
     assert.equal(iosAdmin.latestVersion,'3.61');
     assert.equal(iosAdmin.minVersion,'3.61');
     assert.equal(iosAdmin.downloadUrl,'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/ios');
-    assert.equal(iosAdmin.downloadSha256,'0e4967ed34891c7a3f553e61bffe3d9fb246f01451af44b3b938e54efc716382');
+    assert.equal(iosAdmin.downloadSha256,'4c495637175789a43b70c10e248e0d24ec7831f291fc1962035d085a080c1ec6');
 
     const windowsAdmin=await (await f.request('/api/auth/status',undefined,{
       ...f.admin,
