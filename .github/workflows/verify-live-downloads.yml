@@ -19,10 +19,10 @@ jobs:
           import json, time, urllib.parse, urllib.request, urllib.error
           origin='https://phim4k-license-api.phim4k-pwdbhdz.workers.dev'
           releases={
-              'android':('/download/android',4058313,'18b3e173a5b5bf5390ad99baccbf719e1aec53ff67bba54c88c0f57a691b0d91'),
-              'android_tv':('/download/android-tv',4058313,'5df851cb4f87191a67afd7daf9fdae08766cb416278c958b77ba77812fea4ffb'),
-              'ios':('/download/ios',4516386,'4c495637175789a43b70c10e248e0d24ec7831f291fc1962035d085a080c1ec6'),
-              'windows':('/download/windows',121048296,'f9083a2e0510df643778b39461d64386e921bc3515795e17776c1ac9fdb854f9'),
+              'android':('/download/android',4058313,'5834e51b78de22a65cbb06b95790596b2253851fe22548d55bf900dc8a9c33f8'),
+              'android_tv':('/download/android-tv',4058313,'42ee66b7506767c802fabd7b8f6c7980f4ed9fe0905403f88daa1ffe8c4fcbf7'),
+              'ios':('/download/ios',4516669,'32fdc8cd05a7b740c0f5cd6541205123a5d84afc2c1d7217b8d4b43b2c15cba1'),
+              'windows':('/download/windows',121048437,'aad38333981f3dc8b69b2b33dc06985324509b78270d110e8453525b36541aeb'),
           }
           def get(path):
             for attempt in range(4):

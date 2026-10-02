@@ -285,7 +285,7 @@ test('unverifiable newer release records cannot replace the bundled public relea
     const result = await check.json();
     assert.equal(result.isLatest, false);
     assert.equal(result.latestVersion, '3.61');
-    assert.equal(result.downloadSha256, '4c495637175789a43b70c10e248e0d24ec7831f291fc1962035d085a080c1ec6');
+    assert.equal(result.downloadSha256, '32fdc8cd05a7b740c0f5cd6541205123a5d84afc2c1d7217b8d4b43b2c15cba1');
     assert.notEqual(releaseHash, '');
   } finally { f.sqlite.close(); }
 });
