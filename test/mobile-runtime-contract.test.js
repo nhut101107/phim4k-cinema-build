@@ -420,6 +420,24 @@ test('user activity is batched without stream URLs and admin logs support user f
   assert.match(index, /id="logsLoadMoreBtn"/);
   assert.match(admin, /startLogAutoRefresh/);
   assert.match(admin, /before/);
+  assert.match(index, /id="dailyViewerChart"/);
+  assert.match(index, /id="movieViewerChart"/);
+  assert.match(admin, /renderViewerAnalytics/);
+  assert.match(worker, /byDay/);
+  assert.match(worker, /byMovie/);
+});
+
+test('Android TV exposes native Vietnamese voice search with a browser fallback', () => {
+  const index = read('../public/index.html');
+  const tv = read('../public/js/tv.js');
+  const activity = read('../android/app/src/main/java/com/phim4k/cinema/MainActivity.java');
+  const plugin = read('../android/app/src/main/java/com/phim4k/cinema/VoiceSearchPlugin.java');
+  assert.match(index, /id="tvVoiceSearchBtn"/);
+  assert.match(tv, /Capacitor\?\.Plugins\?\.VoiceSearch/);
+  assert.match(tv, /webkitSpeechRecognition/);
+  assert.match(activity, /registerPlugin\(VoiceSearchPlugin\.class\)/);
+  assert.match(plugin, /RecognizerIntent\.ACTION_RECOGNIZE_SPEECH/);
+  assert.match(plugin, /"vi-VN"/);
 });
 
 test('mobile performance avoids repeated requests and expensive fixed blur repaints', () => {

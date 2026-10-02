@@ -25,6 +25,41 @@
 .tv-mode .download-cards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .tv-mode .download-dialog { max-width: 1100px; }
 .tv-mode .download-sub, .tv-mode .download-card p, .tv-mode .card-meta, .tv-mode .gate-desc { font-size: 18px; line-height: 1.5; }
+.tv-voice-search-btn { display: none; }
+.tv-mode .search-box { padding-right: 56px; }
+.tv-mode .search-clear { right: 54px; }
+.tv-mode .tv-voice-search-btn {
+  display: grid;
+  place-items: center;
+  position: absolute;
+  right: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 50%;
+  color: #080a10;
+  background: var(--projection-accent, #ffd43b);
+}
+.tv-mode .tv-voice-search-btn svg { width: 23px; height: 23px; }
+.tv-mode .tv-voice-search-btn.listening { animation: tv-mic-pulse 1s ease-in-out infinite alternate !important; }
+.tv-voice-status {
+  position: fixed;
+  z-index: 1600;
+  top: 92px;
+  right: 4vw;
+  max-width: min(520px, 88vw);
+  padding: 14px 20px;
+  border: 1px solid rgba(255,255,255,.18);
+  border-left: 4px solid var(--projection-accent, #ffd43b);
+  border-radius: 8px;
+  color: #fff;
+  background: rgba(5,8,15,.96);
+  box-shadow: 0 18px 50px rgba(0,0,0,.5);
+  font-weight: 750;
+}
+@keyframes tv-mic-pulse { to { box-shadow: 0 0 0 12px rgba(255,212,59,.2); } }
 @media (min-width: 1000px) {
   .download-cards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .log-line { content-visibility: auto; contain-intrinsic-size: auto 100px; }

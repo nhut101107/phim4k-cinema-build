@@ -1,4 +1,75 @@
 (() => {
+  const VoiceSearch = {
+    active: false,
+    recognition: null,
+    status(message = '', error = false) {
+      const box = document.getElementById('tvVoiceStatus');
+      const button = document.getElementById('tvVoiceSearchBtn');
+      if (box) {
+        box.textContent = message;
+        box.classList.toggle('hidden', !message);
+        box.classList.toggle('error', error);
+      }
+      button?.classList.toggle('listening', this.active);
+      button?.setAttribute('aria-pressed', String(this.active));
+      if (message && !this.active) window.setTimeout(() => box?.classList.add('hidden'), 3500);
+    },
+    submit(transcript) {
+      const query = String(transcript || '').trim().slice(0, 120);
+      if (!query) throw new Error('Không nghe rõ tên phim. Hãy thử lại.');
+      const input = document.getElementById('searchInput');
+      if (input) {
+        input.value = query;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      this.status(`Đang tìm “${query}”…`);
+      window.App?.hideSearchDropdown?.();
+      void window.App?.loadFullSearch?.(query, 1);
+      window.API?.trackUsage?.('search', { query, entry: 'TV voice' });
+    },
+    async nativeListen() {
+      const plugin = window.Capacitor?.Plugins?.VoiceSearch;
+      if (!plugin?.listen) return false;
+      const result = await plugin.listen({ locale: 'vi-VN', prompt: 'Nói tên phim cần tìm' });
+      this.submit(result?.text);
+      return true;
+    },
+    webListen() {
+      const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!Recognition) throw new Error('TV này chưa có dịch vụ nhận dạng giọng nói.');
+      return new Promise((resolve, reject) => {
+        const recognition = new Recognition();
+        this.recognition = recognition;
+        recognition.lang = 'vi-VN';
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 3;
+        recognition.onresult = event => {
+          try { this.submit(event.results?.[0]?.[0]?.transcript); resolve(true); }
+          catch (error) { reject(error); }
+        };
+        recognition.onerror = event => reject(new Error(event.error === 'not-allowed' ? 'TV chưa cấp quyền micro.' : 'Không nghe rõ tên phim. Hãy thử lại.'));
+        recognition.onend = () => { this.recognition = null; };
+        recognition.start();
+      });
+    },
+    async start() {
+      if (this.active) {
+        this.recognition?.stop?.();
+        return;
+      }
+      this.active = true;
+      this.status('Đang nghe… nói tên phim vào remote.');
+      try {
+        if (!await this.nativeListen()) await this.webListen();
+      } catch (error) {
+        this.status(error?.message || 'Không thể mở tìm kiếm giọng nói.', true);
+      } finally {
+        this.active = false;
+        this.status(document.getElementById('tvVoiceStatus')?.textContent || '');
+      }
+    }
+  };
+  window.Phim4KVoiceSearch = Object.freeze({ start: () => VoiceSearch.start() });
   const selector = 'button, a[href], input, select, textarea, [role="button"], [onclick]:not(.modal-dialog):not(.modal-overlay):not(.download-dialog)';
   const visible = el => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden' && !el.closest('.hidden, [inert]');
   function scope() {

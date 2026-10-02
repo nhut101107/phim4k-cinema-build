@@ -38,6 +38,24 @@ test('free access defaults off; only verified admin can change it; disabling rev
   } finally {f.sqlite.close();}
 });
 
+test('admin viewer dashboard is aggregated from real D1 activity by day and movie', async () => {
+  const f = fixture();
+  try {
+    const insert = f.sqlite.prepare('INSERT INTO audit_logs (created_at, action, actor_telegram_id, detail) VALUES (?, ?, ?, ?)');
+    insert.run(new Date(Date.now() - 86400000).toISOString(), 'usage_playback_watch', 'viewer-a', JSON.stringify({ movie: 'Phim A', watched: 600, session: 's-a' }));
+    insert.run(new Date().toISOString(), 'usage_playback_watch', 'viewer-b', JSON.stringify({ movie: 'Phim A', watched: 300, session: 's-b' }));
+    insert.run(new Date().toISOString(), 'usage_playback_watch', 'viewer-a', JSON.stringify({ movie: 'Phim B', watched: 120, session: 's-a' }));
+    const response = await f.request('/api/admin/logs?limit=100&type=ALL', undefined, f.admin);
+    assert.equal(response.status, 200);
+    const data = await response.json();
+    assert.equal(data.summary.verified, true);
+    assert.ok(data.summary.analytics.byDay.length >= 2);
+    assert.deepEqual(data.summary.analytics.byMovie.map(item => item.movie), ['Phim A', 'Phim B']);
+    assert.equal(data.summary.analytics.byMovie[0].watchedSeconds, 900);
+    assert.equal(data.summary.analytics.timezone, 'Asia/Ho_Chi_Minh');
+  } finally { f.sqlite.close(); }
+});
+
 test('maintenance is server-authoritative, blocks every viewer, and keeps verified admin recovery access', async () => {
   const f=fixture(); f.seed('P4K-MAINTENANCE-USER');
   try {

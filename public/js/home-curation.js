@@ -20,6 +20,46 @@
     return Math.max(0, ...candidates.map(v => Math.log10(1 + Math.min(number(v.vote_count), 1e7)) * 4
       + Math.min(number(v.vote_average), 10) * 0.4));
   }
+  function tags(movie, field) {
+    const value = movie?.[field];
+    return (Array.isArray(value) ? value : value ? [value] : [])
+      .map(item => typeof item === 'string' ? item : item?.name)
+      .filter(Boolean)
+      .map(value => String(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim());
+  }
+  function personalize(items, history, { limit = 30 } = {}) {
+    const catalog = unique(items);
+    const watchedSlugs = new Set((history || []).map(item => String(item?.slug || '').toLowerCase()).filter(Boolean));
+    const watched = (history || []).map((item, index) => ({
+      movie: catalog.find(movie => movie.slug === item?.slug),
+      weight: 1 / (1 + index * 0.35),
+    })).filter(item => item.movie);
+    if (!watched.length) return null;
+
+    const affinities = { category: new Map(), country: new Map(), type: new Map() };
+    const add = (field, value, weight) => affinities[field].set(value, (affinities[field].get(value) || 0) + weight);
+    watched.forEach(({ movie, weight }) => {
+      tags(movie, 'category').forEach(value => add('category', value, weight * 4));
+      tags(movie, 'country').forEach(value => add('country', value, weight * 2));
+      if (movie.type) add('type', String(movie.type).toLowerCase(), weight * 1.25);
+    });
+    const score = movie => {
+      let affinity = 0;
+      tags(movie, 'category').forEach(value => { affinity += affinities.category.get(value) || 0; });
+      tags(movie, 'country').forEach(value => { affinity += affinities.country.get(value) || 0; });
+      affinity += affinities.type.get(String(movie.type || '').toLowerCase()) || 0;
+      return { affinity, total: affinity + interest(movie) * 0.08 };
+    };
+    const ranked = catalog
+      .filter(movie => !watchedSlugs.has(movie.slug))
+      .map(movie => ({ movie, ...score(movie) }))
+      .filter(item => item.affinity > 0)
+      .sort((a, b) => b.total - a.total || modified(b.movie, Date.now()) - modified(a.movie, Date.now()) || a.movie.slug.localeCompare(b.movie.slug))
+      .slice(0, Math.max(1, limit))
+      .map(item => item.movie);
+    if (!ranked.length) return null;
+    return { id: 'for-you', title: 'Dành riêng cho bạn', items: ranked, personalized: true };
+  }
   function build(items, { now = Date.now(), updatedAt = new Date(now).toISOString(), offline = false } = {}) {
     const year = new Date(now).getUTCFullYear();
     const catalog = unique(items);
@@ -54,7 +94,7 @@
   }
   // Upstream route construction is deliberately server-only. This browser
   // module contains presentation/ranking logic but no provider API contract.
-  const api = Object.freeze({ POLICY, build, interest });
+  const api = Object.freeze({ POLICY, build, interest, personalize });
   root.Phim4KHome = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

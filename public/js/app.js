@@ -14,6 +14,7 @@ const App = {
   homeFeedOffline: false,
   homeFeedSignature: '',
   homeCatalog: [],
+  baseHomeSections: [],
   homeSections: [],
   activeHomeFilters: { genre: '', country: '' },
   filterResults: [],
@@ -306,6 +307,7 @@ const App = {
       ...sections.flatMap((section) => Array.isArray(section?.items) ? section.items : [])
     ]);
     this.homeCatalog = this.enrichCatalogFilters(rawCatalog);
+    this.baseHomeSections = sections;
     this.homeSections = this.buildHomeSections(sections);
     if (this.heroList.length > 0) {
       const nextHeroSignature = this.heroList
@@ -494,7 +496,13 @@ const App = {
   },
 
   buildHomeSections(sourceSections = []) {
+    const personalized = window.Phim4KHome?.personalize?.(
+      this.homeCatalog,
+      window.ContinueWatching?.getItems?.() || [],
+      { limit: 30 }
+    );
     const groups = [
+      ...(personalized ? [personalized] : []),
       ...sourceSections.filter(section => Array.isArray(section?.items) && section.items.length),
       { id: 'genre-action', title: 'Phim hành động', items: this.filterMoviesByTag('category', 'Hành Động') },
       { id: 'genre-animation', title: 'Hoạt hình và Anime', items: this.filterMoviesByTag('category', 'Hoạt Hình') },
@@ -504,6 +512,15 @@ const App = {
       { id: 'country-western', title: 'Phim Âu Mỹ', items: this.filterMoviesByTag('country', 'Âu Mỹ') },
     ];
     return groups.filter((section) => section.items.length > 0);
+  },
+
+  refreshPersonalizedHome() {
+    if (!this.homeCatalog.length) return;
+    const before = this.homeSections.find(section => section.id === 'for-you')?.items?.map(movie => movie.slug).join('|') || '';
+    const next = this.buildHomeSections(this.baseHomeSections);
+    const after = next.find(section => section.id === 'for-you')?.items?.map(movie => movie.slug).join('|') || '';
+    this.homeSections = next;
+    if (before !== after && this.currentCategory === 'home') this.renderHomeCatalog();
   },
 
   filterMoviesByTag(field, value) {
@@ -797,7 +814,9 @@ const App = {
 
     const updateStatus = section.id === 'latest' && this.homeFeedUpdatedAt
       ? `Đồng bộ ${new Date(this.homeFeedUpdatedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`
-      : section.id === 'recent-interest'
+      : section.id === 'for-you'
+        ? 'Theo lịch sử xem trên tài khoản này'
+        : section.id === 'recent-interest'
         ? 'Xếp theo điểm quan tâm TMDB / IMDb'
         : '';
 

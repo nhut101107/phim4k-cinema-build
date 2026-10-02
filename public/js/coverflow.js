@@ -486,6 +486,7 @@ const ContinueWatching = {
     const items = this.getItems();
     if (!items || items.length === 0) {
       document.getElementById('continueWatchingSection')?.classList.add('hidden');
+      window.App?.refreshPersonalizedHome?.();
       return;
     }
     document.getElementById('continueWatchingSection')?.classList.remove('hidden');
@@ -516,6 +517,7 @@ const ContinueWatching = {
       if (posterUrl === App.posterFallbackUrl()) void this.refreshPoster(item, image);
       row.appendChild(card);
     });
+    window.App?.refreshPersonalizedHome?.();
   }
 };
 

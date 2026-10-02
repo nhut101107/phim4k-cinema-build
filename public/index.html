@@ -214,9 +214,13 @@
             placeholder="Tìm kiếm phim, diễn viên..." 
             autocomplete="off"
           />
+          <button id="tvVoiceSearchBtn" class="tv-voice-search-btn" type="button" aria-label="Tìm phim bằng giọng nói" aria-pressed="false" onclick="Phim4KVoiceSearch.start()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3M8 22h8"/></svg>
+          </button>
           <button id="searchClear" class="search-clear hidden" onclick="clearSearch()">✕</button>
           <div id="searchDropdown" class="search-dropdown hidden"></div>
         </div>
+        <div id="tvVoiceStatus" class="tv-voice-status hidden" role="status" aria-live="polite"></div>
 
         <!-- Admin Panel Button: Displayed ONLY for authenticated Administrator (Key: mnhut) -->
         <button id="adminNavBtn" class="admin-panel-btn hidden" onclick="openAdminPanel()">
@@ -1061,6 +1065,22 @@
             <div><span id="logLatestMovie">—</span><small>Phim gần nhất</small></div>
             <div><span id="logLastSeen">—</span><small>Hoạt động gần nhất</small></div>
           </div>
+          <section class="viewer-analytics" aria-label="Biểu đồ người xem">
+            <header>
+              <div><small>DỮ LIỆU THẬT · D1</small><h4>Nhịp xem 14 ngày</h4></div>
+              <span id="viewerChartRange">Theo giờ Việt Nam</span>
+            </header>
+            <div class="viewer-chart-grid">
+              <div class="viewer-chart-card">
+                <div class="viewer-chart-heading"><strong>Người xem theo ngày</strong><span id="dailyViewerPeak">—</span></div>
+                <div id="dailyViewerChart" class="bar-chart" role="img" aria-label="Biểu đồ người xem từng ngày"></div>
+              </div>
+              <div class="viewer-chart-card">
+                <div class="viewer-chart-heading"><strong>Phim được xem nhiều</strong><span id="movieWatchTotal">—</span></div>
+                <div id="movieViewerChart" class="ranked-bar-chart" role="img" aria-label="Biểu đồ phim theo thời gian xem"></div>
+              </div>
+            </div>
+          </section>
           
           <!-- Terminal / Cyber Log Console -->
           <div class="cyber-terminal" id="terminalLogsContainer">

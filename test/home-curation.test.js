@@ -60,6 +60,18 @@ test('home keeps a larger useful catalogue for browsing',()=>{
   assert.equal(data.sections.find(section=>section.id==='series-new').items.length,36);
   assert.equal(data.sections.find(section=>section.id==='latest').items.length,240);
 });
+test('personalized rail follows real watch-history affinity and excludes watched titles',()=>{
+  const watched=movie('watched',{category:[{name:'Hành Động'}],country:[{name:'Hàn Quốc'}],type:'series'});
+  const best=movie('best-match',{category:[{name:'Hành Động'}],country:[{name:'Hàn Quốc'}],type:'series'});
+  const partial=movie('partial-match',{category:[{name:'Hành Động'}],country:[{name:'Âu Mỹ'}],type:'single'});
+  const unrelated=movie('unrelated',{category:[{name:'Tình Cảm'}],country:[{name:'Nhật Bản'}],type:'single',tmdb:null,imdb:null});
+  const section=home.personalize([unrelated,partial,best,watched],[{slug:'watched'}]);
+  assert.equal(section.id,'for-you');
+  assert.equal(section.items[0].slug,'best-match');
+  assert.ok(section.items.some(item=>item.slug==='partial-match'));
+  assert.ok(!section.items.some(item=>item.slug==='watched'));
+  assert.ok(!section.items.some(item=>item.slug==='unrelated'));
+});
 test('coverflow does not invent another movie synopsis, year, category or quality',()=>{
   const elements=new Map(['cfTitle','cfSubtitle','cfBadgeQuality','cfBadgeYear','cfBadgeStatus','cfCategories','cfSynopsis'].map(id=>[id,{textContent:''}]));
   const ctx={window:{},document:{getElementById:id=>elements.get(id),addEventListener:()=>{}},console};

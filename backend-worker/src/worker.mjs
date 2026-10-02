@@ -2370,6 +2370,23 @@ async function handleLogs(request, env) {
     const latestMovie = await queryOne(env.DB, `SELECT json_extract(detail, '$.movie') AS movie
       FROM audit_logs${summaryWhere}${summaryWhere ? " AND" : " WHERE"} json_valid(detail) AND NULLIF(json_extract(detail, '$.movie'), '') IS NOT NULL
       ORDER BY id DESC LIMIT 1`, ...summaryValues);
+    const viewerIdentity = `CASE
+      WHEN COALESCE(NULLIF(actor_telegram_id, ''), NULLIF(target_telegram_id, ''), '') <> '' THEN 'tg:' || COALESCE(NULLIF(actor_telegram_id, ''), NULLIF(target_telegram_id, ''))
+      WHEN json_valid(detail) AND COALESCE(json_extract(detail, '$.deviceId'), json_extract(detail, '$.device'), '') <> '' THEN 'dev:' || COALESCE(json_extract(detail, '$.deviceId'), json_extract(detail, '$.device'))
+      ELSE NULL END`;
+    const chartPrefix = summaryWhere ? `${summaryWhere} AND` : " WHERE";
+    const [dayResult, movieResult] = await Promise.all([
+      env.DB.prepare(`SELECT date(created_at, '+7 hours') AS day,
+        COUNT(DISTINCT ${viewerIdentity}) AS viewers,
+        COALESCE(SUM(CASE WHEN action = 'usage_playback_watch' AND json_valid(detail) THEN CAST(json_extract(detail, '$.watched') AS REAL) ELSE 0 END), 0) AS watched_seconds
+        FROM audit_logs${chartPrefix} action LIKE 'usage_%' AND created_at >= datetime('now', '-13 days')
+        GROUP BY day ORDER BY day ASC`).bind(...summaryValues).all(),
+      env.DB.prepare(`SELECT json_extract(detail, '$.movie') AS movie,
+        COALESCE(SUM(CAST(json_extract(detail, '$.watched') AS REAL)), 0) AS watched_seconds,
+        COUNT(DISTINCT ${viewerIdentity}) AS viewers
+        FROM audit_logs${chartPrefix} action = 'usage_playback_watch' AND json_valid(detail) AND NULLIF(json_extract(detail, '$.movie'), '') IS NOT NULL
+        GROUP BY movie ORDER BY watched_seconds DESC, movie ASC LIMIT 8`).bind(...summaryValues).all(),
+    ]);
     summary = {
       verified: true,
       totalEvents: Number(totals?.total_events || 0),
@@ -2380,6 +2397,11 @@ async function handleLogs(request, env) {
       watchedSeconds: Number(totals?.watched_seconds || 0),
       latestMovie: String(latestMovie?.movie || ""),
       lastSeen: totals?.last_seen || null,
+      analytics: {
+        timezone: "Asia/Ho_Chi_Minh",
+        byDay: (dayResult.results || []).map(item => ({ day: item.day, viewers: Number(item.viewers || 0), watchedSeconds: Number(item.watched_seconds || 0) })),
+        byMovie: (movieResult.results || []).map(item => ({ movie: String(item.movie || ""), viewers: Number(item.viewers || 0), watchedSeconds: Number(item.watched_seconds || 0) })),
+      },
     };
   } catch (_error) {
     // Older D1 replicas may briefly lack JSON helpers during rollout. Never

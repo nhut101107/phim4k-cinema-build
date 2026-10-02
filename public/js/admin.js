@@ -1271,6 +1271,7 @@ const Admin = {
     if (!summary?.verified) {
       ['logViewerCount', 'logUserCount', 'logErrorCount', 'logSessionCount', 'logWatchTime', 'logLatestMovie', 'logLastSeen']
         .forEach((id) => set(id, '—'));
+      this.renderViewerAnalytics(null);
       return;
     }
     set('logViewerCount', Number(summary.viewerEvents || 0).toLocaleString('vi-VN'));
@@ -1283,6 +1284,64 @@ const Admin = {
       : `${Math.round(watchedSeconds / 60)} phút`);
     set('logLatestMovie', summary.latestMovie || '—');
     set('logLastSeen', summary.lastSeen ? this.formatVietnamTime(summary.lastSeen, { seconds: false }) : '—');
+    this.renderViewerAnalytics(summary.analytics || null);
+  },
+
+  renderViewerAnalytics(analytics) {
+    const daily = document.getElementById('dailyViewerChart');
+    const movies = document.getElementById('movieViewerChart');
+    if (!daily || !movies) return;
+    const empty = '<div class="viewer-chart-empty">Chưa đủ lượt xem thật để vẽ biểu đồ.</div>';
+    const days = Array.isArray(analytics?.byDay) ? analytics.byDay : [];
+    const titles = Array.isArray(analytics?.byMovie) ? analytics.byMovie : [];
+    daily.replaceChildren();
+    movies.replaceChildren();
+    if (!days.length) daily.innerHTML = empty;
+    else {
+      const peak = Math.max(1, ...days.map(item => Number(item.viewers) || 0));
+      days.forEach(item => {
+        const date = new Date(`${item.day}T00:00:00+07:00`);
+        const wrapper = document.createElement('div');
+        wrapper.className = 'bar-chart-item';
+        wrapper.title = `${Number(item.viewers || 0)} người xem · ${Math.round(Number(item.watchedSeconds || 0) / 60)} phút`;
+        const value = document.createElement('b');
+        value.textContent = Number(item.viewers || 0).toLocaleString('vi-VN');
+        const bar = document.createElement('div');
+        bar.className = 'bar-chart-column';
+        bar.style.height = `${Math.max(3, Math.round((Number(item.viewers || 0) / peak) * 100))}%`;
+        const label = document.createElement('small');
+        label.textContent = Number.isNaN(date.getTime()) ? item.day : date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+        wrapper.append(value, bar, label);
+        daily.appendChild(wrapper);
+      });
+      setText('dailyViewerPeak', `Đỉnh ${peak.toLocaleString('vi-VN')} người`);
+    }
+    if (!titles.length) movies.innerHTML = empty;
+    else {
+      const maxWatch = Math.max(1, ...titles.map(item => Number(item.watchedSeconds) || 0));
+      titles.forEach((item, index) => {
+        const row = document.createElement('div');
+        row.className = 'ranked-bar-row';
+        const label = document.createElement('span');
+        label.className = 'ranked-bar-label';
+        label.textContent = `${index + 1}. ${item.movie || 'Không rõ tên'}`;
+        label.title = item.movie || '';
+        const track = document.createElement('div');
+        track.className = 'ranked-bar-track';
+        const fill = document.createElement('div');
+        fill.className = 'ranked-bar-fill';
+        fill.style.width = `${Math.max(2, Math.round((Number(item.watchedSeconds || 0) / maxWatch) * 100))}%`;
+        track.appendChild(fill);
+        const value = document.createElement('span');
+        value.className = 'ranked-bar-value';
+        value.textContent = `${Math.round(Number(item.watchedSeconds || 0) / 60)} phút`;
+        row.append(label, track, value);
+        movies.appendChild(row);
+      });
+      const total = titles.reduce((sum, item) => sum + Number(item.watchedSeconds || 0), 0);
+      setText('movieWatchTotal', `${Math.round(total / 60).toLocaleString('vi-VN')} phút top phim`);
+    }
+    function setText(id, value) { const element = document.getElementById(id); if (element) element.textContent = value; }
   },
 
   async clearLogs() {
