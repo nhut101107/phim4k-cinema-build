@@ -89,6 +89,23 @@ const Coverflow = {
     const identity = String(cur.slug || cur.name || 'mnhut');
     const hue = [...identity].reduce((total, character, index) => total + character.charCodeAt(0) * (index + 3), 0) % 360;
     document.documentElement?.style?.setProperty?.('--projection-hue', String(hue));
+    const featureSection = document.getElementById('coverflowSection');
+    if (featureSection) {
+      const featureArt = App.resolveImageUrl(cur.thumb_url || cur.poster_url || '');
+      const featureTitle = cur.name || 'MNHUT Cinema';
+      const featureMeta = [cur.year, cur.quality, cur.episode_current].filter(Boolean).join(' · ');
+      featureSection.dataset.featureTitle = featureTitle;
+      featureSection.dataset.featureMeta = featureMeta;
+      const featureDetails = document.getElementById('coverflowDetails');
+      if (featureDetails) {
+        featureDetails.dataset.featureTitle = featureTitle;
+        featureDetails.dataset.featureMeta = featureMeta;
+      }
+      if (featureArt) {
+        const safeFeatureArt = String(featureArt).replace(/["\\\n\r]/g, '');
+        featureSection.style.setProperty('--feature-art', `url("${safeFeatureArt}")`);
+      }
+    }
 
     if (titleEl) titleEl.textContent = cur.name || 'Đang cập nhật tên phim';
     if (subEl) subEl.textContent = cur.origin_name || '';

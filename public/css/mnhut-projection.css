@@ -264,3 +264,269 @@ body.platform-tv button:focus {
   outline-offset: 5px;
   box-shadow: 0 0 0 8px hsl(var(--projection-hue) 96% 60% / .14) !important;
 }
+
+/* =========================================================
+   MNHUT PROJECTION 2 — a full visual language, not a reskin.
+   ========================================================= */
+.coverflow-section {
+  --feature-art: none;
+  background:
+    linear-gradient(90deg, rgba(3,5,10,.42) 0%, rgba(3,5,10,.18) 45%, rgba(3,5,10,.88) 100%),
+    linear-gradient(0deg, #060810 0%, transparent 38%),
+    var(--feature-art) center 24% / cover no-repeat !important;
+}
+
+.coverflow-section::before {
+  content: "MNHUT CINEMA  /  NOW SHOWING  /  ENSMOVIE  /  4K PROJECTION  /  MNHUT CINEMA  /  NOW SHOWING";
+  top: auto !important;
+  right: 0;
+  bottom: 0;
+  left: 0 !important;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  padding-inline: 24px;
+  color: #06080d;
+  background: var(--projection-accent);
+  box-shadow: 0 -12px 38px hsl(var(--projection-hue) 90% 55% / .16);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.coverflow-details { isolation: isolate; }
+.coverflow-details::after {
+  content: attr(data-feature-title);
+}
+
+@media (min-width: 1024px) {
+  body.web-preview .coverflow-section {
+    width: 100%;
+    max-width: none;
+    min-height: min(820px, calc(100vh - 38px));
+    margin: 0;
+    padding: 104px clamp(44px, 7vw, 132px) 72px;
+    grid-template-columns: minmax(520px, .95fr) minmax(430px, 1.05fr);
+    gap: clamp(44px, 7vw, 120px);
+    border: 0;
+    border-radius: 0;
+    box-shadow: inset 0 -1px rgba(255,255,255,.08);
+  }
+
+  body.web-preview .coverflow-section::after {
+    content: "";
+    inset: 0;
+    height: auto;
+    z-index: -1;
+    background:
+      linear-gradient(90deg, rgba(6,8,16,.5), transparent 44%, rgba(6,8,16,.38)),
+      radial-gradient(circle at 50% 42%, transparent 0 26%, rgba(4,6,12,.3) 55%, rgba(4,6,12,.82) 100%);
+  }
+
+  body.web-preview .coverflow-container {
+    height: clamp(520px, 45vw, 690px);
+    transform: translateX(-2vw);
+  }
+
+  body.web-preview .coverflow-container::before,
+  body.web-preview .coverflow-container::after {
+    width: 10px;
+    opacity: .5;
+  }
+
+  body.web-preview .coverflow-card.center {
+    width: clamp(330px, 25vw, 430px);
+    height: clamp(495px, 37.5vw, 645px);
+    border-radius: 3px 34px 3px 3px;
+    transform: rotate(-2.2deg) translateY(6px);
+  }
+
+  body.web-preview .coverflow-card.center:hover {
+    transform: rotate(-.5deg) translateY(-8px) scale(1.015);
+  }
+
+  body.web-preview .coverflow-card.left,
+  body.web-preview .coverflow-card.right {
+    width: clamp(220px, 18vw, 310px);
+    height: clamp(330px, 27vw, 465px);
+    border: 1px solid rgba(255,255,255,.16);
+    border-radius: 2px 24px 2px 2px;
+    opacity: .72;
+    filter: saturate(.65) brightness(.5);
+  }
+
+  body.web-preview .coverflow-card.left {
+    transform: translateX(clamp(-300px, -20vw, -220px)) translateY(48px) rotate(-7deg) scale(.82);
+  }
+  body.web-preview .coverflow-card.right {
+    transform: translateX(clamp(220px, 20vw, 300px)) translateY(-34px) rotate(7deg) scale(.82);
+  }
+
+  body.web-preview .coverflow-details {
+    max-width: 720px;
+    padding: 56px 0 20px;
+  }
+
+  body.web-preview .coverflow-details::before {
+    content: "MNHUT ORIGINAL SELECTION  ·  " attr(data-feature-meta);
+    display: inline-flex;
+    margin: 0 0 24px;
+    padding: 9px 12px;
+    border-left: 4px solid var(--projection-accent);
+    color: #fff;
+    background: rgba(5,7,12,.62);
+    font: 900 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: .15em;
+  }
+
+  body.web-preview .coverflow-details::after {
+    content: attr(data-feature-title);
+    position: absolute;
+    left: -3vw;
+    top: -22px;
+    z-index: -1;
+    width: 80vw;
+    overflow: hidden;
+    color: transparent;
+    opacity: .18;
+    -webkit-text-stroke: 1px rgba(255,255,255,.7);
+    font: 950 clamp(92px, 10vw, 170px)/.78 system-ui, sans-serif;
+    letter-spacing: -.08em;
+    white-space: nowrap;
+    text-transform: uppercase;
+  }
+
+  body.web-preview .cf-title {
+    max-width: 680px;
+    margin: 0 0 12px;
+    color: #fff;
+    font-size: clamp(54px, 5.8vw, 94px);
+    font-weight: 950;
+    line-height: .88;
+    letter-spacing: -.075em;
+    text-transform: uppercase;
+  }
+
+  body.web-preview .cf-subtitle {
+    margin-bottom: 30px;
+    color: rgba(255,255,255,.66);
+    font: 650 15px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: .06em;
+  }
+
+  body.web-preview .cf-action-buttons { max-width: 460px; gap: 0; }
+  body.web-preview .btn-cf-play,
+  body.web-preview .btn-cf-info {
+    height: 56px;
+    border-radius: 0;
+  }
+  body.web-preview .btn-cf-play {
+    min-width: 220px;
+    color: #08090d;
+    background: var(--projection-accent);
+    clip-path: polygon(0 0, calc(100% - 15px) 0, 100% 50%, calc(100% - 15px) 100%, 0 100%);
+  }
+  body.web-preview .btn-cf-info {
+    min-width: 170px;
+    border: 1px solid rgba(255,255,255,.28);
+    background: rgba(5,7,12,.58);
+  }
+
+  body.web-preview .cf-badges-row span { border-radius: 2px; }
+  body.web-preview .cf-synopsis { max-width: 590px; color: rgba(255,255,255,.73); }
+  body.web-preview .cf-dots-container { margin-top: 28px; }
+
+  body.web-preview .catalog-filter-panel {
+    margin-top: 0;
+    border-width: 0 0 1px;
+    border-radius: 0;
+    background: linear-gradient(90deg, hsl(var(--projection-hue) 80% 55% / .08), transparent 55%);
+  }
+
+  body.web-preview .main-content { padding-top: 44px; }
+  body.web-preview .cinema-section-header {
+    min-height: 82px;
+    align-items: center;
+    border-bottom-color: rgba(255,255,255,.14);
+  }
+  body.web-preview .section-index { font-size: 68px; }
+  body.web-preview .cinema-section-header .section-title { font-size: clamp(30px, 2.6vw, 46px); }
+  body.web-preview .cinema-rail .card-info {
+    min-height: 98px;
+    margin-top: -2px;
+    padding: 15px 13px 10px;
+    border-left: 1px solid rgba(255,255,255,.08);
+    background: linear-gradient(120deg, rgba(255,255,255,.045), transparent);
+  }
+  body.web-preview .cinema-rail .card-title { font-size: 15px; font-weight: 850; }
+}
+
+@media (max-width: 1023px) {
+  .coverflow-section {
+    min-height: 820px;
+    margin-top: 0;
+    padding: calc(max(18px, env(safe-area-inset-top)) + 34px) 0 58px !important;
+    overflow: hidden;
+  }
+  .coverflow-section::after {
+    content: attr(data-feature-title);
+    position: absolute;
+    top: 48%;
+    left: -12px;
+    z-index: -1;
+    width: 120%;
+    color: transparent;
+    opacity: .16;
+    -webkit-text-stroke: 1px rgba(255,255,255,.65);
+    font: 950 17vw/.82 system-ui, sans-serif;
+    letter-spacing: -.08em;
+    white-space: nowrap;
+    text-transform: uppercase;
+  }
+  .coverflow-container {
+    height: clamp(370px, 116vw, 500px) !important;
+    border: 0;
+  }
+  .coverflow-card.center {
+    width: min(64vw, 300px) !important;
+    height: min(96vw, 450px) !important;
+    border-radius: 2px 25px 2px 2px !important;
+    transform: rotate(-1.5deg);
+  }
+  .coverflow-card.left,
+  .coverflow-card.right { opacity: .32 !important; filter: brightness(.45) saturate(.5) !important; }
+  .coverflow-details {
+    margin-top: -20px;
+    padding: 0 max(20px, env(safe-area-inset-left)) !important;
+    text-align: left !important;
+  }
+  .coverflow-details::before {
+    content: "MNHUT FEATURE  ·  " attr(data-feature-meta);
+    display: block;
+    margin-bottom: 10px;
+    color: var(--projection-accent);
+    font: 900 9px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: .13em;
+  }
+  .cf-title {
+    max-width: 92%;
+    margin: 0 0 8px !important;
+    font-size: clamp(34px, 11vw, 56px) !important;
+    font-weight: 950 !important;
+    line-height: .9 !important;
+    text-align: left;
+    text-transform: uppercase;
+  }
+  .cf-subtitle { text-align: left; }
+  .cf-action-buttons { justify-content: flex-start !important; margin-inline: 0 !important; }
+  .btn-cf-play, .btn-cf-info { border-radius: 2px !important; }
+  .btn-cf-play { background: var(--projection-accent) !important; color: #07090e !important; }
+  .cf-badges-row, .cf-categories, .cf-dots-container { justify-content: flex-start !important; }
+  .cf-synopsis { display: none; }
+  .cinema-section-header .section-title { font-size: clamp(24px, 7vw, 34px); }
+  .cinema-rail .card-info {
+    min-height: 92px;
+    padding: 12px 10px;
+    background: linear-gradient(135deg, rgba(255,255,255,.055), transparent);
+  }
+}
