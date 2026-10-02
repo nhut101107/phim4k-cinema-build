@@ -442,6 +442,14 @@ test("viewer telemetry keeps privacy-safe session and playback diagnostics", () 
   });
 });
 
+test("viewer telemetry rejects client-declared timestamps", () => {
+  const [event] = normalizeTelemetryEvents([{
+    action: "movie_open",
+    context: { movie: "Phim thật", eventAt: "2099-01-01T00:00:00.000Z" },
+  }]);
+  assert.deepEqual(event, { action: "usage_movie_open", context: { movie: "Phim thật" } });
+});
+
 test("admin content status checks catalog and exposes only authorized provider readiness", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {

@@ -47,7 +47,7 @@ const TELEMETRY_FIELDS = new Set([
   "tab", "category", "genre", "country", "query", "results", "movie",
   "episode", "server", "quality", "seconds", "duration", "watched", "error", "entry",
   "session", "runtime", "screen", "language", "network",
-  "viewport", "visibility", "uptime", "browser", "os", "buffered", "readyState", "eventAt",
+  "viewport", "visibility", "uptime", "browser", "os", "buffered", "readyState",
 ]);
 const RATE_LIMITS = Object.freeze({
   authActivate: { limit: 20, windowSeconds: 60 },
@@ -2341,10 +2341,6 @@ async function handleLogs(request, env) {
       values.push(identity, identity, `%${identity.replace(/[\\%_]/g, "")}%`);
     }
   }
-  if (cursor) {
-    clauses.push("id < ?");
-    values.push(cursor);
-  }
   const typeSql = {
     USER: "action LIKE 'usage_%'",
     AUTH: "(action = 'license_activated' OR action LIKE 'device_access_%')",
@@ -2354,6 +2350,46 @@ async function handleLogs(request, env) {
     SYSTEM: "(action NOT LIKE 'usage_%' AND action <> 'license_activated' AND action NOT LIKE 'device_access_%' AND action NOT LIKE 'key_%' AND action NOT LIKE 'admin_%' AND action NOT LIKE 'user_%' AND action NOT LIKE '%rate%' AND action NOT LIKE '%blocked%')",
   }[type];
   if (typeSql) clauses.push(typeSql);
+  const summaryClauses = [...clauses];
+  const summaryValues = [...values];
+  const summaryWhere = summaryClauses.length ? ` WHERE ${summaryClauses.join(" AND ")}` : "";
+  let summary = null;
+  try {
+    const totals = await queryOne(env.DB, `SELECT
+      COUNT(*) AS total_events,
+      COALESCE(SUM(CASE WHEN action LIKE 'usage_%' THEN 1 ELSE 0 END), 0) AS viewer_events,
+      COALESCE(SUM(CASE WHEN action = 'usage_playback_error' THEN 1 ELSE 0 END), 0) AS error_count,
+      COUNT(DISTINCT CASE
+        WHEN COALESCE(NULLIF(actor_telegram_id, ''), NULLIF(target_telegram_id, ''), '') <> '' THEN 'tg:' || COALESCE(NULLIF(actor_telegram_id, ''), NULLIF(target_telegram_id, ''))
+        WHEN json_valid(detail) AND COALESCE(json_extract(detail, '$.deviceId'), json_extract(detail, '$.device'), '') <> '' THEN 'dev:' || COALESCE(json_extract(detail, '$.deviceId'), json_extract(detail, '$.device'))
+        ELSE NULL END) AS user_count,
+      COUNT(DISTINCT CASE WHEN json_valid(detail) THEN NULLIF(json_extract(detail, '$.session'), '') ELSE NULL END) AS session_count,
+      COALESCE(SUM(CASE WHEN action = 'usage_playback_watch' AND json_valid(detail) THEN COALESCE(CAST(json_extract(detail, '$.watched') AS REAL), 0) ELSE 0 END), 0) AS watched_seconds,
+      MAX(created_at) AS last_seen
+      FROM audit_logs${summaryWhere}`, ...summaryValues);
+    const latestMovie = await queryOne(env.DB, `SELECT json_extract(detail, '$.movie') AS movie
+      FROM audit_logs${summaryWhere}${summaryWhere ? " AND" : " WHERE"} json_valid(detail) AND NULLIF(json_extract(detail, '$.movie'), '') IS NOT NULL
+      ORDER BY id DESC LIMIT 1`, ...summaryValues);
+    summary = {
+      verified: true,
+      totalEvents: Number(totals?.total_events || 0),
+      viewerEvents: Number(totals?.viewer_events || 0),
+      userCount: Number(totals?.user_count || 0),
+      errorCount: Number(totals?.error_count || 0),
+      sessionCount: Number(totals?.session_count || 0),
+      watchedSeconds: Number(totals?.watched_seconds || 0),
+      latestMovie: String(latestMovie?.movie || ""),
+      lastSeen: totals?.last_seen || null,
+    };
+  } catch (_error) {
+    // Older D1 replicas may briefly lack JSON helpers during rollout. Never
+    // manufacture totals from the visible page: the client renders unknowns.
+    summary = null;
+  }
+  if (cursor) {
+    clauses.push("id < ?");
+    values.push(cursor);
+  }
   const where = clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
   const statement = env.DB.prepare(`SELECT * FROM audit_logs${where} ORDER BY id DESC LIMIT ?`).bind(...values, limit + 1);
   const result = await statement.all();
@@ -2363,6 +2399,7 @@ async function handleLogs(request, env) {
   return json({ logs: page.map((item) => {
     let context = {};
     try { context = JSON.parse(item.detail || "{}"); } catch (_error) {}
+    if (context && typeof context === "object") delete context.eventAt;
     const actorTelegramId = item.actor_telegram_id || item.target_telegram_id || "";
     return {
       id: item.id,
@@ -2378,7 +2415,7 @@ async function handleLogs(request, env) {
       detail: item.detail || "",
       account: { telegramId: actorTelegramId, deviceHash: context?.device || "" },
     };
-  }), hasMore, nextCursor: hasMore ? page.at(-1)?.id || null : null, type });
+  }), hasMore, nextCursor: hasMore ? page.at(-1)?.id || null : null, type, summary });
 }
 
 function configuredJellyfinOrigin(env) {

@@ -1,0 +1,250 @@
+/* MNHUT Projection — signature cinema identity, built with composited CSS only. */
+:root {
+  --projection-hue: 18;
+  --projection-accent: hsl(var(--projection-hue) 96% 61%);
+  --projection-cyan: #55e6ff;
+  --projection-ink: #060810;
+  --projection-paper: #f5f2ea;
+}
+
+body.web-preview {
+  background:
+    radial-gradient(ellipse at 14% -8%, hsl(var(--projection-hue) 90% 50% / .12), transparent 36%),
+    radial-gradient(ellipse at 88% 12%, rgba(85, 230, 255, .07), transparent 31%),
+    #060810;
+}
+
+body.web-preview::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: .22;
+  background-image: repeating-linear-gradient(90deg, transparent 0 7.9vw, rgba(255,255,255,.025) 8vw);
+}
+
+.coverflow-section {
+  isolation: isolate;
+  --projection-edge: hsl(var(--projection-hue) 96% 61% / .75);
+}
+
+.coverflow-section::before {
+  content: "MNHUT / FEATURE PRESENTATION";
+  position: absolute;
+  top: max(14px, env(safe-area-inset-top));
+  left: max(18px, env(safe-area-inset-left));
+  z-index: 5;
+  color: var(--projection-accent);
+  font: 900 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: .19em;
+}
+
+.coverflow-container::before,
+.coverflow-container::after {
+  content: "";
+  position: absolute;
+  top: 7%;
+  bottom: 7%;
+  width: 8px;
+  z-index: 0;
+  opacity: .28;
+  pointer-events: none;
+  background: repeating-linear-gradient(to bottom, rgba(255,255,255,.55) 0 8px, transparent 8px 20px);
+}
+.coverflow-container::before { left: 4px; }
+.coverflow-container::after { right: 4px; }
+
+.coverflow-card {
+  clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 0 100%);
+}
+
+.coverflow-card.center {
+  border-color: var(--projection-edge) !important;
+  box-shadow: 0 28px 72px rgba(0,0,0,.66), 0 0 0 1px var(--projection-edge), 0 0 34px hsl(var(--projection-hue) 96% 55% / .2) !important;
+}
+
+.coverflow-card.center::after {
+  content: "NOW\A SHOWING";
+  white-space: pre;
+  position: absolute;
+  right: 0;
+  top: 0;
+  z-index: 2;
+  width: 58px;
+  padding: 8px 4px;
+  color: #08090d;
+  background: var(--projection-accent);
+  font: 950 8px/1.15 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: .08em;
+  text-align: center;
+}
+
+.cf-title {
+  text-wrap: balance;
+  text-shadow: 0 0 34px hsl(var(--projection-hue) 90% 60% / .18);
+}
+
+.cf-categories { color: var(--projection-accent) !important; }
+.cf-dash.active, .cf-dot.active { background: var(--projection-accent) !important; }
+.btn-cf-play { position: relative; overflow: hidden; }
+.btn-cf-play::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 32%, rgba(255,255,255,.4) 48%, transparent 64%);
+  transform: translateX(-140%);
+  transition: transform .48s ease;
+}
+.btn-cf-play:hover::after, .btn-cf-play:focus-visible::after { transform: translateX(140%); }
+
+.cinema-rail-section { counter-increment: projection-reel; }
+.cinema-section-header { position: relative; }
+.cinema-section-header::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: min(140px, 33%);
+  height: 1px;
+  background: linear-gradient(90deg, var(--projection-accent), transparent);
+}
+.section-eyebrow { color: var(--projection-accent) !important; }
+.section-index {
+  -webkit-text-stroke: 1px hsl(var(--projection-hue) 75% 70% / .4);
+  color: transparent !important;
+}
+
+.cinema-rail .movie-card {
+  transition: transform .18s ease, filter .18s ease;
+  touch-action: manipulation;
+}
+.cinema-rail .movie-card::before {
+  display: block !important;
+  inset: -1px auto 68px -1px !important;
+  background: linear-gradient(180deg, var(--card-accent), var(--projection-accent)) !important;
+  transform: scaleY(.32);
+}
+.cinema-rail .movie-card:hover::before,
+.cinema-rail .movie-card:focus-visible::before { transform: scaleY(1); }
+.cinema-rail .movie-card:active { transform: scale(.975) translateY(1px); }
+.cinema-rail .movie-card:focus-visible {
+  outline: 2px solid var(--projection-accent);
+  outline-offset: 5px;
+}
+.card-poster-wrapper { overflow: hidden; }
+.card-poster-wrapper::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 38%;
+  pointer-events: none;
+  background: linear-gradient(transparent, rgba(4,6,12,.76));
+}
+.card-quick-play, .card-rail-number { z-index: 4; }
+
+.bottom-tab-bar .tab-item {
+  min-height: 52px;
+  transition: color .16s ease, transform .16s ease;
+  touch-action: manipulation;
+}
+.bottom-tab-bar .tab-item:active { transform: scale(.94); }
+.bottom-tab-bar .tab-item.active { color: var(--projection-paper) !important; }
+.bottom-tab-bar .tab-item.active svg { color: var(--projection-accent); fill: var(--projection-accent); }
+.bottom-tab-bar .tab-indicator {
+  width: 28px;
+  height: 2px;
+  border-radius: 0;
+}
+.bottom-tab-bar .tab-item.active .tab-indicator {
+  background: var(--projection-accent);
+  box-shadow: 0 0 14px var(--projection-accent);
+}
+
+.log-summary-grid > div {
+  position: relative;
+  overflow: hidden;
+}
+.log-summary-grid > div::after {
+  content: "SERVER VERIFIED";
+  position: absolute;
+  right: 8px;
+  top: 7px;
+  color: #30d89b;
+  opacity: .55;
+  font: 800 7px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: .08em;
+}
+#logsLoadMoreBtn { min-height: 48px; touch-action: manipulation; }
+#logsLoadMoreBtn:disabled { cursor: progress; opacity: .68; }
+
+@media (min-width: 1024px) {
+  body.web-preview .coverflow-section {
+    border-color: hsl(var(--projection-hue) 55% 60% / .16);
+    background:
+      linear-gradient(112deg, transparent 0 43%, hsl(var(--projection-hue) 80% 55% / .06) 44% 44.2%, transparent 44.4%),
+      radial-gradient(circle at 28% 40%, hsl(var(--projection-hue) 96% 55% / .14), transparent 36%),
+      linear-gradient(135deg, rgba(255,255,255,.025), rgba(255,255,255,.008));
+  }
+  body.web-preview .coverflow-details::before {
+    content: "01 / CURATED PREMIERE";
+    display: block;
+    margin-bottom: 18px;
+    color: var(--projection-accent);
+    font: 900 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: .15em;
+  }
+  body.web-preview .cf-title { font-size: clamp(44px, 4.4vw, 72px); }
+  body.web-preview .cinema-rail .movie-card:hover { transform: translateY(-7px); }
+  body.web-preview .cinema-rail .card-poster-wrapper { border-radius: 2px 22px 2px 2px; }
+  body.web-preview .bottom-tab-bar { display: none !important; }
+}
+
+@media (max-width: 1023px) {
+  .coverflow-section {
+    padding-top: calc(max(16px, env(safe-area-inset-top)) + 30px) !important;
+    background:
+      radial-gradient(circle at 50% 27%, hsl(var(--projection-hue) 94% 56% / .16), transparent 35%),
+      linear-gradient(180deg, rgba(255,255,255,.02), transparent 66%) !important;
+  }
+  .coverflow-section::before { top: max(13px, env(safe-area-inset-top)); }
+  .coverflow-container { border-inline: 1px solid hsl(var(--projection-hue) 76% 70% / .12); }
+  .coverflow-details { padding-inline: max(18px, env(safe-area-inset-left)) !important; }
+  .cf-title { font-size: clamp(28px, 8.5vw, 42px) !important; line-height: .98 !important; letter-spacing: -.045em; }
+  .bottom-tab-bar {
+    left: max(8px, env(safe-area-inset-left));
+    right: max(8px, env(safe-area-inset-right));
+    bottom: max(8px, env(safe-area-inset-bottom));
+    width: auto;
+    height: 68px;
+    border: 1px solid rgba(255,255,255,.11);
+    border-radius: 18px;
+    background: rgba(8,11,18,.97);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: 0 16px 38px rgba(0,0,0,.48);
+  }
+  .telegram-contact-fab { bottom: calc(88px + env(safe-area-inset-bottom)) !important; }
+}
+
+@media (max-width: 540px) {
+  .coverflow-card.center { clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%); }
+  .coverflow-card.center::after { width: 52px; font-size: 7px; }
+  .movie-row.cinema-rail { grid-auto-columns: minmax(154px, 44vw); }
+  .cinema-section-header::after { width: 90px; }
+  .log-summary-grid > div::after { content: "LIVE"; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cinema-rail .movie-card,
+  .bottom-tab-bar .tab-item,
+  .btn-cf-play::after { transition: none !important; }
+}
+
+body.platform-tv .movie-card:focus,
+body.platform-tv button:focus {
+  outline: 3px solid var(--projection-accent) !important;
+  outline-offset: 5px;
+  box-shadow: 0 0 0 8px hsl(var(--projection-hue) 96% 60% / .14) !important;
+}

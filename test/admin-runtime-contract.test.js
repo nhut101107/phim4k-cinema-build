@@ -95,3 +95,27 @@ test('admin logs use manual refresh and explicit Vietnam time', () => {
   assert.match(html, /Admin\.refreshLogs\(\)/);
   assert.match(html, /chỉ cập nhật khi Admin yêu cầu/);
 });
+
+test('admin log pagination preserves server-verified totals without fake page statistics', () => {
+  const backend = read('backend-worker/src/worker.mjs');
+  const admin = read('public/js/admin.js');
+  assert.match(backend, /summary = \{[\s\S]*?verified: true/);
+  assert.match(backend, /delete context\.eventAt/);
+  assert.doesNotMatch(backend.match(/const TELEMETRY_FIELDS = new Set\(\[[\s\S]*?\]\);/)?.[0] || '', /eventAt/);
+  assert.match(admin, /new Map\(combined\.map\(\(log\) => \[String\(log\.id\), log\]\)\)/);
+  assert.match(admin, /renderLogSummary\(summary, logs\.length\)/);
+  assert.doesNotMatch(admin, /logs\.reduce\(\(sum, log\).*watched/);
+});
+
+test('MNHUT Projection identity is loaded by web and app shells', () => {
+  const index = read('public/index.html');
+  const webIndex = read('public/web-index.html');
+  const coverflow = read('public/js/coverflow.js');
+  const projection = read('public/css/mnhut-projection.css');
+  assert.match(index, /mnhut-projection\.css/);
+  assert.match(webIndex, /mnhut-projection\.css/);
+  assert.match(coverflow, /--projection-hue/);
+  assert.match(projection, /MNHUT \/ FEATURE PRESENTATION/);
+  assert.match(projection, /platform-tv/);
+  assert.match(projection, /prefers-reduced-motion/);
+});

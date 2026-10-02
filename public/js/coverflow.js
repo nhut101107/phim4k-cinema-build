@@ -86,6 +86,9 @@ const Coverflow = {
     const statusEl = document.getElementById('cfBadgeStatus');
     const catEl = document.getElementById('cfCategories');
     const synEl = document.getElementById('cfSynopsis');
+    const identity = String(cur.slug || cur.name || 'mnhut');
+    const hue = [...identity].reduce((total, character, index) => total + character.charCodeAt(0) * (index + 3), 0) % 360;
+    document.documentElement?.style?.setProperty?.('--projection-hue', String(hue));
 
     if (titleEl) titleEl.textContent = cur.name || 'Đang cập nhật tên phim';
     if (subEl) subEl.textContent = cur.origin_name || '';

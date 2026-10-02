@@ -23,3 +23,4 @@
 2026-09-30 MNHUT rebuild #25: reject dead metadata-only cards, retry ENSMovie detail without edge cache, and release 3.61 on every client
 2026-09-30 MNHUT rebuild #26: expose ENSMovie native ad skip on web, iOS, Android, TV and Windows
 2026-10-01 MNHUT rebuild #27: fix ENSMovie full-viewport geometry on PC, iPhone, Android, TV and Windows
+2026-10-02 MNHUT rebuild #28: ship MNHUT Projection UI and server-verified admin logs on every client

@@ -9,6 +9,7 @@ const Admin = {
   logRefreshTimer: null,
   userRefreshTimer: null,
   logLoading: false,
+  logSummary: null,
 
   async secureFetch(input, init = {}) {
     const secured = await window.SessionVault?.decorate?.(input, init) || init;
@@ -918,6 +919,7 @@ const Admin = {
     const filter = document.getElementById('logAccountFilter');
     this.logAccountFilter = filter ? filter.value.trim() : '';
     this.logTypeFilter = document.getElementById('logTypeFilter')?.value || 'ALL';
+    this.logCursor = null;
     this.loadLogs();
   },
 
@@ -928,6 +930,7 @@ const Admin = {
     const type = document.getElementById('logTypeFilter');
     if (type) type.value = 'ALL';
     this.logTypeFilter = 'ALL';
+    this.logCursor = null;
     this.loadLogs();
   },
 
@@ -951,7 +954,10 @@ const Admin = {
     if (this.logLoading) return;
     this.logLoading = true;
     const more = document.getElementById('logsLoadMoreBtn');
-    if (more) more.disabled = true;
+    if (more) {
+      more.disabled = true;
+      more.textContent = append ? 'Đang tải dữ liệu thật…' : 'Tải thêm nhật ký';
+    }
     const previousScrollTop = container.scrollTop;
     if (!append && !this.loadedLogs.length) container.innerHTML = '<div class="log-line log-dim">Đang tải nhật ký người dùng…</div>';
     const filter = this.logAccountFilter || document.getElementById('logAccountFilter')?.value.trim() || '';
@@ -964,10 +970,12 @@ const Admin = {
 
     try {
       const data = await API.request(`/api/admin/logs?${query.toString()}`, { cache: 'no-store' });
-      const incoming = data.logs || [];
-      this.loadedLogs = append ? [...this.loadedLogs, ...incoming] : incoming;
+      const incoming = Array.isArray(data.logs) ? data.logs : [];
+      const combined = append ? [...this.loadedLogs, ...incoming] : incoming;
+      this.loadedLogs = [...new Map(combined.map((log) => [String(log.id), log])).values()];
       this.logCursor = data.nextCursor || null;
-      this.renderLogs(this.loadedLogs);
+      if (!append || data.summary?.verified === true) this.logSummary = data.summary || null;
+      this.renderLogs(this.loadedLogs, this.logSummary);
       if (!append) container.scrollTop = previousScrollTop;
       if (more) more.classList.toggle('hidden', !data.hasMore);
       if (liveState) liveState.textContent = '● THỦ CÔNG';
@@ -982,7 +990,10 @@ const Admin = {
       if (liveState) liveState.textContent = '● MẤT KẾT NỐI';
     } finally {
       this.logLoading = false;
-      if (more) more.disabled = false;
+      if (more) {
+        more.disabled = false;
+        more.textContent = this.logCursor ? 'Tải thêm nhật ký thật' : 'Đã tải hết nhật ký';
+      }
     }
   },
 
@@ -1169,19 +1180,13 @@ const Admin = {
     }
   },
 
-  renderLogs(logs = []) {
+  renderLogs(logs = [], summary = null) {
     const container = document.getElementById('terminalLogsBody');
     container.innerHTML = '';
 
     if (logs.length === 0) {
       container.innerHTML = '<div class="log-line log-dim">[System] Nhật ký hệ thống trống.</div>';
-      ['logLoadedCount', 'logViewerCount', 'logUserCount', 'logErrorCount', 'logSessionCount'].forEach((id) => {
-        const element = document.getElementById(id);
-        if (element) element.textContent = '0';
-      });
-      document.getElementById('logWatchTime').textContent = '0 phút';
-      document.getElementById('logLatestMovie').textContent = '—';
-      document.getElementById('logLastSeen').textContent = '—';
+      this.renderLogSummary(summary, logs.length);
       return;
     }
 
@@ -1200,7 +1205,7 @@ const Admin = {
       country: 'Quốc gia', query: 'Từ khóa', results: 'Kết quả', server: 'Server', quality: 'Chất lượng',
       seconds: 'Vị trí', duration: 'Thời lượng', watched: 'Đã xem', error: 'Lỗi', entry: 'Cách vào', version: 'Phiên bản',
       session: 'Phiên', runtime: 'Nền tảng', screen: 'Màn hình', language: 'Ngôn ngữ', network: 'Mạng',
-      viewport: 'Vùng hiển thị', visibility: 'Hiển thị', uptime: 'Thời gian mở (giây)', buffered: 'Đệm (giây)', readyState: 'Trạng thái video', eventAt: 'Giờ thiết bị', device: 'Thiết bị (đã che)', deviceId: 'Mã thiết bị đầy đủ', os: 'Hệ điều hành', browser: 'Trình duyệt',
+      viewport: 'Vùng hiển thị', visibility: 'Hiển thị', uptime: 'Thời gian mở (giây)', buffered: 'Đệm (giây)', readyState: 'Trạng thái video', device: 'Thiết bị (đã che)', deviceId: 'Mã thiết bị đầy đủ', os: 'Hệ điều hành', browser: 'Trình duyệt',
       deviceName: 'Tên thiết bị', ip: 'IP mạng'
     };
 
@@ -1239,7 +1244,7 @@ const Admin = {
         const label = document.createElement('b');
         label.textContent = contextLabels[key] || key;
         const content = document.createElement('em');
-        content.textContent = key === 'eventAt' ? this.formatVietnamTime(value) : String(value);
+        content.textContent = String(value);
         item.append(label, content);
         details.appendChild(item);
       });
@@ -1254,21 +1259,30 @@ const Admin = {
       container.appendChild(line);
     });
 
-    document.getElementById('logLoadedCount').textContent = String(logs.length);
-    document.getElementById('logViewerCount').textContent = String(logs.filter((log) => log.type === 'USER').length);
-    document.getElementById('logUserCount').textContent = String(new Set(logs.map((log) => log.account?.telegramId || log.account?.deviceHash).filter(Boolean)).size);
-    document.getElementById('logErrorCount').textContent = String(logs.filter((log) => log.action === 'usage_playback_error').length);
-    document.getElementById('logSessionCount').textContent = String(new Set(logs.map((log) => log.context?.session).filter(Boolean)).size);
-    const watchedSeconds = logs.reduce((sum, log) => sum + (Number(log.context?.watched) || 0), 0);
-    document.getElementById('logWatchTime').textContent = watchedSeconds >= 3600
+    this.renderLogSummary(summary, logs.length);
+  },
+
+  renderLogSummary(summary, loadedCount = 0) {
+    const set = (id, value) => {
+      const element = document.getElementById(id);
+      if (element) element.textContent = value;
+    };
+    set('logLoadedCount', String(loadedCount));
+    if (!summary?.verified) {
+      ['logViewerCount', 'logUserCount', 'logErrorCount', 'logSessionCount', 'logWatchTime', 'logLatestMovie', 'logLastSeen']
+        .forEach((id) => set(id, '—'));
+      return;
+    }
+    set('logViewerCount', Number(summary.viewerEvents || 0).toLocaleString('vi-VN'));
+    set('logUserCount', Number(summary.userCount || 0).toLocaleString('vi-VN'));
+    set('logErrorCount', Number(summary.errorCount || 0).toLocaleString('vi-VN'));
+    set('logSessionCount', Number(summary.sessionCount || 0).toLocaleString('vi-VN'));
+    const watchedSeconds = Number(summary.watchedSeconds || 0);
+    set('logWatchTime', watchedSeconds >= 3600
       ? `${(watchedSeconds / 3600).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} giờ`
-      : `${Math.round(watchedSeconds / 60)} phút`;
-    const latestMovie = logs.find((log) => log.context?.movie)?.context?.movie || '—';
-    document.getElementById('logLatestMovie').textContent = latestMovie;
-    const latestTimestamp = logs[0]?.timestamp || logs[0]?.createdAt || logs[0]?.created_at;
-    document.getElementById('logLastSeen').textContent = latestTimestamp
-      ? this.formatVietnamTime(latestTimestamp, { seconds: false })
-      : '—';
+      : `${Math.round(watchedSeconds / 60)} phút`);
+    set('logLatestMovie', summary.latestMovie || '—');
+    set('logLastSeen', summary.lastSeen ? this.formatVietnamTime(summary.lastSeen, { seconds: false }) : '—');
   },
 
   async clearLogs() {
