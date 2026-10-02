@@ -6,13 +6,13 @@ enum RuntimeIntegrityManifest {
     private static let protectedFiles: [String: String] = [
         "public/cordova_plugins.js": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         "public/cordova.js": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "public/css/mnhut-projection.css": "1ae16d70163906d10e1f96cf7b9a09d022343af955b83bc495e254b81a5d17e8",
+        "public/css/mnhut-projection.css": "5aa241f3ade4d020275baa454dfae3ec1780eacdd3a307e3a735d2c4be4f955e",
         "public/css/modal.css": "5a52123feec537dba7197943c9289bbea836bfd03fd297d5ebba8b91c6109d3e",
         "public/css/player.css": "af0d2808d9ee2d12ae0464ac9b4d41c2f6814281e1cc4124a875a47aaffced97",
         "public/css/style.css": "fdeeec463d8381ed29d60a26e4592e764875fbab9428d158814a2fef9cd09add",
         "public/css/tv.css": "4ad38e4a9af9696fa99effd05e25e4bcfe05a5ea116b924dc467c71c5f43b192",
         "public/css/web-premium.css": "967e2e452f376c7a9f182b8cb53d6415959176102deb8fd79d274a6eb17c850b",
-        "public/index.html": "a9f208fbbf63291d91f53c0f06fc5513751dff265432ae86613f952fddee0673",
+        "public/index.html": "67ec05db0d914999125f64b21b5ab508fe845698bd0b3005db3938a5b541a80b",
         "public/js/admin.js": "bf33cc65902dc1e43e09587f1ae5791999556f3dcdcd0ec514f0f6a869066edc",
         "public/js/api.js": "a4e35818ade969be3759d60b6228a463a18abf904b2c5281d69e84ca6281350a",
         "public/js/app.js": "563452591f79d2d105c369e77fa2b7a9a1c4b7e073ef14332d320e99f5ad1561",
@@ -41,7 +41,7 @@ enum RuntimeIntegrityManifest {
         "public/media/superman_4k.jpg": "9339c63a766caa26647be0b64cacf0c95e3db29859ce4445b5e9db15a05ab7fe",
         "public/media/the_boys_4k.jpg": "572cb16dfb429292bb9fc690a0c5bfa28a8d688ed23588595e396b454067971a",
         "public/vendor/hls.min.js": "afcde07437ec84b072fe8782e772ceb5046eac751b2719f73ae0d83d763bc3f5",
-        "public/web-index.html": "7366d5af52b737b1ddbd933e9a85ce7db5fcfe59196a46b349205c5a3ce18143",
+        "public/web-index.html": "1d54fdfa0bfa5cd1d3067f4186f20279d08e310cfd409ec3d639e3d7a5521efd",
     ]
 
     static func verify(in bundle: Bundle = .main) -> Bool {

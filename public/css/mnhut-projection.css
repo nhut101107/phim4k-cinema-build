@@ -201,6 +201,22 @@ body.web-preview::before {
   body.web-preview .bottom-tab-bar { display: none !important; }
 }
 
+/* Medium laptops do not have room for six catalogue shortcuts plus three
+   duplicate account actions. Those actions remain available in Account; keep
+   the primary navigation and search field collision-free here. */
+@media (min-width: 1024px) and (max-width: 1540px) {
+  body.web-preview .navbar { gap: 16px; padding-inline: 28px; }
+  body.web-preview .nav-left { gap: 18px; }
+  body.web-preview .nav-download-btn,
+  body.web-preview .nav-key-btn { display: none !important; }
+  body.web-preview .search-box { width: clamp(190px, 18vw, 250px); min-width: 180px; }
+  body.web-preview .nav-links .nav-btn { padding-inline: 8px; font-size: 11px; }
+}
+
+@media (min-width: 1024px) and (max-width: 1180px) {
+  body.web-preview .nav-links .nav-btn:nth-child(n + 5) { display: none; }
+}
+
 @media (max-width: 1023px) {
   .coverflow-section {
     padding-top: calc(max(16px, env(safe-area-inset-top)) + 30px) !important;
