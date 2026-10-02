@@ -28,7 +28,7 @@
 
   const authoritativePath = (pathname) => pathname.startsWith('/api/auth/')
     || pathname.startsWith('/api/admin/')
-    || ['/api/app/access-policy', '/api/app/downloads', '/api/app/check-update', '/api/app/version', '/api/app/announcement', '/api/telemetry', '/api/feedback', '/api/watch-progress', '/api/movies/report-issue'].includes(pathname);
+    || ['/api/app/access-policy', '/api/app/downloads', '/api/app/check-update', '/api/app/version', '/api/app/announcement', '/api/telemetry', '/api/feedback', '/api/watch-progress', '/api/account/overview', '/api/account/library', '/api/movies/report-issue'].includes(pathname);
 
   window.Phim4KRuntime = Object.freeze({ apiBaseUrl, licenseApiBaseUrl });
   const nativeFetch = window.fetch.bind(window);

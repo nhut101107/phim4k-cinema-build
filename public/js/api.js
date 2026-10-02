@@ -352,6 +352,24 @@ const API = {
     return this.request('/api/watch-progress', { method: 'DELETE' });
   },
 
+  async getAccountOverview() {
+    return this.request('/api/account/overview');
+  },
+
+  async saveLibraryMovie(movie, list = 'watchlist') {
+    return this.request('/api/account/library', {
+      method: 'POST',
+      body: JSON.stringify({ slug: movie?.slug, name: movie?.name, list })
+    });
+  },
+
+  async removeLibraryMovie(slug, list = 'watchlist') {
+    return this.request('/api/account/library', {
+      method: 'DELETE',
+      body: JSON.stringify({ slug, list })
+    });
+  },
+
   async getPlaybackTicket(streamRef) {
     return this.request('/api/movies/play', {
       method: 'POST',

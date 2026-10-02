@@ -34,8 +34,12 @@ const App = {
   detailRequestId: 0,
   railInitialItems: 14,
   railBatchItems: 12,
+  activeMood: '',
+  moodMovies: [],
+  motionTier: 'low',
 
   init() {
+    this.configureAdaptiveMotion();
     this.bindEvents();
     this.bindTouchFeedback();
     const activationGate = document.getElementById('activationGate');
@@ -47,6 +51,47 @@ const App = {
     this.loadHomeFeed();
     this.startHomeFeedRefresh();
     this.startAnnouncementRefresh();
+  },
+
+  configureAdaptiveMotion() {
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const cores = Number(navigator.hardwareConcurrency || 2);
+    const memory = Number(navigator.deviceMemory || 0);
+    const saveData = Boolean(navigator.connection?.saveData);
+    const tv = document.body.classList.contains('platform-tv');
+    this.motionTier = reduced || saveData || cores <= 2 || (memory > 0 && memory <= 2)
+      ? 'low'
+      : (cores >= 6 && (memory === 0 || memory >= 4) && !tv ? 'high' : 'mid');
+    document.body.dataset.motionTier = this.motionTier;
+    if (this.motionTier === 'high') {
+      let frame = 0;
+      document.addEventListener('pointermove', (event) => {
+        if (frame || event.pointerType === 'touch') return;
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          const hero = document.getElementById('coverflowSection');
+          if (!hero || hero.classList.contains('hidden')) return;
+          const rect = hero.getBoundingClientRect();
+          hero.style.setProperty('--pointer-x', `${Math.max(0, Math.min(100, ((event.clientX - rect.left) / Math.max(1, rect.width)) * 100))}%`);
+          hero.style.setProperty('--pointer-y', `${Math.max(0, Math.min(100, ((event.clientY - rect.top) / Math.max(1, rect.height)) * 100))}%`);
+        });
+      }, { passive: true });
+    }
+  },
+
+  refreshExperienceEffects(root = document) {
+    if (this.motionTier === 'low' || typeof IntersectionObserver === 'undefined') return;
+    if (!this.revealObserver) {
+      this.revealObserver = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          entry.target.classList.add('experience-visible');
+          this.revealObserver.unobserve(entry.target);
+        });
+      }, { rootMargin: '80px 0px', threshold: 0.08 });
+    }
+    root.querySelectorAll?.('.movie-section:not(.experience-visible), .mood-discovery:not(.experience-visible), .account-card:not(.experience-visible)')
+      .forEach((element) => this.revealObserver.observe(element));
   },
 
   bindTouchFeedback() {
@@ -163,6 +208,7 @@ const App = {
     document.getElementById('heroBillboard')?.classList.remove('hidden');
     document.getElementById('coverflowSection')?.classList.remove('hidden');
     document.getElementById('continueWatchingSection')?.classList.remove('hidden');
+    document.getElementById('moodDiscovery')?.classList.remove('hidden');
     document.getElementById('catalogFilterPanel')?.classList.remove('hidden');
     document.getElementById('dynamicSections')?.classList.remove('hidden');
     document.getElementById('categoryView')?.classList.add('hidden');
@@ -342,6 +388,8 @@ const App = {
       }
     });
     this.renderSchedule();
+    this.renderMoodSelection();
+    this.refreshExperienceEffects();
   },
 
   getScheduleMovies() {
@@ -512,6 +560,108 @@ const App = {
       { id: 'country-western', title: 'Phim Âu Mỹ', items: this.filterMoviesByTag('country', 'Âu Mỹ') },
     ];
     return groups.filter((section) => section.items.length > 0);
+  },
+
+  moodDefinition(mood) {
+    return {
+      relax: { title: 'Nhẹ nhàng cho tối nay', tags: ['tinh-cam', 'tam-ly', 'gia-dinh', 'hai-huoc'] },
+      thrill: { title: 'Căng thẳng đến phút cuối', tags: ['hanh-dong', 'hinh-su', 'kinh-di', 'bi-an', 'phieu-luu'] },
+      night: { title: 'Cuốn để cày xuyên đêm', tags: ['phim-bo', 'hoat-hinh', 'vien-tuong', 'hanh-dong'] },
+    }[mood] || null;
+  },
+
+  selectMood(mood) {
+    const definition = this.moodDefinition(mood);
+    if (!definition || !this.homeCatalog.length) return;
+    this.activeMood = mood;
+    document.querySelectorAll('.mood-chip').forEach((button) => button.classList.toggle('active', button.dataset.mood === mood));
+    const matches = this.homeCatalog.filter((movie) => {
+      const tags = this.getMovieTags(movie, 'category').map((tag) => this.normalizeFilterValue(tag));
+      const type = this.normalizeFilterValue(movie?.type || '');
+      return definition.tags.some((tag) => tags.includes(tag) || type === tag);
+    });
+    const fallback = matches.length >= 6 ? matches : this.homeCatalog;
+    const history = new Set((window.ContinueWatching?.getItems?.() || []).map((item) => item.slug));
+    this.moodMovies = [...fallback]
+      .sort((a, b) => Number(history.has(b.slug)) - Number(history.has(a.slug)) || String(b?.modified?.time || '').localeCompare(String(a?.modified?.time || '')))
+      .slice(0, 18);
+    this.renderMoodSelection();
+    window.API?.trackUsage?.('filter_applied', { category: `mood-${mood}`, results: this.moodMovies.length });
+  },
+
+  renderMoodSelection() {
+    const host = document.getElementById('moodDiscovery');
+    if (!host) return;
+    document.getElementById('moodResultSection')?.remove();
+    const definition = this.moodDefinition(this.activeMood);
+    if (!definition || !this.moodMovies.length) return;
+    const section = document.createElement('section');
+    section.id = 'moodResultSection';
+    section.className = 'mood-result-section';
+    section.innerHTML = `<div class="mood-result-head"><div><span>ĐỀ XUẤT TỪ KHO ĐANG PHÁT ĐƯỢC</span><h2>${this.escapeHtml(definition.title)}</h2></div><button type="button" onclick="App.clearMood()">Đóng</button></div><div class="movie-row mood-result-row"></div>`;
+    const row = section.querySelector('.mood-result-row');
+    this.moodMovies.forEach((movie, index) => row.appendChild(this.createMovieCard(movie, index)));
+    host.after(section);
+    this.refreshExperienceEffects(section);
+  },
+
+  clearMood() {
+    this.activeMood = '';
+    this.moodMovies = [];
+    document.querySelectorAll('.mood-chip').forEach((button) => button.classList.remove('active'));
+    document.getElementById('moodResultSection')?.remove();
+  },
+
+  openMoodSurprise() {
+    const pool = this.moodMovies.length ? this.moodMovies : this.homeCatalog;
+    if (!pool.length) return;
+    const watched = new Set((window.ContinueWatching?.getItems?.() || []).map((item) => item.slug));
+    const candidates = pool.filter((movie) => !watched.has(movie.slug));
+    const list = candidates.length ? candidates : pool;
+    const movie = list[Math.floor(Math.random() * list.length)];
+    if (movie?.slug) this.openMovieDetail(movie.slug);
+  },
+
+  async showPersonalLibrary(libraryItems = [], list = 'watchlist') {
+    switchTab('home');
+    this.currentCategory = `library-${list}`;
+    this.updateActiveNav('home');
+    ['heroBillboard', 'coverflowSection', 'continueWatchingSection', 'moodDiscovery', 'catalogFilterPanel', 'dynamicSections']
+      .forEach((id) => document.getElementById(id)?.classList.add('hidden'));
+    const categoryView = document.getElementById('categoryView');
+    const grid = document.getElementById('categoryGrid');
+    const title = document.getElementById('categoryTitle');
+    const count = document.getElementById('categoryCount');
+    const pagination = document.getElementById('paginationBox');
+    if (!categoryView || !grid || !title || !count || !pagination) return;
+    categoryView.classList.remove('hidden');
+    const label = list === 'favorites' ? 'Phim yêu thích' : 'Danh sách xem sau';
+    title.textContent = label;
+    pagination.innerHTML = '<button type="button" class="catalog-load-more-btn" onclick="App.loadHomeFeed()">Quay lại trang chủ</button>';
+    const saved = Array.isArray(libraryItems) ? libraryItems : [];
+    count.textContent = `(${saved.length} phim)`;
+    if (!saved.length) {
+      grid.innerHTML = '<div class="catalog-empty-state">Chưa có phim trong danh sách này. Mở một phim rồi bấm lưu để xem lại nhanh hơn.</div>';
+      return;
+    }
+    grid.innerHTML = '<div class="loading-spinner-wrapper" style="grid-column:1/-1"><div class="spinner"></div><p>Đang mở thư viện của bạn…</p></div>';
+    const known = new Map(this.uniqueMovies([...this.homeCatalog, ...this.heroList]).map((movie) => [movie.slug, movie]));
+    const missing = saved.filter((item) => !known.has(item.slug)).slice(0, 24);
+    const fetched = await Promise.allSettled(missing.map((item) => API.getDetail(item.slug)));
+    fetched.forEach((result) => {
+      const movie = result.status === 'fulfilled' ? result.value?.movie : null;
+      if (movie?.slug) known.set(movie.slug, movie);
+    });
+    const movies = saved.map((item) => known.get(item.slug)).filter(Boolean);
+    grid.innerHTML = '';
+    if (!movies.length) {
+      grid.innerHTML = '<div class="catalog-empty-state">Các phim đã lưu hiện không còn trong kho đang phát. Danh sách vẫn được giữ để tự khôi phục khi nguồn phim trở lại.</div>';
+      return;
+    }
+    const fragment = document.createDocumentFragment();
+    movies.forEach((movie, index) => fragment.appendChild(this.createMovieCard(movie, index)));
+    grid.appendChild(fragment);
+    this.refreshExperienceEffects(categoryView);
   },
 
   refreshPersonalizedHome() {
@@ -1038,6 +1188,7 @@ const App = {
     document.getElementById('heroBillboard')?.classList.add('hidden');
     document.getElementById('coverflowSection')?.classList.add('hidden');
     document.getElementById('continueWatchingSection')?.classList.add('hidden');
+    document.getElementById('moodDiscovery')?.classList.add('hidden');
     document.getElementById('catalogFilterPanel')?.classList.add('hidden');
     document.getElementById('dynamicSections')?.classList.add('hidden');
     const catView = document.getElementById('categoryView');
@@ -1324,6 +1475,8 @@ const App = {
       <div><strong>Đạo diễn:</strong> ${this.escapeHtml(directors)}</div>
       <div><strong>Diễn viên:</strong> ${this.escapeHtml(actors)}</div>
     `;
+
+    window.AccountExperience?.updateDetailButtons?.(movie.slug);
 
     // Render Server Tabs
     this.renderServerTabs(episodes);

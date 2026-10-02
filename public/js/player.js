@@ -564,6 +564,7 @@ const Player = {
   usageContext(movie = this.currentMovie, episode = this.currentEpisode) {
     return {
       movie: movie?.name || movie?.slug || 'Không rõ',
+      movieSlug: movie?.slug || '',
       episode: episode?.name || episode?.filename || `Tập ${this.currentEpIndex + 1}`,
       server: this.allServers[this.currentServerIndex]?.server_name || `Server ${this.currentServerIndex + 1}`
     };

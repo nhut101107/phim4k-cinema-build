@@ -44,7 +44,7 @@ const TELEMETRY_ACTIONS = new Set([
   "heartbeat", "app_visibility", "network_change", "client_error", "download_open",
 ]);
 const TELEMETRY_FIELDS = new Set([
-  "tab", "category", "genre", "country", "query", "results", "movie",
+  "tab", "category", "genre", "country", "query", "results", "movie", "movieSlug",
   "episode", "server", "quality", "seconds", "duration", "watched", "error", "entry",
   "session", "runtime", "screen", "language", "network",
   "viewport", "visibility", "uptime", "browser", "os", "buffered", "readyState",
@@ -1076,6 +1076,9 @@ async function handleTelemetry(request, env) {
   if (identity.licenseKey) await recordDeviceObservation(env.DB, request, identity.licenseKey, identity.deviceId);
   const events = normalizeTelemetryEvents(body.events);
   if (!events.length) return textError("Không có hoạt động hợp lệ để ghi.", 400, "INVALID_TELEMETRY");
+  const ownerId = events.some((event) => event.action === "usage_playback_watch")
+    ? await viewerOwnerId(identity, request, env)
+    : "";
   const device = maskedValue(identity.deviceId, 6);
   for (const event of events) {
     const context = {
@@ -1100,6 +1103,9 @@ async function handleTelemetry(request, env) {
       targetTelegramId: identity.telegramId,
       detail,
     });
+    if (ownerId && event.action === "usage_playback_watch") {
+      await recordViewerWatch(env.DB, ownerId, event.context);
+    }
   }
   return json({ success: true, accepted: events.length }, 202);
 }
@@ -1116,6 +1122,10 @@ async function ensureWatchProgressTable(db) {
 async function progressOwner(request, env) {
   const identity = await verifyTelemetryViewer(request, env);
   if (identity.error) return identity;
+  return { ...identity, ownerId: await viewerOwnerId(identity, request, env) };
+}
+
+async function viewerOwnerId(identity, request, env) {
   // In production the account namespace comes only from the verified server
   // session. A caller cannot switch another account's history by supplying an
   // x-license-key header. Legacy headers remain isolated to explicit tests.
@@ -1126,7 +1136,7 @@ async function progressOwner(request, env) {
       ? `license:${key}`
       : `guest-device:${identity.deviceId}`;
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(namespace));
-  return { ...identity, ownerId: toHex(digest) };
+  return toHex(digest);
 }
 
 function cleanProgressText(value, maxLength) {
@@ -1274,6 +1284,113 @@ async function handleWatchProgress(request, env) {
     "DELETE FROM watch_progress WHERE owner_id = ? AND rowid NOT IN (SELECT rowid FROM watch_progress WHERE owner_id = ? ORDER BY updated_at DESC LIMIT 50)",
   ).bind(identity.ownerId, identity.ownerId).run();
   return json({ success: true, saved: items.length, updatedAt: timestamp }, 202);
+}
+
+function vietnamDay(value = Date.now()) {
+  return new Date(Number(value) + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+function telemetryMovieSlug(context) {
+  const explicit = catalogSlug(context?.movieSlug);
+  if (explicit) return explicit;
+  return cleanProgressText(context?.movie, 160)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 160);
+}
+
+async function ensureViewerExperienceTables(db) {
+  await db.prepare(
+    "CREATE TABLE IF NOT EXISTS viewer_watch_daily (owner_id TEXT NOT NULL, day TEXT NOT NULL, movie_slug TEXT NOT NULL, movie_name TEXT NOT NULL, watched_seconds REAL NOT NULL DEFAULT 0, updated_at TEXT NOT NULL, PRIMARY KEY (owner_id, day, movie_slug))",
+  ).run();
+  await db.prepare(
+    "CREATE INDEX IF NOT EXISTS idx_viewer_watch_daily_owner_day ON viewer_watch_daily(owner_id, day DESC)",
+  ).run();
+  await db.prepare(
+    "CREATE TABLE IF NOT EXISTS viewer_library (owner_id TEXT NOT NULL, movie_slug TEXT NOT NULL, movie_name TEXT NOT NULL, list_name TEXT NOT NULL DEFAULT 'watchlist', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (owner_id, movie_slug, list_name))",
+  ).run();
+  await db.prepare(
+    "CREATE INDEX IF NOT EXISTS idx_viewer_library_owner_updated ON viewer_library(owner_id, updated_at DESC)",
+  ).run();
+}
+
+async function recordViewerWatch(db, ownerId, context) {
+  const watched = Math.max(0, Math.min(1800, Number(context?.watched) || 0));
+  const movieName = cleanProgressText(context?.movie, 160);
+  const movieSlug = telemetryMovieSlug(context);
+  if (watched < 1 || !movieName || !movieSlug) return;
+  await ensureViewerExperienceTables(db);
+  const timestamp = now();
+  await db.prepare(
+    "INSERT INTO viewer_watch_daily (owner_id, day, movie_slug, movie_name, watched_seconds, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(owner_id, day, movie_slug) DO UPDATE SET movie_name = excluded.movie_name, watched_seconds = MIN(86400, viewer_watch_daily.watched_seconds + excluded.watched_seconds), updated_at = excluded.updated_at",
+  ).bind(ownerId, vietnamDay(), movieSlug, movieName, watched, timestamp).run();
+}
+
+function viewingStreak(days) {
+  const unique = new Set((Array.isArray(days) ? days : []).map((item) => String(item || "")).filter(Boolean));
+  if (!unique.size) return 0;
+  let cursor = Date.now();
+  if (!unique.has(vietnamDay(cursor))) cursor -= 86400000;
+  let streak = 0;
+  while (streak < 366 && unique.has(vietnamDay(cursor))) {
+    streak += 1;
+    cursor -= 86400000;
+  }
+  return streak;
+}
+
+async function handleAccountOverview(request, env) {
+  const identity = await progressOwner(request, env);
+  if (identity.error) return identity.error;
+  await ensureViewerExperienceTables(env.DB);
+  const [total, daily, recentMovies, library] = await Promise.all([
+    queryOne(env.DB, "SELECT COALESCE(SUM(watched_seconds), 0) AS watched_seconds, COUNT(DISTINCT movie_slug) AS movie_count FROM viewer_watch_daily WHERE owner_id = ?", identity.ownerId),
+    env.DB.prepare("SELECT day, ROUND(SUM(watched_seconds), 1) AS watched_seconds FROM viewer_watch_daily WHERE owner_id = ? AND day >= date('now', '+7 hours', '-29 days') GROUP BY day ORDER BY day ASC").bind(identity.ownerId).all(),
+    env.DB.prepare("SELECT movie_slug, movie_name, ROUND(SUM(watched_seconds), 1) AS watched_seconds, MAX(updated_at) AS updated_at FROM viewer_watch_daily WHERE owner_id = ? GROUP BY movie_slug, movie_name ORDER BY updated_at DESC LIMIT 12").bind(identity.ownerId).all(),
+    env.DB.prepare("SELECT movie_slug, movie_name, list_name, created_at, updated_at FROM viewer_library WHERE owner_id = ? ORDER BY updated_at DESC LIMIT 100").bind(identity.ownerId).all(),
+  ]);
+  const days = daily.results || [];
+  return json({
+    success: true,
+    stats: {
+      watchedSeconds: Number(total?.watched_seconds || 0),
+      movieCount: Number(total?.movie_count || 0),
+      streakDays: viewingStreak(days.map((item) => item.day)),
+      timezone: "Asia/Ho_Chi_Minh",
+      byDay: days.map((item) => ({ day: String(item.day), watchedSeconds: Number(item.watched_seconds || 0) })),
+    },
+    recentMovies: (recentMovies.results || []).map((item) => ({ slug: item.movie_slug, name: item.movie_name, watchedSeconds: Number(item.watched_seconds || 0), updatedAt: item.updated_at })),
+    library: (library.results || []).map((item) => ({ slug: item.movie_slug, name: item.movie_name, list: item.list_name, createdAt: item.created_at, updatedAt: item.updated_at })),
+  });
+}
+
+function cleanLibraryList(value) {
+  const list = cleanProgressText(value || "watchlist", 40).toLowerCase();
+  return /^(watchlist|favorites|collection-[a-z0-9-]{1,28})$/.test(list) ? list : "";
+}
+
+async function handleAccountLibrary(request, env) {
+  const identity = await progressOwner(request, env);
+  if (identity.error) return identity.error;
+  await ensureViewerExperienceTables(env.DB);
+  const body = await parseBody(request);
+  const slug = catalogSlug(body?.slug);
+  const list = cleanLibraryList(body?.list);
+  if (!slug || !list) return textError("Mục lưu phim không hợp lệ.", 400, "INVALID_LIBRARY_ITEM");
+  if (request.method === "DELETE") {
+    await env.DB.prepare("DELETE FROM viewer_library WHERE owner_id = ? AND movie_slug = ? AND list_name = ?").bind(identity.ownerId, slug, list).run();
+    return json({ success: true, saved: false, slug, list });
+  }
+  const name = cleanProgressText(body?.name, 160);
+  if (!name) return textError("Thiếu tên phim.", 400, "INVALID_LIBRARY_ITEM");
+  const timestamp = now();
+  await env.DB.prepare(
+    "INSERT INTO viewer_library (owner_id, movie_slug, movie_name, list_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(owner_id, movie_slug, list_name) DO UPDATE SET movie_name = excluded.movie_name, updated_at = excluded.updated_at",
+  ).bind(identity.ownerId, slug, name, list, timestamp, timestamp).run();
+  return json({ success: true, saved: true, slug, name, list, updatedAt: timestamp }, 201);
 }
 
 function dbUnavailable(env) {
@@ -4348,6 +4465,8 @@ export default {
       if (request.method === "POST" && pathname === "/api/telemetry") return await handleTelemetry(request, env);
       if (["GET", "POST"].includes(request.method) && pathname === "/api/feedback") return await handleViewerFeedback(request, env);
       if (["GET", "POST", "DELETE"].includes(request.method) && pathname === "/api/watch-progress") return await handleWatchProgress(request, env);
+      if (request.method === "GET" && pathname === "/api/account/overview") return await handleAccountOverview(request, env);
+      if (["POST", "DELETE"].includes(request.method) && pathname === "/api/account/library") return await handleAccountLibrary(request, env);
       if ((request.method === "GET" || request.method === "POST") && pathname === "/api/app/downloads") return await handleDownloads(request, env);
       if (request.method === "POST" && pathname === "/api/admin/update-downloads") return await handleDownloads(request, env);
       if (request.method === "GET" && pathname === "/api/admin/keys") return await listKeys(request, env);

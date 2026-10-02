@@ -18,7 +18,7 @@
   <link rel="stylesheet" href="/css/player.css?v=3.61.1">
   <link rel="stylesheet" href="/css/tv.css?v=3.61.0">
   <link rel="stylesheet" href="/css/web-premium.css?v=3.61.0">
-  <link rel="stylesheet" href="/css/mnhut-projection.css?v=3.61.3">
+  <link rel="stylesheet" href="/css/mnhut-projection.css?v=3.61.4">
 </head>
 <body class="activation-locked">
   <script>document.body.classList.add('web-preview');</script>
@@ -329,6 +329,20 @@
         <div class="cw-row" id="continueWatchingRow"></div>
       </section>
 
+      <section class="mood-discovery" id="moodDiscovery" aria-labelledby="moodDiscoveryTitle">
+        <div class="mood-discovery-copy">
+          <span class="mood-kicker">CHỌN NHANH THEO CẢM XÚC</span>
+          <h2 id="moodDiscoveryTitle">Tối nay xem gì?</h2>
+          <p id="moodDiscoveryHint">Chọn một tâm trạng, danh sách sẽ đổi ngay từ kho phim đang phát được.</p>
+        </div>
+        <div class="mood-actions" role="group" aria-label="Tâm trạng xem phim">
+          <button type="button" class="mood-chip" data-mood="relax" onclick="App.selectMood('relax')"><span>☕</span><b>Thư giãn</b><small>Nhẹ nhàng</small></button>
+          <button type="button" class="mood-chip" data-mood="thrill" onclick="App.selectMood('thrill')"><span>◈</span><b>Hồi hộp</b><small>Kịch tính</small></button>
+          <button type="button" class="mood-chip" data-mood="night" onclick="App.selectMood('night')"><span>◒</span><b>Cày đêm</b><small>Cuốn liên tục</small></button>
+          <button type="button" class="mood-surprise" onclick="App.openMoodSurprise()"><span>↝</span><b>Chọn hộ tôi</b></button>
+        </div>
+      </section>
+
       <!-- 3. Catalog filters. Buttons are populated from the loaded catalog. -->
       <section class="catalog-filter-panel" id="catalogFilterPanel" aria-label="Lọc phim">
         <div class="catalog-filter-header">
@@ -423,7 +437,7 @@
 
     <!-- ================= TAB 4: TÀI KHOẢN (ACCOUNT) ================= -->
     <div id="accountTabContent" class="tab-content hidden account-tab-view">
-      <div class="account-card">
+      <div class="account-card account-cinema-card">
         <div class="account-hero">
           <span class="account-avatar account-mnhut-chip" aria-label="MNHUT">MN</span>
           <div class="account-identity">
@@ -433,6 +447,19 @@
           </div>
           <span class="account-live-badge"><i></i> Đang hoạt động</span>
         </div>
+        <section class="account-insight" aria-label="Hoạt động xem phim">
+          <div class="account-stat-grid">
+            <div><span class="account-stat-icon">◷</span><strong id="accWatchHours">—</strong><small>Giờ đã xem</small></div>
+            <div><span class="account-stat-icon">▣</span><strong id="accMoviesWatched">—</strong><small>Phim đã xem</small></div>
+            <div><span class="account-stat-icon">♨</span><strong id="accStreak">—</strong><small>Ngày liên tiếp</small></div>
+          </div>
+          <div class="account-activity-head"><strong>Hoạt động 30 ngày</strong><small id="accStatsState">Đang đồng bộ dữ liệu thật…</small></div>
+          <div id="accActivityBars" class="account-activity-bars" role="img" aria-label="Biểu đồ thời gian xem trong 30 ngày"></div>
+          <div class="account-taste-row">
+            <span>Gu xem gần đây</span>
+            <div id="accFavoriteGenres" class="account-taste-chips"><small>Chưa đủ dữ liệu</small></div>
+          </div>
+        </section>
         <div class="account-details-list">
           <div class="acc-detail-item">
             <span class="acc-detail-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 10V7a5 5 0 0 1 10 0v3m-9 0h8a2 2 0 0 1 2 2v7H6v-7a2 2 0 0 1 2-2Z"/></svg></span>
@@ -455,6 +482,12 @@
             <span class="acc-detail-copy"><small>Phiên bản</small><strong id="accAppVersion">v3.61</strong></span>
           </div>
         </div>
+
+        <section class="account-library" aria-label="Thư viện cá nhân">
+          <button type="button" onclick="AccountExperience.openLibrary('watchlist')"><span class="account-library-icon">♡</span><span><strong>Xem sau</strong><small id="accWatchlistCount">Chưa có phim</small></span><b>›</b></button>
+          <button type="button" onclick="AccountExperience.openLibrary('favorites')"><span class="account-library-icon">◇</span><span><strong>Yêu thích</strong><small id="accFavoritesCount">Chưa có phim</small></span><b>›</b></button>
+          <button type="button" onclick="AccountExperience.openDevices()"><span class="account-library-icon">▯</span><span><strong>Thiết bị</strong><small id="accDeviceSummary">Phiên hiện tại được bảo vệ</small></span><b>›</b></button>
+        </section>
 
         <div class="account-actions">
           <button id="accAdminBtn" class="btn-primary hidden" onclick="openAdminPanel()">
@@ -525,6 +558,8 @@
             <h4 id="detailOriginName" class="detail-origin">Origin Name</h4>
             <div class="detail-badges" id="detailBadges"></div>
             <div class="detail-actions-bar" style="margin: 12px 0;">
+              <button type="button" id="detailWatchlistBtn" class="btn-detail-save" onclick="AccountExperience.toggleCurrentMovie('watchlist')">♡ Xem sau</button>
+              <button type="button" id="detailFavoriteBtn" class="btn-detail-save" onclick="AccountExperience.toggleCurrentMovie('favorites')">◇ Yêu thích</button>
               <button type="button" class="btn-detail-report" onclick="reportCurrentMovieIssue()" title="Báo cáo phim bị lỗi, hỏng link hoặc thiếu tập cho Admin">
                 🚩 Báo lỗi phim
               </button>
@@ -576,7 +611,7 @@
           </div>
 
           <span class="player-ad-skip-status" title="Nút Bỏ qua quảng cáo sẽ hiện khi trình phát phát hiện đúng đoạn quảng cáo">⏩ Tua quảng cáo</span>
-          <span class="player-noads-pill">💎 MNHUT MASTER</span>
+          <span class="player-noads-pill">4K · KHÔNG QUẢNG CÁO</span>
           <button type="button" id="btnAspectCoverTop" class="btn-player-report btn-player-fill" onclick="toggleAspectRatio()" aria-pressed="false" title="Đổi giữa giữ trọn và lấp đầy màn hình">⛶ Lấp đầy</button>
           <button type="button" id="btnNextEpTop" class="btn-player-report" onclick="Player.playNextEpisode()" title="Xem tập tiếp theo">
             ⏭️ Tập Tiếp
@@ -1490,21 +1525,21 @@
   <!-- Scripts -->
   <script src="/js/mobile-config.js?v=3.61.0"></script>
   <script src="/js/session-vault.js?v=3.61.0"></script>
-  <script src="/js/runtime-config.js?v=3.61.0"></script>
+  <script src="/js/runtime-config.js?v=3.61.4"></script>
   <script src="/js/catalog-fallback.js?v=3.61.0"></script>
   <script src="/js/home-curation.js?v=3.61.0"></script>
-  <script src="/js/api.js?v=3.61.0"></script>
+  <script src="/js/api.js?v=3.61.4"></script>
   <script src="/js/platform.js?v=3.61.0"></script>
   <script src="/js/release-copy.js?v=3.61.0"></script>
   <script src="/js/native-downloads.js?v=3.61.0"></script>
-  <script src="/js/auth.js?v=3.61.0"></script>
+  <script src="/js/auth.js?v=3.61.4"></script>
   <script src="/js/admin.js?v=3.61.0"></script>
   <script src="/js/feedback.js?v=3.61.0"></script>
   <script src="/js/player-core.js?v=3.61.0"></script>
   <script src="/js/audio-enhancer.js?v=3.61.0"></script>
-  <script src="/js/player.js?v=3.61.0"></script>
-  <script src="/js/coverflow.js?v=3.61.0"></script>
-  <script src="/js/app.js?v=3.61.0"></script>
+  <script src="/js/player.js?v=3.61.4"></script>
+  <script src="/js/coverflow.js?v=3.61.4"></script>
+  <script src="/js/app.js?v=3.61.4"></script>
   <script src="/js/tv.js?v=3.61.0"></script>
   <script src="/js/diagnostics.js?v=3.61.0"></script>
 </body>

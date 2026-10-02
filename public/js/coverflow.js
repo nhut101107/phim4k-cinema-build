@@ -522,7 +522,175 @@ const ContinueWatching = {
 };
 
 // ==========================================
-// 3. BOTTOM TAB BAR CONTROLLER
+// 3. ACCOUNT EXPERIENCE (REAL VIEWING DATA)
+// ==========================================
+const AccountExperience = {
+  overview: null,
+  loading: null,
+  loadedAt: 0,
+
+  async load({ force = false } = {}) {
+    if (!window.API?.hasSession?.()) {
+      this.overview = { stats: { watchedSeconds: 0, movieCount: 0, streakDays: 0, byDay: [] }, recentMovies: [], library: [] };
+      this.render('Kích hoạt tài khoản để đồng bộ dữ liệu thật.');
+      return this.overview;
+    }
+    if (!force && this.overview && Date.now() - this.loadedAt < 60000) {
+      this.render('Dữ liệu thật · GMT+7');
+      return this.overview;
+    }
+    if (this.loading) return this.loading;
+    this.setState('Đang đồng bộ dữ liệu thật…');
+    this.loading = API.getAccountOverview()
+      .then((payload) => {
+        this.overview = payload || {};
+        this.loadedAt = Date.now();
+        this.render('Dữ liệu thật · GMT+7');
+        return this.overview;
+      })
+      .catch((error) => {
+        this.render('Chưa thể đồng bộ · thử lại sau');
+        console.warn('Unable to load account overview', error);
+        return this.overview;
+      })
+      .finally(() => { this.loading = null; });
+    return this.loading;
+  },
+
+  setState(message) {
+    const element = document.getElementById('accStatsState');
+    if (element) element.textContent = message;
+  },
+
+  setText(id, value) {
+    const element = document.getElementById(id);
+    if (element) element.textContent = value;
+  },
+
+  render(message) {
+    const stats = this.overview?.stats || {};
+    const seconds = Math.max(0, Number(stats.watchedSeconds) || 0);
+    const hours = seconds / 3600;
+    this.setText('accWatchHours', hours >= 10 ? Math.round(hours).toLocaleString('vi-VN') : hours.toLocaleString('vi-VN', { maximumFractionDigits: 1 }));
+    this.setText('accMoviesWatched', Math.max(0, Number(stats.movieCount) || 0).toLocaleString('vi-VN'));
+    this.setText('accStreak', Math.max(0, Number(stats.streakDays) || 0).toLocaleString('vi-VN'));
+    this.setState(message);
+    this.renderActivity(stats.byDay || []);
+    this.renderTaste(this.overview?.recentMovies || []);
+    const library = Array.isArray(this.overview?.library) ? this.overview.library : [];
+    this.setText('accWatchlistCount', this.libraryItems('watchlist').length ? `${this.libraryItems('watchlist').length} phim đã lưu` : 'Chưa có phim');
+    this.setText('accFavoritesCount', this.libraryItems('favorites').length ? `${this.libraryItems('favorites').length} phim yêu thích` : 'Chưa có phim');
+    this.updateDetailButtons(window.App?.activeMovieDetail?.movie?.slug);
+    window.App?.refreshExperienceEffects?.(document.getElementById('accountTabContent'));
+  },
+
+  vietnamDay(offset = 0) {
+    return new Date(Date.now() + (7 * 60 * 60 * 1000) + offset * 86400000).toISOString().slice(0, 10);
+  },
+
+  renderActivity(rows) {
+    const host = document.getElementById('accActivityBars');
+    if (!host) return;
+    const values = new Map((Array.isArray(rows) ? rows : []).map((row) => [String(row.day), Math.max(0, Number(row.watchedSeconds) || 0)]));
+    const series = Array.from({ length: 30 }, (_, index) => {
+      const day = this.vietnamDay(index - 29);
+      return { day, seconds: values.get(day) || 0 };
+    });
+    const max = Math.max(1, ...series.map((item) => item.seconds));
+    host.innerHTML = '';
+    series.forEach((item, index) => {
+      const bar = document.createElement('i');
+      const minutes = Math.round(item.seconds / 60);
+      bar.style.setProperty('--activity', `${Math.max(8, Math.round((item.seconds / max) * 100))}%`);
+      bar.classList.toggle('has-activity', item.seconds > 0);
+      bar.title = `${item.day}: ${minutes} phút`;
+      bar.setAttribute('aria-label', `${index + 1} trên 30, ${minutes} phút`);
+      host.appendChild(bar);
+    });
+  },
+
+  renderTaste(recentMovies) {
+    const host = document.getElementById('accFavoriteGenres');
+    if (!host) return;
+    const recent = new Set((Array.isArray(recentMovies) ? recentMovies : []).map((movie) => movie.slug));
+    const counts = new Map();
+    (window.App?.homeCatalog || []).filter((movie) => recent.has(movie.slug)).forEach((movie) => {
+      window.App.getMovieTags(movie, 'category').forEach((tag) => counts.set(tag, (counts.get(tag) || 0) + 1));
+    });
+    const tags = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'vi')).slice(0, 3);
+    host.innerHTML = tags.length
+      ? tags.map(([tag]) => `<small>${window.App.escapeHtml(tag)}</small>`).join('')
+      : '<small>Chưa đủ dữ liệu</small>';
+  },
+
+  libraryItems(list) {
+    return (Array.isArray(this.overview?.library) ? this.overview.library : []).filter((item) => item.list === list);
+  },
+
+  isSaved(slug, list) {
+    return this.libraryItems(list).some((item) => item.slug === slug);
+  },
+
+  updateDetailButtons(slug) {
+    const normalized = String(slug || '').trim().toLowerCase();
+    const configs = [
+      ['detailWatchlistBtn', 'watchlist', '♡ Xem sau', '✓ Đã lưu'],
+      ['detailFavoriteBtn', 'favorites', '◇ Yêu thích', '◆ Đã thích'],
+    ];
+    configs.forEach(([id, list, idle, active]) => {
+      const button = document.getElementById(id);
+      if (!button) return;
+      const saved = Boolean(normalized && this.isSaved(normalized, list));
+      button.classList.toggle('active', saved);
+      button.setAttribute('aria-pressed', String(saved));
+      button.textContent = saved ? active : idle;
+    });
+  },
+
+  async toggleCurrentMovie(list) {
+    const movie = window.App?.activeMovieDetail?.movie;
+    if (!movie?.slug || !['watchlist', 'favorites'].includes(list)) return;
+    if (!window.API?.hasSession?.()) {
+      this.setState('Kích hoạt tài khoản để lưu phim.');
+      return;
+    }
+    if (!this.overview) await this.load();
+    const wasSaved = this.isSaved(movie.slug, list);
+    const previous = [...(this.overview?.library || [])];
+    const item = { slug: movie.slug, name: movie.name || movie.slug, list, updatedAt: new Date().toISOString() };
+    this.overview.library = wasSaved
+      ? previous.filter((entry) => !(entry.slug === movie.slug && entry.list === list))
+      : [item, ...previous];
+    this.render('Đang lưu thay đổi…');
+    try {
+      if (wasSaved) await API.removeLibraryMovie(movie.slug, list);
+      else await API.saveLibraryMovie(movie, list);
+      this.loadedAt = Date.now();
+      this.render(wasSaved ? 'Đã bỏ khỏi thư viện.' : 'Đã lưu vào thư viện.');
+    } catch (error) {
+      this.overview.library = previous;
+      this.render('Không lưu được · vui lòng thử lại');
+      console.warn('Unable to update account library', error);
+    }
+  },
+
+  async openLibrary(list) {
+    await this.load();
+    window.App?.showPersonalLibrary?.(this.libraryItems(list), list);
+  },
+
+  openDevices() {
+    const session = window.Auth?.activeKeyData || {};
+    const count = Math.max(0, Number(session.deviceCount) || 0);
+    const max = Math.max(0, Number(session.maxDevices) || 0);
+    const summary = max ? `${count}/${max} thiết bị đang liên kết` : 'Phiên hiện tại được bảo vệ';
+    this.setText('accDeviceSummary', summary);
+    window.alert(max ? `${summary}. Bạn có thể đổi thiết bị bằng cách đăng xuất phiên hiện tại trước.` : 'Phiên đăng nhập hiện tại đang được mã hóa và bảo vệ theo thiết bị.');
+  },
+};
+
+// ==========================================
+// 4. BOTTOM TAB BAR CONTROLLER
 // ==========================================
 function switchTab(tabId) {
   document.querySelectorAll('.tab-item').forEach(btn => btn.classList.remove('active'));
@@ -583,6 +751,10 @@ function renderAccountTab() {
     adminBtn.classList.toggle('hidden', !isSuperAdmin);
   }
   document.getElementById('accLogsBtn')?.classList.toggle('hidden', !isSuperAdmin);
+  const deviceCount = Math.max(0, Number(session?.deviceCount) || 0);
+  const maxDevices = Math.max(0, Number(session?.maxDevices) || 0);
+  AccountExperience.setText('accDeviceSummary', maxDevices ? `${deviceCount}/${maxDevices} thiết bị đang liên kết` : 'Phiên hiện tại được bảo vệ');
+  void AccountExperience.load();
 }
 
 function filterByGenre(genre) {
@@ -596,6 +768,7 @@ function clearContinueWatching() {
 
 window.Coverflow = Coverflow;
 window.ContinueWatching = ContinueWatching;
+window.AccountExperience = AccountExperience;
 window.switchTab = switchTab;
 window.filterByGenre = filterByGenre;
 window.clearContinueWatching = clearContinueWatching;

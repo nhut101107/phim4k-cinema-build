@@ -381,7 +381,7 @@ body.platform-tv button:focus {
   }
 
   body.web-preview .coverflow-details::before {
-    content: "MNHUT ORIGINAL SELECTION  ·  " attr(data-feature-meta);
+    content: "CURATED SELECTION  ·  " attr(data-feature-meta);
     display: inline-flex;
     margin: 0 0 24px;
     padding: 9px 12px;
@@ -514,7 +514,7 @@ body.platform-tv button:focus {
     text-align: left !important;
   }
   .coverflow-details::before {
-    content: "MNHUT FEATURE  ·  " attr(data-feature-meta);
+    content: "CURATED FEATURE  ·  " attr(data-feature-meta);
     display: block;
     margin-bottom: 10px;
     color: var(--projection-accent);
@@ -542,4 +542,255 @@ body.platform-tv button:focus {
     padding: 12px 10px;
     background: linear-gradient(135deg, rgba(255,255,255,.055), transparent);
   }
+}
+
+/* Quiet discovery and account surfaces. Branding stays in the small MN mark. */
+.mood-discovery {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(220px, .72fr) minmax(0, 1.28fr);
+  gap: clamp(20px, 4vw, 54px);
+  align-items: center;
+  max-width: 1440px;
+  margin: 22px auto 30px;
+  padding: clamp(22px, 3vw, 38px);
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 82% 8%, hsl(var(--projection-hue) 95% 58% / .13), transparent 32%),
+    linear-gradient(135deg, rgba(255,255,255,.055), rgba(255,255,255,.018));
+  box-shadow: 0 20px 55px rgba(0,0,0,.22);
+}
+
+.mood-discovery::after {
+  content: "";
+  position: absolute;
+  inset: auto -8% -70% 38%;
+  height: 180px;
+  pointer-events: none;
+  background: radial-gradient(ellipse, hsl(var(--projection-hue) 95% 60% / .12), transparent 68%);
+}
+
+.mood-kicker,
+.mood-result-head span {
+  color: var(--projection-accent);
+  font: 850 10px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: .14em;
+}
+
+.mood-discovery-copy h2 {
+  margin: 8px 0 10px;
+  color: #fff;
+  font-size: clamp(28px, 4vw, 52px);
+  line-height: .98;
+  letter-spacing: -.055em;
+}
+
+.mood-discovery-copy p {
+  max-width: 440px;
+  margin: 0;
+  color: rgba(235,238,247,.62);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.mood-actions {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.mood-chip,
+.mood-surprise {
+  min-height: 116px;
+  padding: 17px 14px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 20px;
+  background: rgba(7,10,17,.68);
+  color: #fff;
+  text-align: left;
+  transition: transform .25s ease, border-color .25s ease, background-color .25s ease;
+}
+
+.mood-chip > span,
+.mood-surprise > span {
+  display: block;
+  margin-bottom: 18px;
+  color: var(--projection-accent);
+  font-size: 23px;
+}
+
+.mood-chip b,
+.mood-chip small,
+.mood-surprise b { display: block; }
+.mood-chip b,
+.mood-surprise b { font-size: 13px; }
+.mood-chip small { margin-top: 4px; color: rgba(255,255,255,.46); font-size: 10px; }
+.mood-chip.active {
+  border-color: hsl(var(--projection-hue) 96% 62% / .7);
+  background: hsl(var(--projection-hue) 80% 48% / .13);
+}
+.mood-surprise { background: #f1eee6; color: #090b10; }
+.mood-surprise > span { color: #090b10; }
+
+.mood-result-section {
+  max-width: 1440px;
+  margin: 0 auto 30px;
+  padding: 0 clamp(16px, 3vw, 34px);
+}
+.mood-result-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: end;
+  margin-bottom: 15px;
+}
+.mood-result-head h2 { margin: 5px 0 0; color: #fff; font-size: clamp(22px, 3vw, 34px); letter-spacing: -.04em; }
+.mood-result-head button { border: 0; background: transparent; color: rgba(255,255,255,.6); font-size: 12px; }
+
+.account-cinema-card {
+  max-width: 760px;
+  background:
+    radial-gradient(circle at 88% -3%, hsl(var(--projection-hue) 90% 58% / .13), transparent 34%),
+    linear-gradient(155deg, rgba(21,24,32,.99), rgba(8,11,17,.99));
+}
+
+.account-insight {
+  margin: 0 0 20px;
+  padding: 18px;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 20px;
+  background: rgba(255,255,255,.025);
+}
+
+.account-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.account-stat-grid > div { min-width: 0; padding: 8px; }
+.account-stat-icon { display: block; margin-bottom: 9px; color: var(--projection-accent); font-size: 16px; }
+.account-stat-grid strong { display: block; color: #fff; font-size: clamp(22px, 5vw, 34px); line-height: 1; letter-spacing: -.06em; }
+.account-stat-grid small { display: block; margin-top: 6px; color: #808899; font-size: 10px; }
+
+.account-activity-head,
+.account-taste-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.account-activity-head { margin: 22px 7px 10px; }
+.account-activity-head strong { color: #dfe2eb; font-size: 11px; }
+.account-activity-head small { color: #71798c; font-size: 9px; }
+.account-activity-bars {
+  display: grid;
+  grid-template-columns: repeat(30, minmax(2px, 1fr));
+  align-items: end;
+  gap: 3px;
+  height: 64px;
+  padding: 6px 7px;
+  border-bottom: 1px solid rgba(255,255,255,.07);
+}
+.account-activity-bars i {
+  height: var(--activity, 8%);
+  min-height: 3px;
+  border-radius: 4px 4px 1px 1px;
+  background: rgba(255,255,255,.1);
+}
+.account-activity-bars i.has-activity { background: linear-gradient(to top, var(--projection-accent), #ffd08a); }
+.account-taste-row { margin: 14px 7px 0; }
+.account-taste-row > span { color: #858da0; font-size: 10px; }
+.account-taste-chips { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
+.account-taste-chips small { padding: 5px 8px; border: 1px solid rgba(255,255,255,.07); border-radius: 999px; color: #cdd1dc; background: rgba(255,255,255,.035); font-size: 9px; }
+
+.account-library {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 20px;
+}
+.account-library > button {
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 62px;
+  padding: 10px 13px;
+  border: 1px solid rgba(255,255,255,.065);
+  border-radius: 16px;
+  background: rgba(255,255,255,.025);
+  color: #fff;
+  text-align: left;
+}
+.account-library-icon { display: grid; width: 40px; height: 40px; place-items: center; border-radius: 13px; background: hsl(var(--projection-hue) 80% 56% / .1); color: var(--projection-accent); font-size: 20px; }
+.account-library strong,
+.account-library small { display: block; }
+.account-library strong { font-size: 13px; }
+.account-library small { margin-top: 4px; color: #7f879a; font-size: 10px; }
+.account-library b { color: #667085; font-size: 23px; font-weight: 400; }
+
+.btn-detail-save {
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 11px;
+  background: rgba(255,255,255,.06);
+  color: #e9ebf1;
+  font-size: 11px;
+  font-weight: 750;
+}
+.btn-detail-save.active { border-color: hsl(var(--projection-hue) 90% 62% / .55); background: hsl(var(--projection-hue) 80% 50% / .16); color: #fff; }
+
+body[data-motion-tier="mid"] .movie-section,
+body[data-motion-tier="mid"] .mood-discovery,
+body[data-motion-tier="mid"] .account-card,
+body[data-motion-tier="high"] .movie-section,
+body[data-motion-tier="high"] .mood-discovery,
+body[data-motion-tier="high"] .account-card {
+  opacity: 0;
+  transform: translate3d(0, 18px, 0);
+  transition: opacity .55s ease, transform .55s cubic-bezier(.2,.7,.2,1);
+}
+body[data-motion-tier] .experience-visible { opacity: 1; transform: none; }
+body[data-motion-tier="high"] .mood-chip:hover,
+body[data-motion-tier="high"] .mood-surprise:hover,
+body[data-motion-tier="high"] .account-library > button:hover { transform: translate3d(0, -4px, 0); }
+body[data-motion-tier="high"] .coverflow-section::after {
+  background-position: var(--pointer-x, 50%) var(--pointer-y, 50%);
+  transition: background-position .18s linear;
+}
+
+.movie-section,
+.mood-result-section { content-visibility: auto; contain-intrinsic-size: 1px 440px; }
+
+@media (max-width: 760px) {
+  .mood-discovery { grid-template-columns: 1fr; margin: 14px 12px 24px; border-radius: 22px; }
+  .mood-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mood-chip, .mood-surprise { min-height: 102px; }
+  .account-insight { padding: 13px 10px; }
+  .account-activity-bars { gap: 2px; }
+}
+
+@media (max-width: 380px) {
+  .mood-actions { grid-template-columns: 1fr 1fr; gap: 7px; }
+  .account-stat-grid small { font-size: 9px; }
+  .account-activity-head { align-items: flex-start; flex-direction: column; gap: 4px; }
+}
+
+body[data-motion-tier="low"] *,
+body[data-motion-tier="low"] *::before,
+body[data-motion-tier="low"] *::after {
+  animation-duration: .001ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mood-chip,
+  .mood-surprise,
+  .account-library > button { transition: none !important; }
 }
