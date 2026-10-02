@@ -80,7 +80,7 @@ const INSTALLER_RELEASES = Object.freeze({
   },
 });
 
-const PUBLIC_RELEASES = Object.freeze({
+export const PUBLIC_RELEASES = Object.freeze({
   android: Object.freeze({
     url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android",
     version: "3.61",

@@ -1,4 +1,4 @@
-import coreWorker from './worker.mjs';
+import coreWorker, { PUBLIC_RELEASES } from './worker.mjs';
 
 const RELAY_HEALTH_TTL_MS = 30_000;
 const RELAY_HEALTH_TIMEOUT_MS = 2_500;
@@ -10,39 +10,6 @@ const RETRYABLE_RELAY_STATUSES = new Set([502, 503, 504]);
 
 let relayHealth = { origin: '', checkedAt: 0, healthy: true };
 let relayHealthCheck = null;
-
-// Public release manifest. Users receive stable first-party download routes;
-// the core Worker verifies and streams the immutable release assets.
-const PUBLIC_RELEASES = Object.freeze({
-  android: Object.freeze({
-    url: 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android',
-    version: '3.61',
-    sha256: '5834e51b78de22a65cbb06b95790596b2253851fe22548d55bf900dc8a9c33f8',
-    sizeBytes: 4058313,
-    signer: 'github-actions[bot]',
-  }),
-  android_tv: Object.freeze({
-    url: 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android-tv',
-    version: '3.61',
-    sha256: '42ee66b7506767c802fabd7b8f6c7980f4ed9fe0905403f88daa1ffe8c4fcbf7',
-    sizeBytes: 4058313,
-    signer: 'github-actions[bot]',
-  }),
-  ios: Object.freeze({
-    url: 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/ios',
-    version: '3.61',
-    sha256: '32fdc8cd05a7b740c0f5cd6541205123a5d84afc2c1d7217b8d4b43b2c15cba1',
-    sizeBytes: 4516669,
-    signer: 'github-actions[bot]',
-  }),
-  windows: Object.freeze({
-    url: 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/windows',
-    version: '3.61',
-    sha256: 'aad38333981f3dc8b69b2b33dc06985324509b78270d110e8453525b36541aeb',
-    sizeBytes: 121048437,
-    signer: 'github-actions[bot]',
-  }),
-});
 
 function responseHeaders(cacheControl = 'no-store') {
   return {
