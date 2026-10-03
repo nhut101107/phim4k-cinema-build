@@ -54,8 +54,8 @@ test('downloads admin route is authorized, atomic and compatible with clients', 
   const data = await response.json();
   assert.equal(data.windows.url, data.windowsUrl);
     assert.equal(data.android_tv.version, '3.61');
-  assert.equal(data.android_tv.url, 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android-tv?build=39');
-    assert.equal(data.android_tv.sha256, '078da9867ed09a488037492b7f0c304ffc3946e28d2ff5df8360b0e0d0efafc1');
+  assert.equal(data.android_tv.url, 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android-tv?build=40');
+    assert.equal(data.android_tv.sha256, '41f1f9756d7d234bd9139e299d1edf060435a3918b19b83a3b54917b6296ce91');
 });
 test('streamed JSON body is bounded even without Content-Length', async () => {
   const f = fixture();

@@ -218,8 +218,8 @@ test('verified admin on an outdated iPhone is directed to the current iOS releas
     assert.equal(iosAdmin.forceUpdate,true);
     assert.equal(iosAdmin.latestVersion,'3.61');
     assert.equal(iosAdmin.minVersion,'3.61');
-    assert.equal(iosAdmin.downloadUrl,'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/ios?build=39');
-    assert.equal(iosAdmin.downloadSha256,'492315aa517242ff2b6b0c45cb1640df5e3e8cc469b7beeeaf9f65892649073f');
+    assert.equal(iosAdmin.downloadUrl,'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/ios?build=40');
+    assert.equal(iosAdmin.downloadSha256,'f28978f826606318c16891f6f64ea463976dd9e12f0d833b0a47a73f0737dd8b');
 
     const windowsAdmin=await (await f.request('/api/auth/status',undefined,{
       ...f.admin,
@@ -230,7 +230,7 @@ test('verified admin on an outdated iPhone is directed to the current iOS releas
     assert.equal(windowsAdmin.active,false);
     assert.equal(windowsAdmin.forceUpdate,true);
     assert.equal(windowsAdmin.latestVersion,'3.61');
-    assert.equal(windowsAdmin.downloadUrl,'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/windows?build=39');
+    assert.equal(windowsAdmin.downloadUrl,'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/windows?build=40');
 
     f.seed('P4K-REGULAR-KEY');
     await f.request('/api/auth/activate',{key:'P4K-REGULAR-KEY',deviceId:'viewer-iphone'},{
