@@ -4,8 +4,15 @@ const Coverflow = {
   movies: [],
   currentIndex: 0,
   autoTimer: null,
-  touchStartX: 0,
-  touchEndX: 0,
+  gestureAbort: null,
+  dragPointerId: null,
+  dragStartX: 0,
+  dragCurrentX: 0,
+  dragStartedAt: 0,
+  dragFrame: null,
+  isDragging: false,
+  isSettling: false,
+  suppressClickUntil: 0,
 
   init(movies = []) {
     if (!movies || movies.length === 0) return;
@@ -18,6 +25,7 @@ const Coverflow = {
       ? preservedIndex
       : Math.min(this.currentIndex, Math.max(this.movies.length - 1, 0));
     this.renderCards();
+    this.renderFeaturedRail();
     this.updateDetails();
     this.setupGestures();
     this.startAutoRotate();
@@ -59,6 +67,7 @@ const Coverflow = {
 
       // Click handling
       card.onclick = () => {
+        if (Date.now() < this.suppressClickUntil) return;
         if (item.role === 'center') {
           this.playCurrent();
         } else if (item.role === 'left') {
@@ -72,6 +81,56 @@ const Coverflow = {
     });
 
     this.updateDots();
+  },
+
+  renderFeaturedRail() {
+    const rail = document.getElementById('featuredSnapRail');
+    const section = document.getElementById('featuredSnapSection');
+    if (!rail || !section) return;
+    rail.innerHTML = '';
+    section.classList.toggle('hidden', this.movies.length === 0);
+
+    this.movies.slice(0, 12).forEach((movie, index) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'featured-snap-card';
+      button.dataset.index = String(index);
+      button.setAttribute('aria-label', `Chọn phim ${movie.name || index + 1}`);
+
+      const image = document.createElement('img');
+      image.alt = '';
+      image.loading = index < 3 ? 'eager' : 'lazy';
+      image.decoding = 'async';
+      image.src = App.resolveImageUrl(movie.thumb_url || movie.poster_url || '');
+      App.attachPosterFallback(image, [App.resolveImageUrl(movie.poster_url || movie.thumb_url || '')]);
+
+      const copy = document.createElement('span');
+      copy.className = 'featured-snap-copy';
+      const meta = [movie.year, movie.quality].filter(Boolean).join(' · ');
+      copy.innerHTML = `<b></b><small></small>`;
+      copy.querySelector('b').textContent = movie.name || 'Phim nổi bật';
+      copy.querySelector('small').textContent = meta || 'Đang chiếu';
+
+      button.append(image, copy);
+      button.addEventListener('click', () => this.goTo(index));
+      rail.appendChild(button);
+    });
+    this.syncFeaturedRail(false);
+  },
+
+  syncFeaturedRail(smooth = true) {
+    const rail = document.getElementById('featuredSnapRail');
+    if (!rail) return;
+    const cards = [...rail.querySelectorAll('.featured-snap-card')];
+    cards.forEach((card, index) => {
+      const active = index === this.currentIndex;
+      card.classList.toggle('active', active);
+      card.setAttribute('aria-current', active ? 'true' : 'false');
+    });
+    const activeCard = cards[this.currentIndex];
+    if (smooth && activeCard && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      activeCard.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }
   },
 
   updateDetails() {
@@ -108,6 +167,9 @@ const Coverflow = {
       }
     }
 
+    this.updateSwipeScenes();
+    this.syncFeaturedRail();
+
     if (titleEl) titleEl.textContent = cur.name || 'Đang cập nhật tên phim';
     if (subEl) subEl.textContent = cur.origin_name || '';
     if (qualityEl) qualityEl.textContent = cur.quality || 'Theo nguồn';
@@ -143,29 +205,105 @@ const Coverflow = {
         dot.className = 'cf-dot';
       }
       dot.onclick = () => {
-        this.currentIndex = i;
-        this.renderCards();
-        this.updateDetails();
-        this.resetAutoRotate();
+        this.goTo(i);
       };
       dotsContainer.appendChild(dot);
     }
   },
 
   prev() {
-    if (this.movies.length === 0) return;
-    this.currentIndex = (this.currentIndex - 1 + this.movies.length) % this.movies.length;
+    this.navigate(-1);
+  },
+
+  next() {
+    this.navigate(1);
+  },
+
+  goTo(index) {
+    const nextIndex = Number(index);
+    if (!Number.isInteger(nextIndex) || nextIndex < 0 || nextIndex >= this.movies.length) return;
+    if (nextIndex === this.currentIndex) {
+      this.syncFeaturedRail();
+      return;
+    }
+    this.currentIndex = nextIndex;
     this.renderCards();
     this.updateDetails();
     this.resetAutoRotate();
   },
 
-  next() {
-    if (this.movies.length === 0) return;
-    this.currentIndex = (this.currentIndex + 1) % this.movies.length;
-    this.renderCards();
-    this.updateDetails();
-    this.resetAutoRotate();
+  updateSwipeScenes() {
+    const stage = document.getElementById('coverflowSwipeStage');
+    if (!stage || !this.movies.length) return;
+    const total = this.movies.length;
+    const indexes = [
+      (this.currentIndex - 1 + total) % total,
+      this.currentIndex,
+      (this.currentIndex + 1) % total,
+    ];
+    [...stage.querySelectorAll('.coverflow-swipe-scene')].forEach((scene, position) => {
+      const movie = this.movies[indexes[position]];
+      const art = App.resolveImageUrl(movie?.thumb_url || movie?.poster_url || '');
+      scene.style.setProperty('--scene-art', art ? `url("${String(art).replace(/["\\\n\r]/g, '')}")` : 'none');
+    });
+  },
+
+  applyDragOffset(offset) {
+    const section = document.getElementById('coverflowSection');
+    const stage = document.getElementById('coverflowSwipeStage');
+    const track = document.getElementById('coverflowTrack');
+    const details = document.getElementById('coverflowDetails');
+    if (!section || !stage) return;
+    const width = Math.max(section.clientWidth, 1);
+    const clamped = Math.max(-width, Math.min(width, Number(offset) || 0));
+    stage.style.transform = `translate3d(${clamped}px, 0, 0)`;
+    if (track) track.style.transform = `translate3d(${clamped * 0.16}px, 0, 0)`;
+    if (details) {
+      details.style.transform = `translate3d(${clamped * 0.08}px, 0, 0)`;
+      details.style.opacity = String(Math.max(0.58, 1 - Math.abs(clamped) / width * 0.42));
+    }
+  },
+
+  clearDragStyles() {
+    const section = document.getElementById('coverflowSection');
+    const stage = document.getElementById('coverflowSwipeStage');
+    const track = document.getElementById('coverflowTrack');
+    const details = document.getElementById('coverflowDetails');
+    section?.classList.remove('is-dragging', 'is-settling');
+    if (stage) stage.style.transform = '';
+    if (track) track.style.transform = '';
+    if (details) {
+      details.style.transform = '';
+      details.style.opacity = '';
+    }
+  },
+
+  navigate(direction, { animated = true } = {}) {
+    if (this.movies.length < 2 || this.isSettling) return;
+    const step = direction < 0 ? -1 : 1;
+    const section = document.getElementById('coverflowSection');
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (!animated || reducedMotion || !section) {
+      this.currentIndex = (this.currentIndex + step + this.movies.length) % this.movies.length;
+      this.clearDragStyles();
+      this.renderCards();
+      this.updateDetails();
+      this.resetAutoRotate();
+      return;
+    }
+
+    this.isSettling = true;
+    section.classList.remove('is-dragging');
+    section.classList.add('is-settling');
+    this.applyDragOffset(step > 0 ? -section.clientWidth : section.clientWidth);
+    window.setTimeout(() => {
+      this.currentIndex = (this.currentIndex + step + this.movies.length) % this.movies.length;
+      this.isSettling = false;
+      this.clearDragStyles();
+      this.renderCards();
+      this.updateDetails();
+      this.resetAutoRotate();
+    }, 430);
   },
 
   playCurrent() {
@@ -223,24 +361,63 @@ const Coverflow = {
   },
 
   setupGestures() {
-    const container = document.getElementById('coverflowContainer');
-    if (!container) return;
+    const section = document.getElementById('coverflowSection');
+    if (!section) return;
+    this.gestureAbort?.abort();
+    this.gestureAbort = new AbortController();
+    const options = { signal: this.gestureAbort.signal };
 
-    container.addEventListener('touchstart', (e) => {
-      this.touchStartX = e.changedTouches[0].screenX;
-    }, { passive: true });
+    section.addEventListener('pointerdown', (event) => {
+      if (this.isSettling || this.movies.length < 2 || event.button > 0) return;
+      if (event.target.closest('button, a, input, select, textarea')) return;
+      this.dragPointerId = event.pointerId;
+      this.dragStartX = event.clientX;
+      this.dragCurrentX = event.clientX;
+      this.dragStartedAt = performance.now();
+      this.isDragging = true;
+      section.classList.add('is-dragging');
+      section.setPointerCapture?.(event.pointerId);
+      clearInterval(this.autoTimer);
+    }, options);
 
-    container.addEventListener('touchend', (e) => {
-      this.touchEndX = e.changedTouches[0].screenX;
-      const diff = this.touchEndX - this.touchStartX;
-      if (Math.abs(diff) > 40) {
-        if (diff < 0) {
-          this.next();
-        } else {
-          this.prev();
-        }
+    section.addEventListener('pointermove', (event) => {
+      if (!this.isDragging || event.pointerId !== this.dragPointerId) return;
+      this.dragCurrentX = event.clientX;
+      const offset = this.dragCurrentX - this.dragStartX;
+      if (Math.abs(offset) > 7) this.suppressClickUntil = Date.now() + 500;
+      if (this.dragFrame) return;
+      this.dragFrame = requestAnimationFrame(() => {
+        this.dragFrame = null;
+        this.applyDragOffset(offset);
+      });
+    }, options);
+
+    const finishGesture = (event, cancelled = false) => {
+      if (!this.isDragging || event.pointerId !== this.dragPointerId) return;
+      this.isDragging = false;
+      this.dragPointerId = null;
+      if (this.dragFrame) cancelAnimationFrame(this.dragFrame);
+      this.dragFrame = null;
+      const offset = this.dragCurrentX - this.dragStartX;
+      const elapsed = Math.max(performance.now() - this.dragStartedAt, 1);
+      const velocity = offset / elapsed;
+      const threshold = Math.min(110, Math.max(48, section.clientWidth * 0.12));
+      const shouldMove = !cancelled && (Math.abs(offset) >= threshold || Math.abs(velocity) > 0.45);
+      if (shouldMove) {
+        this.navigate(offset < 0 ? 1 : -1);
+      } else {
+        section.classList.remove('is-dragging');
+        section.classList.add('is-settling');
+        this.applyDragOffset(0);
+        window.setTimeout(() => {
+          this.clearDragStyles();
+          this.resetAutoRotate();
+        }, 430);
       }
-    }, { passive: true });
+    };
+
+    section.addEventListener('pointerup', (event) => finishGesture(event), options);
+    section.addEventListener('pointercancel', (event) => finishGesture(event, true), options);
   }
 };
 

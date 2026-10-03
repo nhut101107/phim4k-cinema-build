@@ -1322,3 +1322,224 @@ body[data-motion-tier="low"] *::after {
   .account-activity-bars { gap: 2px; }
   .account-taste-card { min-height: 82px; padding: 9px; font-size: 10px; }
 }
+
+/* =========================================================
+   CONTINUOUS FEATURE REEL — three preloaded scenes follow the
+   pointer, then settle into the next frame without a blank cut.
+   ========================================================= */
+.coverflow-section {
+  touch-action: pan-y pinch-zoom;
+  cursor: grab;
+}
+
+.coverflow-section.is-dragging { cursor: grabbing; }
+
+.coverflow-swipe-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: visible;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.coverflow-swipe-scene {
+  --scene-art: none;
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(2,5,8,.94) 0%, rgba(2,5,8,.62) 40%, rgba(2,5,8,.12) 72%),
+    linear-gradient(0deg, #06090d 0%, transparent 46%),
+    var(--scene-art) center 26% / cover no-repeat,
+    #070a0f;
+  transform: translate3d(0, 0, 0);
+  contain: paint;
+}
+
+.coverflow-swipe-scene.previous { transform: translate3d(-100%, 0, 0); }
+.coverflow-swipe-scene.next { transform: translate3d(100%, 0, 0); }
+
+.coverflow-container,
+.coverflow-details {
+  position: relative;
+  z-index: 2;
+  will-change: transform, opacity;
+}
+
+.coverflow-section.is-settling .coverflow-swipe-stage,
+.coverflow-section.is-settling .coverflow-track,
+.coverflow-section.is-settling .coverflow-details {
+  transition: transform .42s cubic-bezier(.22,.82,.24,1), opacity .3s ease;
+}
+
+.featured-snap-section {
+  position: relative;
+  max-width: 1480px;
+  margin: 0 auto;
+  padding: 34px clamp(18px, 4vw, 58px) 20px;
+  overflow: hidden;
+}
+
+.featured-snap-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 17px;
+}
+
+.featured-snap-heading span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--projection-accent);
+  font: 850 10px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+
+.featured-snap-heading h2 {
+  margin: 0;
+  color: #fff;
+  font-size: clamp(24px, 3vw, 40px);
+  line-height: 1;
+  letter-spacing: -.045em;
+}
+
+.featured-snap-heading small {
+  color: rgba(255,255,255,.46);
+  font-size: 12px;
+}
+
+.featured-snap-rail {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: clamp(260px, 31vw, 430px);
+  gap: 14px;
+  margin-inline: calc(clamp(18px, 4vw, 58px) * -1);
+  padding: 2px clamp(18px, 4vw, 58px) 16px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scroll-behavior: smooth;
+  scroll-snap-type: inline mandatory;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.featured-snap-rail::-webkit-scrollbar { display: none; }
+
+.featured-snap-card {
+  position: relative;
+  min-width: 0;
+  aspect-ratio: 16 / 9;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.11);
+  border-radius: 18px;
+  scroll-snap-align: center;
+  background: #111720;
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+  transform: translateZ(0) scale(.97);
+  transition: transform .28s cubic-bezier(.2,.8,.2,1), border-color .28s ease, opacity .28s ease;
+}
+
+.featured-snap-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 30%, rgba(2,5,8,.92) 100%);
+  pointer-events: none;
+}
+
+.featured-snap-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transform: scale(1.025);
+  transition: transform .5s cubic-bezier(.2,.8,.2,1);
+}
+
+.featured-snap-card.active {
+  border-color: var(--projection-accent);
+  box-shadow: 0 0 0 1px hsl(var(--projection-hue) 96% 61% / .22), 0 18px 46px rgba(0,0,0,.34);
+  transform: translateZ(0) scale(1);
+}
+
+.featured-snap-card.active img,
+.featured-snap-card:hover img { transform: scale(1.075); }
+
+.featured-snap-copy {
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+  left: 16px;
+  z-index: 2;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.featured-snap-copy b {
+  overflow: hidden;
+  font-size: 16px;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.featured-snap-copy small {
+  flex: 0 0 auto;
+  color: rgba(255,255,255,.68);
+  font-size: 11px;
+}
+
+@media (max-width: 1023px) {
+  body.web-preview .coverflow-section {
+    background: #05080c !important;
+    cursor: grab;
+  }
+
+  body.web-preview .coverflow-swipe-scene {
+    background:
+      linear-gradient(180deg, rgba(2,5,8,.08) 0%, transparent 24%, rgba(3,6,9,.18) 50%, #05080c 91%),
+      linear-gradient(90deg, rgba(3,6,9,.4), transparent 72%),
+      var(--scene-art) center top / cover no-repeat,
+      #070a0f;
+  }
+
+  body.web-preview .coverflow-details { z-index: 3; }
+
+  .featured-snap-section { padding-top: 25px; }
+  .featured-snap-heading { margin-bottom: 14px; }
+  .featured-snap-heading small { display: none; }
+  .featured-snap-rail {
+    grid-auto-columns: min(78vw, 330px);
+    gap: 11px;
+    scroll-padding-inline: 18px;
+  }
+  .featured-snap-card { border-radius: 14px; }
+}
+
+@media (max-width: 540px) {
+  .featured-snap-section { padding-inline: 16px; }
+  .featured-snap-rail {
+    margin-inline: -16px;
+    padding-inline: 16px;
+  }
+  .featured-snap-copy { right: 12px; bottom: 11px; left: 12px; }
+  .featured-snap-copy b { font-size: 14px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coverflow-swipe-stage,
+  .coverflow-track,
+  .coverflow-details,
+  .featured-snap-card,
+  .featured-snap-card img {
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

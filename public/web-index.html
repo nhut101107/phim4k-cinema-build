@@ -18,7 +18,7 @@
   <link rel="stylesheet" href="/css/player.css?v=3.61.1">
   <link rel="stylesheet" href="/css/tv.css?v=3.61.0">
   <link rel="stylesheet" href="/css/web-premium.css?v=3.61.0">
-  <link rel="stylesheet" href="/css/mnhut-projection.css?v=3.61.5">
+  <link rel="stylesheet" href="/css/mnhut-projection.css?v=3.61.8">
 </head>
 <body class="activation-locked">
   <script>document.body.classList.add('web-preview');</script>
@@ -274,6 +274,11 @@
     <div id="homeTabContent" class="tab-content">
       <!-- 1. Top 3D Coverflow Carousel (Exact UI as in photo) -->
       <section id="coverflowSection" class="coverflow-section">
+        <div class="coverflow-swipe-stage" id="coverflowSwipeStage" aria-hidden="true">
+          <div class="coverflow-swipe-scene previous"></div>
+          <div class="coverflow-swipe-scene current"></div>
+          <div class="coverflow-swipe-scene next"></div>
+        </div>
         <div class="coverflow-container" id="coverflowContainer">
           <button class="coverflow-nav-btn prev" onclick="Coverflow.prev()" aria-label="Previous">‹</button>
           <div class="coverflow-track" id="coverflowTrack">
@@ -325,6 +330,17 @@
             <span class="cf-dot"></span>
           </div>
         </div>
+      </section>
+
+      <section class="featured-snap-section" id="featuredSnapSection" aria-labelledby="featuredSnapTitle">
+        <div class="featured-snap-heading">
+          <div>
+            <span>Đang được chú ý</span>
+            <h2 id="featuredSnapTitle">Phim nổi bật</h2>
+          </div>
+          <small>Vuốt để xem từng phim</small>
+        </div>
+        <div class="featured-snap-rail" id="featuredSnapRail"></div>
       </section>
 
       <!-- 2. Section: Xem tiếp của bạn (Continue Watching with Yellow Progress Bar) -->
@@ -1553,7 +1569,7 @@
   <script src="/js/player-core.js?v=3.61.0"></script>
   <script src="/js/audio-enhancer.js?v=3.61.0"></script>
   <script src="/js/player.js?v=3.61.4"></script>
-  <script src="/js/coverflow.js?v=3.61.5"></script>
+  <script src="/js/coverflow.js?v=3.61.8"></script>
   <script src="/js/app.js?v=3.61.7"></script>
   <script src="/js/tv.js?v=3.61.0"></script>
   <script src="/js/diagnostics.js?v=3.61.0"></script>
