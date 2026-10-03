@@ -12,10 +12,10 @@ enum RuntimeIntegrityManifest {
         "public/css/style.css": "fdeeec463d8381ed29d60a26e4592e764875fbab9428d158814a2fef9cd09add",
         "public/css/tv.css": "51d91b56a6192b326f07b7f8cb0c111a2df020e5ad5d6d1d90bb82b6ae63f3e6",
         "public/css/web-premium.css": "967e2e452f376c7a9f182b8cb53d6415959176102deb8fd79d274a6eb17c850b",
-        "public/index.html": "ca9e2bc63a80991726c901d49b71f02a4d7afbe280b1b7e45761f1db1c7df002",
+        "public/index.html": "64332aa56f2698a1cedc7069f09e3273749f6369a8acd7e775113c291c95386c",
         "public/js/admin.js": "74ab8a0a714fef606082f0074fb5e81f221dd33dc7143da2b50eb2509efa45f6",
         "public/js/api.js": "555b73583268b0771649d7fd405273db80a34701f2692bd0e875cea76d45ba69",
-        "public/js/app.js": "77b9f419c381409861fbc7ebc47609a37ab99214664b52f28e3378a40fa2539b",
+        "public/js/app.js": "6be263e19ffc387be03c8c361ee6204022762795f93df1697f8cac38e487e002",
         "public/js/audio-enhancer.js": "5e4a54d0cfb9abe0c11b41f63cc96baecbd33b6c34c3228f5e15f9fe1f383915",
         "public/js/auth.js": "59a408260d36040150c750801972c75fce6542542c93dbde6d78a999e7c2825e",
         "public/js/catalog-fallback.js": "8ab81d28b4295c052218cc508239a5f1a6736a425d6ec7d4ffb22582b08523a3",
@@ -41,7 +41,7 @@ enum RuntimeIntegrityManifest {
         "public/media/superman_4k.jpg": "9339c63a766caa26647be0b64cacf0c95e3db29859ce4445b5e9db15a05ab7fe",
         "public/media/the_boys_4k.jpg": "572cb16dfb429292bb9fc690a0c5bfa28a8d688ed23588595e396b454067971a",
         "public/vendor/hls.min.js": "afcde07437ec84b072fe8782e772ceb5046eac751b2719f73ae0d83d763bc3f5",
-        "public/web-index.html": "b4495944e3f453d2b7b8da302902697e2a23f55eed9a91cc4a266417eaa7e6e9",
+        "public/web-index.html": "0b0d351020a69c95123072656f9b98c51f233f413442d5ac9fec8b4171fc29ce",
     ]
 
     static func verify(in bundle: Bundle = .main) -> Bool {

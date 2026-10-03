@@ -36,6 +36,7 @@ const App = {
   railBatchItems: 12,
   activeMood: '',
   moodMovies: [],
+  lastMoodSelections: new Map(),
   motionTier: 'low',
 
   init() {
@@ -566,10 +567,28 @@ const App = {
 
   moodDefinition(mood) {
     return {
-      relax: { title: 'Nhẹ nhàng cho tối nay', tags: ['tinh-cam', 'tam-ly', 'gia-dinh', 'hai-huoc'] },
-      thrill: { title: 'Căng thẳng đến phút cuối', tags: ['hanh-dong', 'hinh-su', 'kinh-di', 'bi-an', 'phieu-luu'] },
-      night: { title: 'Cuốn để cày xuyên đêm', tags: ['phim-bo', 'hoat-hinh', 'vien-tuong', 'hanh-dong'] },
+      relax: { title: 'Nhẹ nhàng cho tối nay', tags: ['tình cảm', 'tâm lý', 'gia đình', 'hài hước', 'chính kịch'] },
+      thrill: { title: 'Căng thẳng đến phút cuối', tags: ['hành động', 'hình sự', 'kinh dị', 'bí ẩn', 'giật gân'] },
+      night: { title: 'Cuốn để cày xuyên đêm', tags: ['hoạt hình', 'khoa học viễn tưởng', 'viễn tưởng', 'phiêu lưu', 'cổ trang'] },
     }[mood] || null;
+  },
+
+  randomUnit() {
+    if (globalThis.crypto?.getRandomValues) {
+      const value = new Uint32Array(1);
+      globalThis.crypto.getRandomValues(value);
+      return value[0] / 4294967296;
+    }
+    return Math.random();
+  },
+
+  shuffleMovies(items) {
+    const shuffled = [...items];
+    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(this.randomUnit() * (index + 1));
+      [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+    }
+    return shuffled;
   },
 
   applyMoodArtwork() {
@@ -594,16 +613,20 @@ const App = {
     if (!definition || !this.homeCatalog.length) return;
     this.activeMood = mood;
     document.querySelectorAll('.mood-chip').forEach((button) => button.classList.toggle('active', button.dataset.mood === mood));
+    const expectedTags = new Set(definition.tags.map((tag) => this.normalizeFilterValue(tag)));
     const matches = this.homeCatalog.filter((movie) => {
       const tags = this.getMovieTags(movie, 'category').map((tag) => this.normalizeFilterValue(tag));
-      const type = this.normalizeFilterValue(movie?.type || '');
-      return definition.tags.some((tag) => tags.includes(tag) || type === tag);
+      return tags.some((tag) => expectedTags.has(tag));
     });
-    const fallback = matches.length >= 6 ? matches : this.homeCatalog;
+    const previous = this.lastMoodSelections.get(mood) || new Set();
     const history = new Set((window.ContinueWatching?.getItems?.() || []).map((item) => item.slug));
-    this.moodMovies = [...fallback]
-      .sort((a, b) => Number(history.has(b.slug)) - Number(history.has(a.slug)) || String(b?.modified?.time || '').localeCompare(String(a?.modified?.time || '')))
-      .slice(0, 18);
+    const randomized = this.shuffleMovies(matches);
+    const unseen = randomized.filter((movie) => !previous.has(movie.slug));
+    const repeated = randomized.filter((movie) => previous.has(movie.slug));
+    this.moodMovies = [...unseen, ...repeated]
+      .slice(0, 12)
+      .sort((a, b) => Number(history.has(b.slug)) - Number(history.has(a.slug)));
+    this.lastMoodSelections.set(mood, new Set(this.moodMovies.map((movie) => movie.slug)));
     this.renderMoodSelection();
     window.API?.trackUsage?.('filter_applied', { category: `mood-${mood}`, results: this.moodMovies.length });
   },

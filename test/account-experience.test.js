@@ -28,6 +28,15 @@ test('mood discovery and saved lists contain only catalog movies', () => {
   assert.match(app, /AccountExperience\?\.updateDetailButtons/);
 });
 
+test('each mood uses its own real genres and rotates away from the previous selection', () => {
+  assert.match(app, /expectedTags = new Set\(definition\.tags\.map/);
+  assert.match(app, /const matches = this\.homeCatalog\.filter/);
+  assert.doesNotMatch(app, /matches\.length >= 6 \? matches : this\.homeCatalog/);
+  assert.match(app, /lastMoodSelections\.get\(mood\)/);
+  assert.match(app, /const unseen = randomized\.filter/);
+  assert.match(app, /this\.shuffleMovies\(matches\)/);
+});
+
 test('adaptive effects preserve reduced-motion and low-power paths', () => {
   assert.match(app, /prefers-reduced-motion: reduce/);
   assert.match(app, /navigator\.hardwareConcurrency/);
@@ -44,4 +53,3 @@ test('visible home branding stays compact instead of repeating a wordmark strip'
   assert.doesNotMatch(index, /MNHUT MASTER/);
   assert.match(index, /class="brand-avatar mnhut-brand-chip"/);
 });
-
