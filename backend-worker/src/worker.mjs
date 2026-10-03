@@ -82,31 +82,31 @@ const INSTALLER_RELEASES = Object.freeze({
 
 export const PUBLIC_RELEASES = Object.freeze({
   android: Object.freeze({
-    url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android?build=33",
+    url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android?build=34",
     version: "3.61",
-    sha256: "9840b370bd51d84e87e272e6d7eb3a09930b24b90632aaa69ce22fcf4d1d99cd",
-    sizeBytes: 4074697,
+    sha256: "197747a314cb9eea278a72cb898d60396e17b73b8e340c7357262c31574486af",
+    sizeBytes: 4078793,
     signer: "github-actions[bot]",
   }),
   android_tv: Object.freeze({
-    url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android-tv?build=33",
+    url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android-tv?build=34",
     version: "3.61",
-    sha256: "ebbc92424996038a1fa5c2a69cfd7361fb82300537a45597f9f24837b2930a6b",
-    sizeBytes: 4074697,
+    sha256: "d2f10a1f2e770d4dcdec5957f82f550d6a29b439903a12d671175981f28c3ecd",
+    sizeBytes: 4078793,
     signer: "github-actions[bot]",
   }),
   ios: Object.freeze({
-    url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/ios?build=33",
+    url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/ios?build=34",
     version: "3.61",
-    sha256: "a450e8cb68651e3de806f7d4028a31a2192da4bb3f2e8e9d46dc0de81921ae45",
-    sizeBytes: 4529351,
+    sha256: "0352aaf59cbce267b3578200fcff9c79d578fe71016bce4843f032964c4627cb",
+    sizeBytes: 4534331,
     signer: "github-actions[bot]",
   }),
   windows: Object.freeze({
-    url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/windows?build=33",
+    url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/windows?build=34",
     version: "3.61",
-    sha256: "955431c54c8be7a678e11540be03ab8cb76884505f72e4de3b2765c4beea955b",
-    sizeBytes: 121056435,
+    sha256: "02fae687d7dcb6f62106e8bf2d4f73e49a64ea538e4d4ff867f7da8100d9c3f2",
+    sizeBytes: 121061211,
     signer: "github-actions[bot]",
   }),
 });
