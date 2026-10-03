@@ -616,11 +616,15 @@ const App = {
     const expectedTags = new Set(definition.tags.map((tag) => this.normalizeFilterValue(tag)));
     const matches = this.homeCatalog.filter((movie) => {
       const tags = this.getMovieTags(movie, 'category').map((tag) => this.normalizeFilterValue(tag));
-      return tags.some((tag) => expectedTags.has(tag));
+      return tags.some((tag) => [...expectedTags].some((expected) => tag === expected || tag.includes(expected)));
     });
+    const moodIndex = { relax: 0, thrill: 1, night: 2 }[mood] ?? 0;
+    const candidates = matches.length
+      ? matches
+      : this.homeCatalog.filter((_movie, index) => index % 3 === moodIndex);
     const previous = this.lastMoodSelections.get(mood) || new Set();
     const history = new Set((window.ContinueWatching?.getItems?.() || []).map((item) => item.slug));
-    const randomized = this.shuffleMovies(matches);
+    const randomized = this.shuffleMovies(candidates);
     const unseen = randomized.filter((movie) => !previous.has(movie.slug));
     const repeated = randomized.filter((movie) => previous.has(movie.slug));
     this.moodMovies = [...unseen, ...repeated]

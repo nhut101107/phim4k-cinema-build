@@ -34,7 +34,9 @@ test('each mood uses its own real genres and rotates away from the previous sele
   assert.doesNotMatch(app, /matches\.length >= 6 \? matches : this\.homeCatalog/);
   assert.match(app, /lastMoodSelections\.get\(mood\)/);
   assert.match(app, /const unseen = randomized\.filter/);
-  assert.match(app, /this\.shuffleMovies\(matches\)/);
+  assert.match(app, /tag\.includes\(expected\)/);
+  assert.match(app, /index % 3 === moodIndex/);
+  assert.match(app, /this\.shuffleMovies\(candidates\)/);
 });
 
 test('adaptive effects preserve reduced-motion and low-power paths', () => {
