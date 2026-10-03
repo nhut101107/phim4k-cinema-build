@@ -82,31 +82,31 @@ const INSTALLER_RELEASES = Object.freeze({
 
 export const PUBLIC_RELEASES = Object.freeze({
   android: Object.freeze({
-    url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android?build=40",
+    url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android?build=41",
     version: "3.61",
-    sha256: "5d002ff8978975186d8c680ab66e431e147609a4fa7b2f618d08669776bf7dd6",
+    sha256: "8ea6870b47738dbc8c72479196f0b687eb88eb1038e9ba154c6ee289686cfefe",
     sizeBytes: 4082889,
     signer: "github-actions[bot]",
   }),
   android_tv: Object.freeze({
-    url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android-tv?build=40",
+    url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android-tv?build=41",
     version: "3.61",
-    sha256: "41f1f9756d7d234bd9139e299d1edf060435a3918b19b83a3b54917b6296ce91",
+    sha256: "ab55926244a7810a56f44e1092052600878fdffe578a55063f74887b7f0659e9",
     sizeBytes: 4082889,
     signer: "github-actions[bot]",
   }),
   ios: Object.freeze({
-    url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/ios?build=40",
+    url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/ios?build=41",
     version: "3.61",
-    sha256: "f28978f826606318c16891f6f64ea463976dd9e12f0d833b0a47a73f0737dd8b",
-    sizeBytes: 4537498,
+    sha256: "c628249c4aa8f6283490e89ea24e53b0751f8edeecf0b4dc5d7aff45bdef032d",
+    sizeBytes: 4537758,
     signer: "github-actions[bot]",
   }),
   windows: Object.freeze({
-    url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/windows?build=40",
+    url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/windows?build=41",
     version: "3.61",
-    sha256: "be23bfb27243902b77d02b7e03a0c5c8ca721e9d5654505c75b28f913b43da1c",
-    sizeBytes: 121064606,
+    sha256: "8404545a33a4ef7654573d8d80bb594b467969b220152615879a0ad45ab6ce09",
+    sizeBytes: 121065497,
     signer: "github-actions[bot]",
   }),
 });
