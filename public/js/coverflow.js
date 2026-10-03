@@ -104,6 +104,7 @@ const Coverflow = {
       if (featureArt) {
         const safeFeatureArt = String(featureArt).replace(/["\\\n\r]/g, '');
         featureSection.style.setProperty('--feature-art', `url("${safeFeatureArt}")`);
+        document.documentElement?.style?.setProperty?.('--member-art', `url("${safeFeatureArt}")`);
       }
     }
 
@@ -125,6 +126,7 @@ const Coverflow = {
         ? cur.content.replace(/<[^>]*>?/gm, '').trim()
         : 'Bấm Thông tin để xem nội dung và danh sách tập của phim này.';
     }
+    this.updateSaveButton(cur.slug);
   },
 
   updateDots() {
@@ -180,6 +182,24 @@ const Coverflow = {
     if (cur && cur.slug) {
       App.openMovieDetail(cur.slug);
     }
+  },
+
+  updateSaveButton(slug) {
+    const button = document.getElementById('btnCfInfo');
+    if (!button) return;
+    const saved = Boolean(slug && window.AccountExperience?.isSaved?.(slug, 'watchlist'));
+    button.classList.toggle('active', saved);
+    button.setAttribute('aria-pressed', String(saved));
+    button.setAttribute('aria-label', saved ? 'Bỏ khỏi danh sách xem sau' : 'Lưu vào danh sách xem sau');
+    const path = button.querySelector('path');
+    if (path) path.setAttribute('d', saved ? 'M5 12l4 4L19 6' : 'M12 5v14M5 12h14');
+  },
+
+  async toggleSaveCurrent() {
+    const movie = this.movies[this.currentIndex];
+    if (!movie?.slug) return;
+    await window.AccountExperience?.toggleMovie?.(movie, 'watchlist');
+    this.updateSaveButton(movie.slug);
   },
 
   startAutoRotate() {
@@ -532,20 +552,20 @@ const AccountExperience = {
   async load({ force = false } = {}) {
     if (!window.API?.hasSession?.()) {
       this.overview = { stats: { watchedSeconds: 0, movieCount: 0, streakDays: 0, byDay: [] }, recentMovies: [], library: [] };
-      this.render('Kích hoạt tài khoản để đồng bộ dữ liệu thật.');
+      this.render('Kích hoạt tài khoản để đồng bộ sự kiện máy chủ.');
       return this.overview;
     }
     if (!force && this.overview && Date.now() - this.loadedAt < 60000) {
-      this.render('Dữ liệu thật · GMT+7');
+      this.render('Sự kiện máy chủ · GMT+7');
       return this.overview;
     }
     if (this.loading) return this.loading;
-    this.setState('Đang đồng bộ dữ liệu thật…');
+    this.setState('Đang đồng bộ sự kiện máy chủ…');
     this.loading = API.getAccountOverview()
       .then((payload) => {
         this.overview = payload || {};
         this.loadedAt = Date.now();
-        this.render('Dữ liệu thật · GMT+7');
+        this.render('Sự kiện máy chủ · GMT+7');
         return this.overview;
       })
       .catch((error) => {
@@ -581,6 +601,7 @@ const AccountExperience = {
     this.setText('accWatchlistCount', this.libraryItems('watchlist').length ? `${this.libraryItems('watchlist').length} phim đã lưu` : 'Chưa có phim');
     this.setText('accFavoritesCount', this.libraryItems('favorites').length ? `${this.libraryItems('favorites').length} phim yêu thích` : 'Chưa có phim');
     this.updateDetailButtons(window.App?.activeMovieDetail?.movie?.slug);
+    window.Coverflow?.updateSaveButton?.(window.Coverflow?.movies?.[window.Coverflow?.currentIndex]?.slug);
     window.App?.refreshExperienceEffects?.(document.getElementById('accountTabContent'));
   },
 
@@ -614,12 +635,17 @@ const AccountExperience = {
     if (!host) return;
     const recent = new Set((Array.isArray(recentMovies) ? recentMovies : []).map((movie) => movie.slug));
     const counts = new Map();
-    (window.App?.homeCatalog || []).filter((movie) => recent.has(movie.slug)).forEach((movie) => {
+    const recentCatalog = (window.App?.homeCatalog || []).filter((movie) => recent.has(movie.slug));
+    recentCatalog.forEach((movie) => {
       window.App.getMovieTags(movie, 'category').forEach((tag) => counts.set(tag, (counts.get(tag) || 0) + 1));
     });
     const tags = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'vi')).slice(0, 3);
     host.innerHTML = tags.length
-      ? tags.map(([tag]) => `<small>${window.App.escapeHtml(tag)}</small>`).join('')
+      ? tags.map(([tag]) => {
+        const movie = recentCatalog.find((item) => window.App.getMovieTags(item, 'category').includes(tag));
+        const art = window.App.resolveImageUrl(movie?.thumb_url || movie?.poster_url || '').replace(/["\\\n\r]/g, '');
+        return `<span class="account-taste-card" style="--taste-art:url('${window.App.escapeHtml(art)}')">${window.App.escapeHtml(tag)}</span>`;
+      }).join('')
       : '<small>Chưa đủ dữ liệu</small>';
   },
 
@@ -649,6 +675,10 @@ const AccountExperience = {
 
   async toggleCurrentMovie(list) {
     const movie = window.App?.activeMovieDetail?.movie;
+    return this.toggleMovie(movie, list);
+  },
+
+  async toggleMovie(movie, list) {
     if (!movie?.slug || !['watchlist', 'favorites'].includes(list)) return;
     if (!window.API?.hasSession?.()) {
       this.setState('Kích hoạt tài khoản để lưu phim.');
@@ -693,6 +723,9 @@ const AccountExperience = {
 // 4. BOTTOM TAB BAR CONTROLLER
 // ==========================================
 function switchTab(tabId) {
+  document.body.dataset.activeTab = tabId;
+  const pageTitle = document.querySelector('.mobile-page-title');
+  if (pageTitle) pageTitle.textContent = ({ home: 'Trang chủ', search: 'Duyệt tìm', schedule: 'Lịch chiếu', account: 'Tài khoản' })[tabId] || 'MNHUT Cinema';
   document.querySelectorAll('.tab-item').forEach(btn => btn.classList.remove('active'));
   const activeBtn = document.getElementById(`tab${tabId.charAt(0).toUpperCase() + tabId.slice(1)}`);
   if (activeBtn) activeBtn.classList.add('active');
@@ -739,11 +772,13 @@ function renderAccountTab() {
   const teleEl = document.getElementById('accTelegramId');
   const planEl = document.getElementById('accPlan');
   const keyEl = document.getElementById('accKey');
+  const displayNameEl = document.getElementById('accDisplayName');
   const adminBtn = document.getElementById('accAdminBtn');
 
   if (teleEl) teleEl.textContent = teleId;
   if (planEl) planEl.textContent = isSuperAdmin ? '👑 SUPER ADMIN' : plan;
   if (keyEl) keyEl.textContent = key;
+  if (displayNameEl) displayNameEl.textContent = isSuperAdmin ? 'Quản trị viên' : 'Thành viên';
   const versionEl = document.getElementById('accAppVersion');
   if (versionEl) versionEl.textContent = `v${window.API?.getVersion?.() || '3.61'}`;
 

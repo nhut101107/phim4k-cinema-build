@@ -33,7 +33,7 @@ test('activation gate does not prefill a cached Telegram identity', () => {
   assert.doesNotMatch(api, /Không thể xác thực key hoặc Telegram ID/);
   assert.match(index, /class="brand-avatar mnhut-brand-chip"[^>]*>MN<\/span>/);
   assert.match(index, /class="account-avatar account-mnhut-chip"[^>]*>MN<\/span>/);
-  assert.match(index, /class="account-default-name">MNHUT Cinema</);
+  assert.match(index, /class="account-default-name" id="accDisplayName">Thành viên</);
   assert.doesNotMatch(auth, /function setPersistentCookie/);
 });
 

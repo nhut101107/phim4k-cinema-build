@@ -42,16 +42,22 @@ test('admin viewer dashboard is aggregated from real D1 activity by day and movi
   const f = fixture();
   try {
     const insert = f.sqlite.prepare('INSERT INTO audit_logs (created_at, action, actor_telegram_id, detail) VALUES (?, ?, ?, ?)');
+    insert.run(new Date(Date.now() - 86400000).toISOString(), 'usage_playback_start', 'viewer-a', JSON.stringify({ movie: 'Phim A', session: 's-a' }));
     insert.run(new Date(Date.now() - 86400000).toISOString(), 'usage_playback_watch', 'viewer-a', JSON.stringify({ movie: 'Phim A', watched: 600, session: 's-a' }));
+    insert.run(new Date().toISOString(), 'usage_playback_start', 'viewer-b', JSON.stringify({ movie: 'Phim A', session: 's-b' }));
     insert.run(new Date().toISOString(), 'usage_playback_watch', 'viewer-b', JSON.stringify({ movie: 'Phim A', watched: 300, session: 's-b' }));
+    insert.run(new Date().toISOString(), 'usage_playback_start', 'viewer-a', JSON.stringify({ movie: 'Phim B', session: 's-a' }));
     insert.run(new Date().toISOString(), 'usage_playback_watch', 'viewer-a', JSON.stringify({ movie: 'Phim B', watched: 120, session: 's-a' }));
     const response = await f.request('/api/admin/logs?limit=100&type=ALL', undefined, f.admin);
     assert.equal(response.status, 200);
     const data = await response.json();
     assert.equal(data.summary.verified, true);
+    assert.equal(data.summary.playbackStarts, 3);
+    assert.equal(data.summary.playbackViewers, 2);
     assert.ok(data.summary.analytics.byDay.length >= 2);
     assert.deepEqual(data.summary.analytics.byMovie.map(item => item.movie), ['Phim A', 'Phim B']);
     assert.equal(data.summary.analytics.byMovie[0].watchedSeconds, 900);
+    assert.equal(data.summary.analytics.byMovie[0].starts, 2);
     assert.equal(data.summary.analytics.timezone, 'Asia/Ho_Chi_Minh');
   } finally { f.sqlite.close(); }
 });

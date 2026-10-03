@@ -107,6 +107,19 @@ test('admin log pagination preserves server-verified totals without fake page st
   assert.doesNotMatch(admin, /logs\.reduce\(\(sum, log\).*watched/);
 });
 
+test('analytics labels distinguish events, player opens and estimated iframe-active time', () => {
+  const backend = read('backend-worker/src/worker.mjs');
+  const admin = read('public/js/admin.js');
+  const html = read('public/index.html');
+  assert.match(backend, /action = 'usage_playback_start'.*playback_starts/);
+  assert.match(backend, /playbackStarts: Number\(totals\?\.playback_starts/);
+  assert.match(admin, /logPlayerOpenCount/);
+  assert.match(html, /Lần mở trình phát/);
+  assert.match(html, /Thời gian trình phát hoạt động\*/);
+  assert.match(html, /không khẳng định video đang chạy/);
+  assert.doesNotMatch(html, /DỮ LIỆU THẬT · D1/);
+});
+
 test('MNHUT Projection identity is loaded by web and app shells', () => {
   const index = read('public/index.html');
   const webIndex = read('public/web-index.html');

@@ -39,6 +39,7 @@ const App = {
   motionTier: 'low',
 
   init() {
+    document.body.dataset.activeTab = 'home';
     this.configureAdaptiveMotion();
     this.bindEvents();
     this.bindTouchFeedback();
@@ -388,6 +389,7 @@ const App = {
       }
     });
     this.renderSchedule();
+    this.applyMoodArtwork();
     this.renderMoodSelection();
     this.refreshExperienceEffects();
   },
@@ -570,6 +572,23 @@ const App = {
     }[mood] || null;
   },
 
+  applyMoodArtwork() {
+    const definitions = [
+      ['relax', ['tinh-cam', 'tam-ly', 'gia-dinh', 'hai-huoc']],
+      ['thrill', ['hanh-dong', 'hinh-su', 'kinh-di', 'bi-an']],
+      ['night', ['vien-tuong', 'phieu-luu', 'hoat-hinh', 'hanh-dong']],
+    ];
+    definitions.forEach(([mood, tags], index) => {
+      const button = document.querySelector(`.mood-chip[data-mood="${mood}"]`);
+      if (!button) return;
+      const movie = this.homeCatalog.find((item) => {
+        const categories = this.getMovieTags(item, 'category').map((tag) => this.normalizeFilterValue(tag));
+        return tags.some((tag) => categories.includes(tag));
+      }) || this.homeCatalog[index] || this.heroList[index];
+      const art = this.resolveImageUrl(movie?.thumb_url || movie?.poster_url || '').replace(/["\\\n\r]/g, '');
+      if (art) button.style.setProperty('--mood-art', `url("${art}")`);
+    });
+  },
   selectMood(mood) {
     const definition = this.moodDefinition(mood);
     if (!definition || !this.homeCatalog.length) return;

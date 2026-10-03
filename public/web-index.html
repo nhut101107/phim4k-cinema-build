@@ -18,7 +18,7 @@
   <link rel="stylesheet" href="/css/player.css?v=3.61.1">
   <link rel="stylesheet" href="/css/tv.css?v=3.61.0">
   <link rel="stylesheet" href="/css/web-premium.css?v=3.61.0">
-  <link rel="stylesheet" href="/css/mnhut-projection.css?v=3.61.4">
+  <link rel="stylesheet" href="/css/mnhut-projection.css?v=3.61.5">
 </head>
 <body class="activation-locked">
   <script>document.body.classList.add('web-preview');</script>
@@ -189,19 +189,26 @@
           <span class="brand-avatar mnhut-brand-chip" aria-label="MNHUT">MN</span>
           <span class="logo-gradient">Phim 4K VIP</span>
           <span class="badge-noads">VIP 4.0</span>
+          <span class="mobile-page-title">Trang chủ</span>
         </a>
         <nav class="nav-links">
           <!-- PHIM MỚI CẬP NHẬT ĐƯA LÊN ĐẦU TIÊN -->
-          <button class="nav-btn" data-cat="phim-moi-cap-nhat" onclick="switchCategory('phim-moi-cap-nhat')">🔥 Mới Cập Nhật</button>
-          <button class="nav-btn active" data-cat="home" onclick="switchCategory('home')">Trang Chủ</button>
-          <button class="nav-btn" data-cat="phim-le" onclick="switchCategory('phim-le')">Phim Lẻ 4K</button>
-          <button class="nav-btn" data-cat="phim-bo" onclick="switchCategory('phim-bo')">Phim Bộ</button>
+          <button class="nav-btn" data-cat="phim-moi-cap-nhat" data-mobile-label="Mới nhất" onclick="switchCategory('phim-moi-cap-nhat')">🔥 Mới Cập Nhật</button>
+          <button class="nav-btn active" data-cat="home" data-mobile-label="Phim" onclick="switchCategory('home')">Trang Chủ</button>
+          <button class="nav-btn" data-cat="phim-viet" data-mobile-label="Phim Việt" onclick="switchTab('home'); App.setHomeFilter('country','Việt Nam')">Phim Việt</button>
+          <button class="nav-btn" data-cat="phim-bo" data-mobile-label="Series" onclick="switchCategory('phim-bo')">Phim Bộ</button>
           <button class="nav-btn" data-cat="hoat-hinh" onclick="switchCategory('hoat-hinh')">Hoạt Hình</button>
           <button class="nav-btn" data-cat="tv-shows" onclick="switchCategory('tv-shows')">TV Shows</button>
         </nav>
       </div>
 
       <div class="nav-right">
+        <button class="mobile-nav-action mobile-search-action" type="button" aria-label="Tìm kiếm" onclick="switchTab('search')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg>
+        </button>
+        <button class="mobile-nav-action mobile-alert-action" type="button" aria-label="Thông báo" onclick="document.getElementById('globalAnnouncement')?.scrollIntoView({behavior:'smooth'})">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg><i></i>
+        </button>
         <!-- Search Form -->
         <div class="search-box">
           <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -286,9 +293,9 @@
               <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
               <span>Xem Phim</span>
             </button>
-            <button class="btn-cf-info" id="btnCfInfo" onclick="Coverflow.infoCurrent()">
-              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
-              <span>Thông tin</span>
+            <button class="btn-cf-info" id="btnCfInfo" onclick="Coverflow.toggleSaveCurrent()" aria-label="Lưu vào danh sách xem sau" aria-pressed="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+              <span>Xem sau</span>
             </button>
           </div>
 
@@ -437,27 +444,33 @@
 
     <!-- ================= TAB 4: TÀI KHOẢN (ACCOUNT) ================= -->
     <div id="accountTabContent" class="tab-content hidden account-tab-view">
+      <header class="account-screen-header">
+        <h1>Tài khoản</h1>
+        <button type="button" aria-label="Cài đặt tài khoản" onclick="document.getElementById('accountSettings')?.scrollIntoView({behavior:'smooth'})">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.09A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3v-4h.09A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.09A1.7 1.7 0 0 0 15.4 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.12.37.34.72.6 1 .3.29.69.43 1.1.4h.09v4h-.09c-.41-.03-.8.11-1.1.4-.26.28-.48.63-.6 1Z"></path></svg>
+        </button>
+      </header>
       <div class="account-card account-cinema-card">
         <div class="account-hero">
           <span class="account-avatar account-mnhut-chip" aria-label="MNHUT">MN</span>
           <div class="account-identity">
-            <span class="account-eyebrow">TÀI KHOẢN XEM PHIM</span>
-            <div class="account-default-name">MNHUT Cinema</div>
+            <div class="account-default-name" id="accDisplayName">Thành viên</div>
             <h2 id="accPlan">Chưa kích hoạt</h2>
+            <p>Điện ảnh là nơi mỗi người tìm thấy một phiên bản khác của chính mình.</p>
           </div>
-          <span class="account-live-badge"><i></i> Đang hoạt động</span>
+          <span class="account-profile-mark" aria-label="MNHUT">MN</span>
         </div>
         <section class="account-insight" aria-label="Hoạt động xem phim">
           <div class="account-stat-grid">
-            <div><span class="account-stat-icon">◷</span><strong id="accWatchHours">—</strong><small>Giờ đã xem</small></div>
-            <div><span class="account-stat-icon">▣</span><strong id="accMoviesWatched">—</strong><small>Phim đã xem</small></div>
-            <div><span class="account-stat-icon">♨</span><strong id="accStreak">—</strong><small>Ngày liên tiếp</small></div>
+            <div><span class="account-stat-icon">◷</span><strong id="accWatchHours">—</strong><small>Giờ mở trình phát</small></div>
+            <div><span class="account-stat-icon">▣</span><strong id="accMoviesWatched">—</strong><small>Phim đã mở</small></div>
+            <div><span class="account-stat-icon">♨</span><strong id="accStreak">—</strong><small>Ngày hoạt động liên tiếp</small></div>
           </div>
-          <div class="account-activity-head"><strong>Hoạt động 30 ngày</strong><small id="accStatsState">Đang đồng bộ dữ liệu thật…</small></div>
+          <div class="account-activity-head"><strong>Hoạt động trình phát <span>(30 ngày qua)</span></strong><small id="accStatsState">Đang đồng bộ sự kiện máy chủ…</small></div>
           <div id="accActivityBars" class="account-activity-bars" role="img" aria-label="Biểu đồ thời gian xem trong 30 ngày"></div>
           <div class="account-taste-row">
-            <span>Gu xem gần đây</span>
-            <div id="accFavoriteGenres" class="account-taste-chips"><small>Chưa đủ dữ liệu</small></div>
+            <span>Thể loại gần đây</span>
+            <div id="accFavoriteGenres" class="account-taste-cards"><small>Chưa đủ dữ liệu</small></div>
           </div>
         </section>
         <div class="account-details-list">
@@ -489,14 +502,14 @@
           <button type="button" onclick="AccountExperience.openDevices()"><span class="account-library-icon">▯</span><span><strong>Thiết bị</strong><small id="accDeviceSummary">Phiên hiện tại được bảo vệ</small></span><b>›</b></button>
         </section>
 
-        <div class="account-actions">
+        <div class="account-actions" id="accountSettings">
           <button id="accAdminBtn" class="btn-primary hidden" onclick="openAdminPanel()">
             ⚙️ MỞ PANEL QUẢN TRỊ ADMIN
           </button>
           <button type="button" id="accLogsBtn" class="btn-secondary hidden" onclick="Admin.open('logs')">📜 Đọc log người dùng</button>
-          <button type="button" class="btn-secondary account-action-btn" onclick="openFeedbackModal()"><span class="account-action-icon">!</span><span><strong>Góp ý & báo lỗi</strong><small>Gửi phản hồi trực tiếp cho Admin</small></span><b>›</b></button>
+          <button type="button" class="btn-secondary account-action-btn" onclick="openFeedbackModal()"><span class="account-action-icon">?</span><span><strong>Trợ giúp</strong><small>Góp ý, báo lỗi và liên hệ Admin</small></span><b>›</b></button>
           <button class="btn-secondary account-action-btn" onclick="checkAppUpdate(true)">
-            <span class="account-action-icon">↻</span><span><strong>Kiểm tra cập nhật</strong><small>Tìm phiên bản mới nhất cho thiết bị</small></span><b>›</b>
+            <span class="account-action-icon">⚙</span><span><strong>Cài đặt & cập nhật</strong><small>Ngôn ngữ, phiên bản và ứng dụng mới</small></span><b>›</b>
           </button>
           <button type="button" id="accDownloadBtn" class="btn-primary app-download-entry account-download-btn" onclick="openDownloadModal()"><span>↓</span><strong>Tải ứng dụng</strong><small>iOS · Android · TV · Windows</small></button>
           <p id="accUpdateStatus" class="gate-message hidden" role="status"></p>
@@ -1091,28 +1104,30 @@
             Theo dõi theo từng người dùng: mở app, tab đã xem, tìm kiếm, bộ lọc, phim/tập đã mở, trạng thái phát, đổi server và lỗi phát. Dữ liệu nhạy cảm, URL video và key đầy đủ không được ghi lại.
           </p>
           <div class="log-summary-grid" aria-label="Tổng quan đã xác minh từ máy chủ">
-            <div><span id="logLoadedCount">0</span><small>Sự kiện đã tải</small></div>
-            <div><span id="logViewerCount">—</span><small>Hoạt động xem · máy chủ</small></div>
-            <div><span id="logUserCount">—</span><small>Người dùng · máy chủ</small></div>
-            <div><span id="logErrorCount">0</span><small>Lỗi phát</small></div>
-            <div><span id="logSessionCount">0</span><small>Phiên sử dụng</small></div>
-            <div><span id="logWatchTime">0 phút</span><small>Thời gian xem ghi nhận</small></div>
+            <div><span id="logLoadedCount">0</span><small>Dòng log đang hiển thị</small></div>
+            <div><span id="logViewerCount">—</span><small>Tổng sự kiện sử dụng</small></div>
+            <div><span id="logUserCount">—</span><small>Tài khoản/thiết bị ghi nhận</small></div>
+            <div><span id="logPlayerOpenCount">—</span><small>Lần mở trình phát</small></div>
+            <div><span id="logErrorCount">0</span><small>Lượt báo lỗi phát</small></div>
+            <div><span id="logSessionCount">0</span><small>Phiên trình duyệt/app</small></div>
+            <div><span id="logWatchTime">0 phút</span><small>Thời gian trình phát hoạt động*</small></div>
             <div><span id="logLatestMovie">—</span><small>Phim gần nhất</small></div>
             <div><span id="logLastSeen">—</span><small>Hoạt động gần nhất</small></div>
           </div>
+          <p class="analytics-definition">* Ước tính khi khung ENSMovie đang mở và trang còn hiển thị; không khẳng định video đang chạy vì trình phát nằm trong iframe khác tên miền.</p>
           <section class="viewer-analytics" aria-label="Biểu đồ người xem">
             <header>
-              <div><small>DỮ LIỆU THẬT · D1</small><h4>Nhịp xem 14 ngày</h4></div>
+              <div><small>SỰ KIỆN MÁY CHỦ · D1</small><h4>Hoạt động trình phát 14 ngày</h4></div>
               <span id="viewerChartRange">Theo giờ Việt Nam</span>
             </header>
             <div class="viewer-chart-grid">
               <div class="viewer-chart-card">
-                <div class="viewer-chart-heading"><strong>Người xem theo ngày</strong><span id="dailyViewerPeak">—</span></div>
-                <div id="dailyViewerChart" class="bar-chart" role="img" aria-label="Biểu đồ người xem từng ngày"></div>
+                <div class="viewer-chart-heading"><strong>Tài khoản/thiết bị mở trình phát</strong><span id="dailyViewerPeak">—</span></div>
+                <div id="dailyViewerChart" class="bar-chart" role="img" aria-label="Biểu đồ tài khoản hoặc thiết bị mở trình phát từng ngày"></div>
               </div>
               <div class="viewer-chart-card">
-                <div class="viewer-chart-heading"><strong>Phim được xem nhiều</strong><span id="movieWatchTotal">—</span></div>
-                <div id="movieViewerChart" class="ranked-bar-chart" role="img" aria-label="Biểu đồ phim theo thời gian xem"></div>
+                <div class="viewer-chart-heading"><strong>Phim theo thời gian trình phát mở</strong><span id="movieWatchTotal">—</span></div>
+                <div id="movieViewerChart" class="ranked-bar-chart" role="img" aria-label="Biểu đồ phim theo thời gian khung trình phát hoạt động"></div>
               </div>
             </div>
           </section>
@@ -1533,13 +1548,13 @@
   <script src="/js/release-copy.js?v=3.61.0"></script>
   <script src="/js/native-downloads.js?v=3.61.0"></script>
   <script src="/js/auth.js?v=3.61.4"></script>
-  <script src="/js/admin.js?v=3.61.0"></script>
+  <script src="/js/admin.js?v=3.61.5"></script>
   <script src="/js/feedback.js?v=3.61.0"></script>
   <script src="/js/player-core.js?v=3.61.0"></script>
   <script src="/js/audio-enhancer.js?v=3.61.0"></script>
   <script src="/js/player.js?v=3.61.4"></script>
-  <script src="/js/coverflow.js?v=3.61.4"></script>
-  <script src="/js/app.js?v=3.61.4"></script>
+  <script src="/js/coverflow.js?v=3.61.5"></script>
+  <script src="/js/app.js?v=3.61.5"></script>
   <script src="/js/tv.js?v=3.61.0"></script>
   <script src="/js/diagnostics.js?v=3.61.0"></script>
 </body>
