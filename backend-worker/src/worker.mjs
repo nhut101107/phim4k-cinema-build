@@ -82,31 +82,31 @@ const INSTALLER_RELEASES = Object.freeze({
 
 export const PUBLIC_RELEASES = Object.freeze({
   android: Object.freeze({
-    url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android?build=34",
+    url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android?build=37",
     version: "3.61",
-    sha256: "197747a314cb9eea278a72cb898d60396e17b73b8e340c7357262c31574486af",
+    sha256: "91ab473c6364346bde199071acc46a214621795cad51d8ea8b2317fe9cbcfc86",
     sizeBytes: 4078793,
     signer: "github-actions[bot]",
   }),
   android_tv: Object.freeze({
-    url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android-tv?build=34",
+    url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android-tv?build=37",
     version: "3.61",
-    sha256: "d2f10a1f2e770d4dcdec5957f82f550d6a29b439903a12d671175981f28c3ecd",
-    sizeBytes: 4078793,
+    sha256: "68e12bbc2fa8e5c8abc8cba19ce6a6db5aac458eead28ce972f06c7b313ad21d",
+    sizeBytes: 4082889,
     signer: "github-actions[bot]",
   }),
   ios: Object.freeze({
-    url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/ios?build=34",
+    url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/ios?build=37",
     version: "3.61",
-    sha256: "0352aaf59cbce267b3578200fcff9c79d578fe71016bce4843f032964c4627cb",
-    sizeBytes: 4534331,
+    sha256: "6b92691a6bfd1f67aa80731567c8b1cd88e1821c712bed41fbf908435152d63c",
+    sizeBytes: 4537251,
     signer: "github-actions[bot]",
   }),
   windows: Object.freeze({
-    url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/windows?build=34",
+    url: "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/windows?build=37",
     version: "3.61",
-    sha256: "02fae687d7dcb6f62106e8bf2d4f73e49a64ea538e4d4ff867f7da8100d9c3f2",
-    sizeBytes: 121061211,
+    sha256: "6929f836ffb4d231278de55d4237844dcaefc882a1d92ece7032f5c8182bbb01",
+    sizeBytes: 121064047,
     signer: "github-actions[bot]",
   }),
 });

@@ -46,7 +46,7 @@ jobs:
             url=urllib.parse.urlsplit(entry['url'])
             assert url.hostname=='phim4k-license-api.phim4k-pwdbhdz.workers.dev',(platform,url.hostname)
             assert url.path==download_path,(platform,url.path)
-            assert url.query=='build=34',(platform,url.query)
+            assert url.query=='build=37',(platform,url.query)
             assert entry['version']=='3.61',platform
             assert entry['sha256']==sha,platform
             assert entry['sizeBytes']==size,platform
