@@ -25,7 +25,6 @@ const Coverflow = {
       ? preservedIndex
       : Math.min(this.currentIndex, Math.max(this.movies.length - 1, 0));
     this.renderCards();
-    this.renderFeaturedRail();
     this.updateDetails();
     this.setupGestures();
     this.startAutoRotate();
@@ -83,56 +82,6 @@ const Coverflow = {
     this.updateDots();
   },
 
-  renderFeaturedRail() {
-    const rail = document.getElementById('featuredSnapRail');
-    const section = document.getElementById('featuredSnapSection');
-    if (!rail || !section) return;
-    rail.innerHTML = '';
-    section.classList.toggle('hidden', this.movies.length === 0);
-
-    this.movies.slice(0, 12).forEach((movie, index) => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'featured-snap-card';
-      button.dataset.index = String(index);
-      button.setAttribute('aria-label', `Chọn phim ${movie.name || index + 1}`);
-
-      const image = document.createElement('img');
-      image.alt = '';
-      image.loading = index < 3 ? 'eager' : 'lazy';
-      image.decoding = 'async';
-      image.src = App.resolveImageUrl(movie.thumb_url || movie.poster_url || '');
-      App.attachPosterFallback(image, [App.resolveImageUrl(movie.poster_url || movie.thumb_url || '')]);
-
-      const copy = document.createElement('span');
-      copy.className = 'featured-snap-copy';
-      const meta = [movie.year, movie.quality].filter(Boolean).join(' · ');
-      copy.innerHTML = `<b></b><small></small>`;
-      copy.querySelector('b').textContent = movie.name || 'Phim nổi bật';
-      copy.querySelector('small').textContent = meta || 'Đang chiếu';
-
-      button.append(image, copy);
-      button.addEventListener('click', () => this.goTo(index));
-      rail.appendChild(button);
-    });
-    this.syncFeaturedRail(false);
-  },
-
-  syncFeaturedRail(smooth = true) {
-    const rail = document.getElementById('featuredSnapRail');
-    if (!rail) return;
-    const cards = [...rail.querySelectorAll('.featured-snap-card')];
-    cards.forEach((card, index) => {
-      const active = index === this.currentIndex;
-      card.classList.toggle('active', active);
-      card.setAttribute('aria-current', active ? 'true' : 'false');
-    });
-    const activeCard = cards[this.currentIndex];
-    if (smooth && activeCard && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
-      activeCard.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-    }
-  },
-
   updateDetails() {
     if (this.movies.length === 0) return;
     const cur = this.movies[this.currentIndex];
@@ -168,7 +117,6 @@ const Coverflow = {
     }
 
     this.updateSwipeScenes();
-    this.syncFeaturedRail();
 
     if (titleEl) titleEl.textContent = cur.name || 'Đang cập nhật tên phim';
     if (subEl) subEl.textContent = cur.origin_name || '';
@@ -222,10 +170,7 @@ const Coverflow = {
   goTo(index) {
     const nextIndex = Number(index);
     if (!Number.isInteger(nextIndex) || nextIndex < 0 || nextIndex >= this.movies.length) return;
-    if (nextIndex === this.currentIndex) {
-      this.syncFeaturedRail();
-      return;
-    }
+    if (nextIndex === this.currentIndex) return;
     this.currentIndex = nextIndex;
     this.renderCards();
     this.updateDetails();
