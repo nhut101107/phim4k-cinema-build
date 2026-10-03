@@ -95,7 +95,7 @@ const Coverflow = {
       button.type = 'button';
       button.className = 'featured-snap-card';
       button.dataset.index = String(index);
-      button.setAttribute('aria-label', `Chọn phim ${movie.name || index + 1}`);
+      button.setAttribute('aria-label', `Mở phim ${movie.name || index + 1}`);
 
       const image = document.createElement('img');
       image.alt = '';
@@ -111,8 +111,16 @@ const Coverflow = {
       copy.querySelector('b').textContent = movie.name || 'Phim nổi bật';
       copy.querySelector('small').textContent = meta || 'Đang chiếu';
 
-      button.append(image, copy);
-      button.addEventListener('click', () => this.goTo(index));
+      const action = document.createElement('span');
+      action.className = 'featured-snap-action';
+      action.setAttribute('aria-hidden', 'true');
+      action.textContent = '▶ Xem ngay';
+
+      button.append(image, copy, action);
+      button.addEventListener('click', () => {
+        this.goTo(index);
+        if (movie.slug) App.openMovieDetail(movie.slug);
+      });
       rail.appendChild(button);
     });
     this.syncFeaturedRail(false);

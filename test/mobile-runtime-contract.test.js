@@ -337,11 +337,21 @@ test('featured movies use the classic portrait-poster hot rail before continue-w
   assert.ok(index.indexOf('id="featuredSnapSection"') < index.indexOf('id="continueWatchingSection"'));
   assert.match(coverflow, /renderFeaturedRail/);
   assert.match(coverflow, /movie\.poster_url \|\| movie\.thumb_url/);
+  assert.match(coverflow, /featured-snap-action/);
+  assert.match(coverflow, /App\.openMovieDetail\(movie\.slug\)/);
   assert.match(coverflow, /addEventListener\('pointermove'/);
   assert.match(coverflow, /translate3d\(\$\{clamped\}px, 0, 0\)/);
   assert.match(projection, /scroll-snap-type: inline mandatory/);
   assert.match(projection, /\.featured-snap-card[\s\S]*?aspect-ratio: 2 \/ 3/);
   assert.match(projection, /touch-action: pan-y pinch-zoom/);
+});
+
+test('iOS catalogue renders a bounded first page without WebKit blank layers', () => {
+  const app = read('../public/js/app.js');
+  const styles = read('../public/css/style.css');
+  assert.match(app, /this\.homeCatalog : this\.moviesMatching\(\)\)\.slice\(0, 24\)/);
+  assert.match(app, /incoming\.length \? this\.uniqueMovies\(incoming\) : this\.filterResults/);
+  assert.match(styles, /html\.platform-ios \.movie-section,[\s\S]*?content-visibility: visible/);
 });
 
 test('device-only approval remains server-authoritative and bound to a device', () => {

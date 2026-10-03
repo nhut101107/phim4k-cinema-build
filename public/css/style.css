@@ -1615,6 +1615,15 @@ div#activationGate.hidden {
   margin-bottom: 52px;
 }
 
+/* WebKit can keep an off-screen content-visibility layer blank after the
+   catalogue is replaced in place. iPhone/iPad render the real grid instead;
+   pagination keeps the DOM small enough to stay smooth. */
+html.platform-ios .movie-section,
+html.platform-ios .cinema-rail-section {
+  content-visibility: visible;
+  contain-intrinsic-size: auto;
+}
+
 .section-header {
   display: flex;
   align-items: center;

@@ -827,7 +827,11 @@ const App = {
     const requestId = reset ? ++this.filterRequestId : this.filterRequestId;
     const page = reset ? 1 : this.filterPagination.currentPage + 1;
     if (reset) {
-      const localResults = this.browseAllMode ? this.homeCatalog : this.moviesMatching();
+      // Rendering hundreds of cached cards in one synchronous pass can leave
+      // iOS Safari/WKWebView with a blank compositor layer. Seed one page only;
+      // the live response below replaces it and pagination appends subsequent
+      // pages in small, predictable batches.
+      const localResults = (this.browseAllMode ? this.homeCatalog : this.moviesMatching()).slice(0, 24);
       this.filterResults = localResults;
       this.filterPagination = {
         currentPage: localResults.length ? 1 : 0,
@@ -848,7 +852,7 @@ const App = {
       if (requestId !== this.filterRequestId) return;
       const incoming = this.enrichMovies(Array.isArray(data.items) ? data.items : []);
       this.filterResults = reset
-        ? this.uniqueMovies([...incoming, ...this.filterResults])
+        ? (incoming.length ? this.uniqueMovies(incoming) : this.filterResults)
         : this.uniqueMovies([...this.filterResults, ...incoming]);
       this.filterPagination = {
         currentPage: Number(data.pagination?.currentPage || page),
@@ -858,7 +862,7 @@ const App = {
       this.catalogInventoryTotal = Math.max(this.catalogInventoryTotal, Number(data.pagination?.totalItems || 0));
     } catch (_error) {
       if (requestId !== this.filterRequestId) return;
-      if (reset) this.filterResults = this.moviesMatching();
+      if (reset) this.filterResults = this.moviesMatching().slice(0, 24);
       this.filterPagination = {
         currentPage: this.filterResults.length ? 1 : 0,
         totalPages: this.filterResults.length ? 1 : 0,
