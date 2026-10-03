@@ -328,7 +328,7 @@ test('home removes legacy fake continue-watching cards and avoids mobile carouse
   assert.match(styles, /\.btn-cf-play svg,[\s\S]*?width: 20px;[\s\S]*?height: 20px;/);
 });
 
-test('featured movies use a large landscape hot rail before continue-watching and continuous pointer scenes', () => {
+test('featured movies use the classic portrait-poster hot rail before continue-watching and continuous pointer scenes', () => {
   const index = read('../public/index.html');
   const coverflow = read('../public/js/coverflow.js');
   const projection = read('../public/css/mnhut-projection.css');
@@ -336,9 +336,11 @@ test('featured movies use a large landscape hot rail before continue-watching an
   assert.match(index, /id="featuredSnapRail"/);
   assert.ok(index.indexOf('id="featuredSnapSection"') < index.indexOf('id="continueWatchingSection"'));
   assert.match(coverflow, /renderFeaturedRail/);
+  assert.match(coverflow, /movie\.poster_url \|\| movie\.thumb_url/);
   assert.match(coverflow, /addEventListener\('pointermove'/);
   assert.match(coverflow, /translate3d\(\$\{clamped\}px, 0, 0\)/);
   assert.match(projection, /scroll-snap-type: inline mandatory/);
+  assert.match(projection, /\.featured-snap-card[\s\S]*?aspect-ratio: 2 \/ 3/);
   assert.match(projection, /touch-action: pan-y pinch-zoom/);
 });
 

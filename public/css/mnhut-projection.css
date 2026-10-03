@@ -991,7 +991,7 @@ body[data-motion-tier="low"] *::after {
 .featured-snap-rail {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: clamp(260px, 31vw, 430px);
+  grid-auto-columns: clamp(168px, 17vw, 228px);
   gap: 14px;
   margin-inline: calc(clamp(18px, 4vw, 58px) * -1);
   padding: 2px clamp(18px, 4vw, 58px) 16px;
@@ -1008,7 +1008,7 @@ body[data-motion-tier="low"] *::after {
 .featured-snap-card {
   position: relative;
   min-width: 0;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 2 / 3;
   padding: 0;
   overflow: hidden;
   border: 1px solid rgba(255,255,255,.11);
@@ -1516,7 +1516,7 @@ body[data-motion-tier="low"] *::after {
   .featured-snap-heading { margin-bottom: 14px; }
   .featured-snap-heading small { display: none; }
   .featured-snap-rail {
-    grid-auto-columns: min(84vw, 520px);
+    grid-auto-columns: minmax(154px, 44vw);
     gap: 11px;
     scroll-padding-inline: 18px;
   }
@@ -1526,7 +1526,7 @@ body[data-motion-tier="low"] *::after {
 @media (max-width: 540px) {
   .featured-snap-section { padding-inline: 16px; }
   .featured-snap-rail {
-    grid-auto-columns: 84vw;
+    grid-auto-columns: 44vw;
     margin-inline: -16px;
     padding-inline: 16px;
   }

@@ -101,8 +101,8 @@ const Coverflow = {
       image.alt = '';
       image.loading = index < 3 ? 'eager' : 'lazy';
       image.decoding = 'async';
-      image.src = App.resolveImageUrl(movie.thumb_url || movie.poster_url || '');
-      App.attachPosterFallback(image, [App.resolveImageUrl(movie.poster_url || movie.thumb_url || '')]);
+      image.src = App.resolveImageUrl(movie.poster_url || movie.thumb_url || '');
+      App.attachPosterFallback(image, [App.resolveImageUrl(movie.thumb_url || movie.poster_url || '')]);
 
       const copy = document.createElement('span');
       copy.className = 'featured-snap-copy';
