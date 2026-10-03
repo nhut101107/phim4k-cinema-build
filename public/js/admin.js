@@ -194,6 +194,7 @@ const Admin = {
     if (tab === 'downloads') return Promise.all([this.loadDownloadsConfig(), this.loadAccessPolicy()]);
     if (tab === 'content') return Promise.all([this.loadContentStatus(), this.loadAnnouncementEditor(), this.loadMovieReports(), this.loadFeedbackInbox()]);
     if (tab === 'logs') {
+      this.startLogAutoRefresh();
       return this.loadLogs();
     }
   },
@@ -935,14 +936,38 @@ const Admin = {
   },
 
   startLogAutoRefresh() {
-    // Nhật ký chỉ làm mới khi Admin chủ động bấm nút. Tự tải lại làm mất vị
-    // trí đang đọc trên điện thoại và tạo truy vấn thừa mỗi 10 giây.
     this.stopLogAutoRefresh();
+    this.logRefreshTimer = window.setInterval(() => {
+      void this.refreshLogSummary();
+    }, 15000);
   },
 
   stopLogAutoRefresh() {
     if (this.logRefreshTimer) window.clearInterval(this.logRefreshTimer);
     this.logRefreshTimer = null;
+  },
+
+  async refreshLogSummary() {
+    if (this.currentTab !== 'logs' || this.logSummaryLoading) return;
+    if (document.getElementById('adminModal')?.classList.contains('hidden')) return;
+    this.logSummaryLoading = true;
+    const filter = this.logAccountFilter || document.getElementById('logAccountFilter')?.value.trim() || '';
+    const type = this.logTypeFilter || document.getElementById('logTypeFilter')?.value || 'ALL';
+    const query = new URLSearchParams({ limit: '1', type });
+    if (filter) query.set('identity', filter);
+    const liveState = document.getElementById('logLiveState');
+    try {
+      const data = await API.request(`/api/admin/logs?${query.toString()}`, { cache: 'no-store' });
+      if (data.summary?.verified === true) {
+        this.logSummary = data.summary;
+        this.renderLogSummary(this.logSummary, this.loadedLogs.length);
+      }
+      if (liveState) liveState.textContent = '● BIỂU ĐỒ 15 GIÂY';
+    } catch (_error) {
+      if (liveState) liveState.textContent = '● MẤT KẾT NỐI';
+    } finally {
+      this.logSummaryLoading = false;
+    }
   },
 
   // ====================================================
@@ -978,7 +1003,7 @@ const Admin = {
       this.renderLogs(this.loadedLogs, this.logSummary);
       if (!append) container.scrollTop = previousScrollTop;
       if (more) more.classList.toggle('hidden', !data.hasMore);
-      if (liveState) liveState.textContent = '● THỦ CÔNG';
+      if (liveState) liveState.textContent = '● BIỂU ĐỒ 15 GIÂY';
     } catch (err) {
       if (!append) {
         container.innerHTML = '';

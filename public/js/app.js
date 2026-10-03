@@ -209,6 +209,7 @@ const App = {
     // missing optional hero cannot abort the entire catalogue promise.
     document.getElementById('heroBillboard')?.classList.remove('hidden');
     document.getElementById('coverflowSection')?.classList.remove('hidden');
+    document.getElementById('featuredSnapSection')?.classList.remove('hidden');
     document.getElementById('continueWatchingSection')?.classList.remove('hidden');
     document.getElementById('moodDiscovery')?.classList.remove('hidden');
     document.getElementById('catalogFilterPanel')?.classList.remove('hidden');
@@ -672,7 +673,7 @@ const App = {
     switchTab('home');
     this.currentCategory = `library-${list}`;
     this.updateActiveNav('home');
-    ['heroBillboard', 'coverflowSection', 'continueWatchingSection', 'moodDiscovery', 'catalogFilterPanel', 'dynamicSections']
+    ['heroBillboard', 'coverflowSection', 'featuredSnapSection', 'continueWatchingSection', 'moodDiscovery', 'catalogFilterPanel', 'dynamicSections']
       .forEach((id) => document.getElementById(id)?.classList.add('hidden'));
     const categoryView = document.getElementById('categoryView');
     const grid = document.getElementById('categoryGrid');
@@ -1233,6 +1234,7 @@ const App = {
 
     document.getElementById('heroBillboard')?.classList.add('hidden');
     document.getElementById('coverflowSection')?.classList.add('hidden');
+    document.getElementById('featuredSnapSection')?.classList.add('hidden');
     document.getElementById('continueWatchingSection')?.classList.add('hidden');
     document.getElementById('moodDiscovery')?.classList.add('hidden');
     document.getElementById('catalogFilterPanel')?.classList.add('hidden');
@@ -1387,6 +1389,7 @@ const App = {
   async loadFullSearch(query, page = 1) {
     document.getElementById('heroBillboard')?.classList.add('hidden');
     document.getElementById('coverflowSection')?.classList.add('hidden');
+    document.getElementById('featuredSnapSection')?.classList.add('hidden');
     document.getElementById('continueWatchingSection')?.classList.add('hidden');
     document.getElementById('catalogFilterPanel')?.classList.add('hidden');
     document.getElementById('dynamicSections')?.classList.add('hidden');

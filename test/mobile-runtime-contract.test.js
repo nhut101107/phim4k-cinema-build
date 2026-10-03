@@ -328,14 +328,17 @@ test('home removes legacy fake continue-watching cards and avoids mobile carouse
   assert.match(styles, /\.btn-cf-play svg,[\s\S]*?width: 20px;[\s\S]*?height: 20px;/);
 });
 
-test('featured movies stay in the large hero and use continuous pointer-following scenes', () => {
+test('featured movies use a large landscape hot rail before continue-watching and continuous pointer scenes', () => {
   const index = read('../public/index.html');
   const coverflow = read('../public/js/coverflow.js');
   const projection = read('../public/css/mnhut-projection.css');
   assert.match(index, /id="coverflowSwipeStage"/);
-  assert.doesNotMatch(index, /id="featuredSnapRail"/);
+  assert.match(index, /id="featuredSnapRail"/);
+  assert.ok(index.indexOf('id="featuredSnapSection"') < index.indexOf('id="continueWatchingSection"'));
+  assert.match(coverflow, /renderFeaturedRail/);
   assert.match(coverflow, /addEventListener\('pointermove'/);
   assert.match(coverflow, /translate3d\(\$\{clamped\}px, 0, 0\)/);
+  assert.match(projection, /scroll-snap-type: inline mandatory/);
   assert.match(projection, /touch-action: pan-y pinch-zoom/);
 });
 
@@ -430,12 +433,15 @@ test('user activity is batched without stream URLs and admin logs support user f
   assert.match(index, /id="logTypeFilter"/);
   assert.match(index, /id="logsLoadMoreBtn"/);
   assert.match(admin, /startLogAutoRefresh/);
+  assert.match(admin, /refreshLogSummary/);
+  assert.match(admin, /15000/);
   assert.match(admin, /before/);
   assert.match(index, /id="dailyViewerChart"/);
   assert.match(index, /id="movieViewerChart"/);
   assert.match(admin, /renderViewerAnalytics/);
   assert.match(worker, /byDay/);
   assert.match(worker, /byMovie/);
+  assert.match(worker, /created_at >= datetime\('now', '-13 days'\)/);
 });
 
 test('Android TV exposes native Vietnamese voice search with a browser fallback', () => {

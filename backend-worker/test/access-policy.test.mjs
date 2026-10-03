@@ -48,6 +48,7 @@ test('admin viewer dashboard is aggregated from real D1 activity by day and movi
     insert.run(new Date().toISOString(), 'usage_playback_watch', 'viewer-b', JSON.stringify({ movie: 'Phim A', watched: 300, session: 's-b' }));
     insert.run(new Date().toISOString(), 'usage_playback_start', 'viewer-a', JSON.stringify({ movie: 'Phim B', session: 's-a' }));
     insert.run(new Date().toISOString(), 'usage_playback_watch', 'viewer-a', JSON.stringify({ movie: 'Phim B', watched: 120, session: 's-a' }));
+    insert.run(new Date(Date.now() - (20 * 86400000)).toISOString(), 'usage_playback_watch', 'viewer-old', JSON.stringify({ movie: 'Phim Cũ', watched: 99999, session: 's-old' }));
     const response = await f.request('/api/admin/logs?limit=100&type=ALL', undefined, f.admin);
     assert.equal(response.status, 200);
     const data = await response.json();

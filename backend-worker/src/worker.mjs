@@ -2505,7 +2505,7 @@ async function handleLogs(request, env) {
         COALESCE(SUM(CASE WHEN action = 'usage_playback_watch' THEN CAST(json_extract(detail, '$.watched') AS REAL) ELSE 0 END), 0) AS watched_seconds,
         COALESCE(SUM(CASE WHEN action = 'usage_playback_start' THEN 1 ELSE 0 END), 0) AS starts,
         COUNT(DISTINCT CASE WHEN action = 'usage_playback_start' THEN ${viewerIdentity} ELSE NULL END) AS viewers
-        FROM audit_logs${chartPrefix} action IN ('usage_playback_start', 'usage_playback_watch') AND json_valid(detail) AND NULLIF(json_extract(detail, '$.movie'), '') IS NOT NULL
+        FROM audit_logs${chartPrefix} action IN ('usage_playback_start', 'usage_playback_watch') AND created_at >= datetime('now', '-13 days') AND json_valid(detail) AND NULLIF(json_extract(detail, '$.movie'), '') IS NOT NULL
         GROUP BY movie ORDER BY watched_seconds DESC, movie ASC LIMIT 8`).bind(...summaryValues).all(),
     ]);
     summary = {

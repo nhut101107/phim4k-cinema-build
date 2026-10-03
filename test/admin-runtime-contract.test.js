@@ -86,14 +86,15 @@ test('feedback is persisted, replyable by Admin and visible to the submitting us
   assert.match(html, /id="feedbackInboxList"/);
 });
 
-test('admin logs use manual refresh and explicit Vietnam time', () => {
+test('admin charts refresh in the background while logs stay manual and use Vietnam time', () => {
   const admin = read('public/js/admin.js');
   const html = read('public/index.html');
-  assert.doesNotMatch(admin, /logRefreshTimer = window\.setInterval/);
+  assert.match(admin, /logRefreshTimer = window\.setInterval/);
+  assert.match(admin, /refreshLogSummary/);
   assert.doesNotMatch(admin, /userRefreshTimer = window\.setInterval/);
   assert.match(admin, /timeZone: 'Asia\/Ho_Chi_Minh'/);
   assert.match(html, /Admin\.refreshLogs\(\)/);
-  assert.match(html, /chỉ cập nhật khi Admin yêu cầu/);
+  assert.match(html, /biểu đồ tự cập nhật, nhật ký tải theo yêu cầu/);
 });
 
 test('admin log pagination preserves server-verified totals without fake page statistics', () => {
