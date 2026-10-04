@@ -349,9 +349,13 @@ test('featured movies use the classic portrait-poster hot rail before continue-w
 test('iOS catalogue renders a bounded first page without WebKit blank layers', () => {
   const app = read('../public/js/app.js');
   const styles = read('../public/css/style.css');
+  const projection = read('../public/css/mnhut-projection.css');
   assert.match(app, /this\.homeCatalog : this\.moviesMatching\(\)\)\.slice\(0, 24\)/);
   assert.match(app, /incoming\.length \? this\.uniqueMovies\(incoming\) : this\.filterResults/);
+  assert.match(app, /catalog-grid-section'[\s\S]*?classList\.add\('experience-visible'\)/);
   assert.match(styles, /html\.platform-ios \.movie-section,[\s\S]*?content-visibility: visible/);
+  assert.match(projection, /body\[data-motion-tier\] \.catalog-grid-section[\s\S]*?opacity: 1/);
+  assert.match(projection, /html\.platform-ios \.movie-section,[\s\S]*?content-visibility: visible/);
 });
 
 test('device-only approval remains server-authoritative and bound to a device', () => {

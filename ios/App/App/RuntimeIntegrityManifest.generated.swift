@@ -6,16 +6,16 @@ enum RuntimeIntegrityManifest {
     private static let protectedFiles: [String: String] = [
         "public/cordova_plugins.js": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         "public/cordova.js": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "public/css/mnhut-projection.css": "995e4e9e8dd79067d5426e669b92a10b5375cd677ffe661a9f0c63165ae750d1",
+        "public/css/mnhut-projection.css": "8afb981a51738120f1c7a83c2d88ec26deca75c62aa1611da7d124e8f879953b",
         "public/css/modal.css": "5a52123feec537dba7197943c9289bbea836bfd03fd297d5ebba8b91c6109d3e",
         "public/css/player.css": "af0d2808d9ee2d12ae0464ac9b4d41c2f6814281e1cc4124a875a47aaffced97",
         "public/css/style.css": "bb64380d61e9222a5715a37389a0c06963f6b9d5ff646e578172a953230c84e5",
         "public/css/tv.css": "51d91b56a6192b326f07b7f8cb0c111a2df020e5ad5d6d1d90bb82b6ae63f3e6",
         "public/css/web-premium.css": "967e2e452f376c7a9f182b8cb53d6415959176102deb8fd79d274a6eb17c850b",
-        "public/index.html": "c5430a4c379898fba122f2a07ff992da4f3dbb24d598bb97bc3b74f0c1b23d77",
+        "public/index.html": "e5a7ad884039bc5c9f1b1fe88f8b395fe97d8c14aa8399f4f2e83fda9bf693cc",
         "public/js/admin.js": "15cc287accd650ac9b46ff01e012784365fc765d946de2470687a7b88273d81b",
         "public/js/api.js": "555b73583268b0771649d7fd405273db80a34701f2692bd0e875cea76d45ba69",
-        "public/js/app.js": "4f9725ed60fb26de421d90ea6c0acd81106b1b17b797eb13a41e7509f1de0ca5",
+        "public/js/app.js": "723cdd7e875edb6cebf4d4a329184f2709acec329b79cc6cbcee5832e9f8009a",
         "public/js/audio-enhancer.js": "5e4a54d0cfb9abe0c11b41f63cc96baecbd33b6c34c3228f5e15f9fe1f383915",
         "public/js/auth.js": "59a408260d36040150c750801972c75fce6542542c93dbde6d78a999e7c2825e",
         "public/js/catalog-fallback.js": "8ab81d28b4295c052218cc508239a5f1a6736a425d6ec7d4ffb22582b08523a3",
@@ -41,7 +41,7 @@ enum RuntimeIntegrityManifest {
         "public/media/superman_4k.jpg": "9339c63a766caa26647be0b64cacf0c95e3db29859ce4445b5e9db15a05ab7fe",
         "public/media/the_boys_4k.jpg": "572cb16dfb429292bb9fc690a0c5bfa28a8d688ed23588595e396b454067971a",
         "public/vendor/hls.min.js": "afcde07437ec84b072fe8782e772ceb5046eac751b2719f73ae0d83d763bc3f5",
-        "public/web-index.html": "0f5ee4c1ad06c5fb22ce287269c9662b0626f6959ba93783e43cce835c24a7bc",
+        "public/web-index.html": "b53594f305508744d888098e0e5bb55163d020cfb10d6211b09da2210873a582",
     ]
 
     static func verify(in bundle: Bundle = .main) -> Bool {

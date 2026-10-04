@@ -760,6 +760,15 @@ const App = {
       }
     }
     this.renderCatalogControls();
+    // Filter and full-catalog grids are replaced in place. Make them visible
+    // synchronously instead of waiting for IntersectionObserver: iOS Safari
+    // can miss that first observation after scrollIntoView + DOM replacement,
+    // leaving valid movie cards at opacity: 0.
+    if (hasFilter) {
+      container.querySelectorAll('.catalog-grid-section')
+        .forEach((section) => section.classList.add('experience-visible'));
+    }
+    this.refreshExperienceEffects(container);
   },
 
   getFilterTitle() {

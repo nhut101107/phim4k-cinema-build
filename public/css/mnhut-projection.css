@@ -756,6 +756,10 @@ body[data-motion-tier="high"] .account-card {
   transition: opacity .55s ease, transform .55s cubic-bezier(.2,.7,.2,1);
 }
 body[data-motion-tier] .experience-visible { opacity: 1; transform: none; }
+body[data-motion-tier] .catalog-grid-section {
+  opacity: 1;
+  transform: none;
+}
 body[data-motion-tier="high"] .mood-chip:hover,
 body[data-motion-tier="high"] .mood-surprise:hover,
 body[data-motion-tier="high"] .account-library > button:hover { transform: translate3d(0, -4px, 0); }
@@ -766,6 +770,15 @@ body[data-motion-tier="high"] .coverflow-section::after {
 
 .movie-section,
 .mood-result-section { content-visibility: auto; contain-intrinsic-size: 1px 440px; }
+
+/* This stylesheet loads after style.css. Keep the final iOS rule here so the
+   later generic content-visibility declaration cannot blank a replaced grid. */
+html.platform-ios .movie-section,
+html.platform-ios .cinema-rail-section,
+html.platform-ios .mood-result-section {
+  content-visibility: visible;
+  contain-intrinsic-size: auto;
+}
 
 @media (max-width: 760px) {
   .mood-discovery { grid-template-columns: 1fr; margin: 14px 12px 24px; border-radius: 22px; }
