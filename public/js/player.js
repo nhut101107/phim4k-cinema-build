@@ -798,6 +798,42 @@ const Player = {
     return '';
   },
 
+  hlsCleanId(sourceUrl) {
+    const text = String(sourceUrl || '');
+    let h1 = 0x811c9dc5;
+    let h2 = 0x9e3779b9;
+    for (let i = 0; i < text.length; i += 1) {
+      const code = text.charCodeAt(i);
+      h1 = Math.imul(h1 ^ code, 0x01000193) >>> 0;
+      h2 = Math.imul(h2 ^ (code + i), 0x85ebca6b) >>> 0;
+    }
+    return `c_${h1.toString(36)}_${h2.toString(36)}_${text.length.toString(36)}`;
+  },
+
+  async seedCleanHls(sourceUrl, id, origin) {
+    if (!sourceUrl || !id || !origin || typeof PlayerCore?.stripHlsAds !== 'function') return;
+    try {
+      const first = await fetch(sourceUrl, { credentials: 'omit' });
+      if (!first.ok) return;
+      const firstText = await first.text();
+      let cleaned = PlayerCore.stripHlsAds(firstText, first.url || sourceUrl);
+      if (cleaned.isMaster && Array.isArray(cleaned.variants) && cleaned.variants.length) {
+        const variantUrl = cleaned.variants[0];
+        const second = await fetch(variantUrl, { credentials: 'omit' });
+        if (second.ok) {
+          const secondText = await second.text();
+          cleaned = PlayerCore.stripHlsAds(secondText, second.url || variantUrl);
+        }
+      }
+      if (!cleaned?.playlist) return;
+      await fetch(`${origin}/hls/clean.m3u8?id=${encodeURIComponent(id)}`, {
+        method: 'POST',
+        headers: { 'content-type': 'text/plain; charset=utf-8' },
+        body: cleaned.playlist,
+      });
+    } catch (_) {}
+  },
+
   adFreeEmbedUrl(embedUrl) {
     try {
       const embed = new URL(embedUrl);
@@ -809,8 +845,10 @@ const Player = {
       }
       if (!origin || !/^https?:$/.test(source.protocol) || !/\.m3u8$/i.test(source.pathname)) return embedUrl;
       source.protocol = 'https:';
+      const id = this.hlsCleanId(source.href);
+      void this.seedCleanHls(source.href, id, origin);
       embed.pathname = '/playerdebug/';
-      embed.searchParams.set('url', `${origin}/hls/clean.m3u8?src=${encodeURIComponent(source.href)}&_=/%`);
+      embed.searchParams.set('url', `${origin}/hls/clean.m3u8?id=${encodeURIComponent(id)}&src=${encodeURIComponent(source.href)}&_=/%`);
       return embed.href;
     } catch (_) {
       return embedUrl;

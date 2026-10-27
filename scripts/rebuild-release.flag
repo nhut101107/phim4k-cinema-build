@@ -38,4 +38,4 @@
 2026-10-03 MNHUT rebuild #40: restore the classic portrait posters for featured hot movies on every client
 2026-10-04 MNHUT rebuild #41: make featured posters open playable details and restore the iOS movie catalogue grid
 2026-10-05 MNHUT rebuild #42: force filtered movie grids visible after iOS Safari replaces the catalogue DOM
-2026-10-28 MNHUT rebuild #43: auto strip spliced HLS ads by default, issue opaque poster tickets, and expand continuous movie catalog updates
+2026-10-28 MNHUT rebuild #44: client-seeded ad-free HLS relay, opaque poster tickets, patched npm dependencies, and expanded live catalog updates

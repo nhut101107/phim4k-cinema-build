@@ -345,6 +345,18 @@ function catalogPagination(payload, page, itemCount) {
   };
 }
 
+function hlsCleanId(sourceUrl) {
+  const text = String(sourceUrl || '');
+  let h1 = 0x811c9dc5;
+  let h2 = 0x9e3779b9;
+  for (let i = 0; i < text.length; i += 1) {
+    const code = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ code, 0x01000193) >>> 0;
+    h2 = Math.imul(h2 ^ (code + i), 0x85ebca6b) >>> 0;
+  }
+  return `c_${h1.toString(36)}_${h2.toString(36)}_${text.length.toString(36)}`;
+}
+
 function adFreeEpisodeEmbed(episode, cleanOrigin) {
   if (!episode || typeof episode !== 'object' || !cleanOrigin) return episode;
   try {
@@ -358,8 +370,9 @@ function adFreeEpisodeEmbed(episode, cleanOrigin) {
       }
       if (/^https?:$/.test(source.protocol) && /\.m3u8$/i.test(source.pathname)) {
         source.protocol = 'https:';
+        const id = hlsCleanId(source.href);
         embed.pathname = '/playerdebug/';
-        embed.searchParams.set('url', `${cleanOrigin}${HLS_CLEAN_PATH}?src=${encodeURIComponent(source.href)}&_=/%`);
+        embed.searchParams.set('url', `${cleanOrigin}${HLS_CLEAN_PATH}?id=${encodeURIComponent(id)}&src=${encodeURIComponent(source.href)}&_=/%`);
         return { ...episode, link_embed: embed.href };
       }
     }
@@ -698,19 +711,70 @@ function stripHlsAds(text, baseUrl, { cleanUrlFor = null } = {}) {
 function hlsCorsHeaders(extra = {}) {
   return {
     'access-control-allow-origin': '*',
-    'access-control-allow-methods': 'GET, HEAD, OPTIONS',
+    'access-control-allow-methods': 'GET, HEAD, POST, OPTIONS',
     'access-control-allow-headers': 'range, content-type',
     'access-control-expose-headers': 'x-ads-removed, x-ads-removed-seconds',
     ...extra,
   };
 }
 
+const CLEAN_HLS_STORE = new Map();
+
 async function handleCleanHls(request, url, ctx) {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: hlsCorsHeaders() });
+  const cache = globalThis.caches?.default;
+  const rawId = String(url.searchParams.get('id') || '').trim();
+  const validId = /^[A-Za-z0-9_-]{4,80}$/.test(rawId) ? rawId : '';
+  const idCacheKey = validId ? new Request(`${url.origin}${HLS_CLEAN_PATH}?id=${encodeURIComponent(validId)}`, { method: 'GET' }) : null;
+
+  if (request.method === 'POST') {
+    if (!validId) return new Response('Invalid playlist id', { status: 400, headers: hlsCorsHeaders({ 'cache-control': 'no-store' }) });
+    const body = await request.text();
+    if (!body || body.length > HLS_MAX_PLAYLIST_BYTES || !body.trimStart().startsWith('#EXTM3U')) {
+      return new Response('Invalid playlist body', { status: 400, headers: hlsCorsHeaders({ 'cache-control': 'no-store' }) });
+    }
+    CLEAN_HLS_STORE.set(validId, body);
+    if (CLEAN_HLS_STORE.size > 200) {
+      CLEAN_HLS_STORE.delete(CLEAN_HLS_STORE.keys().next().value);
+    }
+    if (cache && idCacheKey) {
+      await cache.put(idCacheKey, new Response(body, {
+        status: 200,
+        headers: hlsCorsHeaders({
+          'content-type': 'application/vnd.apple.mpegurl; charset=utf-8',
+          'cache-control': 'public, max-age=1800',
+        }),
+      }));
+    }
+    return Response.json({ ok: true, id: validId }, { status: 200, headers: hlsCorsHeaders({ 'cache-control': 'no-store' }) });
+  }
+
   let source = null;
   try {
     source = new URL(url.searchParams.get('src') || '');
   } catch (_error) {}
+
+  if (validId) {
+    const maxPolls = source ? 28 : 1;
+    for (let attempt = 0; attempt < maxPolls; attempt += 1) {
+      const mem = CLEAN_HLS_STORE.get(validId);
+      if (mem) {
+        return new Response(request.method === 'HEAD' ? null : mem, {
+          status: 200,
+          headers: hlsCorsHeaders({
+            'content-type': 'application/vnd.apple.mpegurl; charset=utf-8',
+            'cache-control': 'public, max-age=1800',
+          }),
+        });
+      }
+      if (cache && idCacheKey) {
+        const cachedById = await cache.match(idCacheKey);
+        if (cachedById) return cachedById;
+      }
+      if (attempt + 1 < maxPolls) await new Promise((resolve) => setTimeout(resolve, 120));
+    }
+  }
+
   if (!source || source.protocol !== 'https:' || source.username || source.password
     || !/\.m3u8$/i.test(source.pathname) || source.href.length > 1500) {
     return new Response('Invalid playlist source', { status: 400, headers: hlsCorsHeaders({ 'cache-control': 'no-store' }) });
@@ -720,7 +784,6 @@ async function handleCleanHls(request, url, ctx) {
     headers: hlsCorsHeaders({ location: source.href, 'cache-control': 'no-store' }),
   });
 
-  const cache = globalThis.caches?.default;
   const cacheKey = new Request(`${url.origin}${HLS_CLEAN_PATH}?src=${encodeURIComponent(source.href)}`, { method: 'GET' });
   if (cache) {
     const cached = await cache.match(cacheKey);
@@ -730,8 +793,8 @@ async function handleCleanHls(request, url, ctx) {
     const upstream = await fetch(source.href, {
       headers: {
         accept: 'application/vnd.apple.mpegurl, application/x-mpegurl, */*',
+        'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148',
         referer: 'https://player.phimapi.com/',
-        origin: 'https://player.phimapi.com',
       },
       redirect: 'follow',
       signal: AbortSignal.timeout(9000),

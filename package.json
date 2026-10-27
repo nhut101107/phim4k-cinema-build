@@ -4,7 +4,9 @@
   "description": "MNHUT Cinema streaming app with secure license access and HLS playback",
   "main": "server.js",
   "overrides": {
-    "qs": "6.16.0"
+    "qs": "6.17.0",
+    "body-parser": "1.20.9",
+    "proxy-addr": "2.0.8"
   },
   "scripts": {
     "start": "node server.js",
@@ -32,7 +34,7 @@
     "@capacitor/screen-orientation": "8.0.1",
     "@capacitor/status-bar": "8.0.3",
     "cors": "^2.8.5",
-    "express": "^4.19.2",
+    "express": "^4.22.3",
     "hls.js": "1.7.2"
   },
   "devDependencies": {

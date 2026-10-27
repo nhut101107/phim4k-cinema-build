@@ -62,3 +62,31 @@ test('does not repeat a skipped ad or seek beyond the playable end', () => {
   assert.deepEqual(Core.autoAdSkipTarget(900, 920), { marker: 900, target: 919.5 });
   assert.equal(Core.autoAdSkipTarget(Number.NaN, 7000), null);
 });
+
+test('stripHlsAds removes spliced foreign ad segments and splice-only discontinuities', () => {
+  const movieSegments = Array.from({ length: 40 }, (_, i) =>
+    `#EXTINF:6.000,\nseg_${String(i).padStart(4, '0')}.ts`
+  );
+  const raw = [
+    '#EXTM3U',
+    '#EXT-X-VERSION:3',
+    '#EXT-X-TARGETDURATION:6',
+    ...movieSegments.slice(0, 20),
+    '#EXT-X-DISCONTINUITY',
+    '#EXTINF:3.000,',
+    '/v8/ad_clip_01/segment_000.ts',
+    '#EXTINF:3.000,',
+    '/v8/ad_clip_01/segment_001.ts',
+    '#EXT-X-DISCONTINUITY',
+    ...movieSegments.slice(20),
+    '#EXT-X-ENDLIST',
+  ].join('\n');
+  const res = Core.stripHlsAds(raw, 'https://cdn.example.test/20260903/movie/index.m3u8');
+  assert.equal(res.isMaster, false);
+  assert.equal(res.removedSegments, 2);
+  assert.equal(res.removedSeconds, 6);
+  assert.doesNotMatch(res.playlist, /ad_clip_01/);
+  assert.doesNotMatch(res.playlist, /#EXT-X-DISCONTINUITY/);
+  assert.match(res.playlist, /https:\/\/cdn\.example\.test\/20260903\/movie\/seg_0000\.ts/);
+  assert.match(res.playlist, /https:\/\/cdn\.example\.test\/20260903\/movie\/seg_0039\.ts/);
+});

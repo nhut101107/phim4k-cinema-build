@@ -115,6 +115,154 @@
     return target > current ? { marker, target } : null;
   }
 
+  function hlsAbsolute(uri, base) {
+    try { return new URL(String(uri || '').trim(), base).href; } catch (_error) { return ''; }
+  }
+
+  function hlsSegmentSignature(absoluteUrl) {
+    try {
+      const parsed = new URL(absoluteUrl);
+      const slash = parsed.pathname.lastIndexOf('/');
+      const directory = parsed.pathname.slice(0, slash + 1);
+      const file = parsed.pathname.slice(slash + 1);
+      const dot = file.lastIndexOf('.');
+      const stem = dot > 0 ? file.slice(0, dot) : file;
+      const ext = dot > 0 ? file.slice(dot).toLowerCase() : '';
+      return `${parsed.host}${directory}|${stem.replace(/[A-Za-z0-9]/g, 'x')}${ext}`;
+    } catch (_error) {
+      return 'invalid';
+    }
+  }
+
+  function hlsRewriteUriAttribute(line, base) {
+    return line.replace(/URI="([^"]*)"/, (_match, uri) => `URI="${hlsAbsolute(uri, base) || uri}"`);
+  }
+
+  function stripHlsAds(text, baseUrl, { cleanUrlFor = null } = {}) {
+    const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/);
+    if (!lines[0] || !lines[0].trim().startsWith('#EXTM3U')) throw new Error('NOT_HLS_PLAYLIST');
+
+    if (lines.some((line) => line.startsWith('#EXT-X-STREAM-INF'))) {
+      const out = [];
+      const variants = [];
+      let expectVariant = false;
+      for (const raw of lines) {
+        const line = raw.trim();
+        if (!line) continue;
+        if (line.startsWith('#')) {
+          expectVariant = line.startsWith('#EXT-X-STREAM-INF');
+          out.push(line.startsWith('#EXT-X-MEDIA') || line.startsWith('#EXT-X-I-FRAME-STREAM-INF')
+            ? hlsRewriteUriAttribute(line, baseUrl)
+            : line);
+          continue;
+        }
+        const absolute = hlsAbsolute(line, baseUrl) || line;
+        if (expectVariant) variants.push(absolute);
+        out.push(expectVariant && cleanUrlFor ? cleanUrlFor(absolute) : absolute);
+        expectVariant = false;
+      }
+      return { playlist: `${out.join('\n')}\n`, removedSegments: 0, removedSeconds: 0, isMaster: true, variants };
+    }
+
+    const header = [];
+    const segments = [];
+    const trailer = [];
+    let pending = [];
+    let currentKey = null;
+    let currentMap = null;
+    let group = 0;
+    let discontinuityBefore = false;
+    let seenSegment = false;
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line) continue;
+      if (line.startsWith('#EXT-X-ENDLIST')) { trailer.push(line); continue; }
+      if (line.startsWith('#EXT-X-DISCONTINUITY') && !line.startsWith('#EXT-X-DISCONTINUITY-SEQUENCE')) {
+        if (seenSegment) group += 1;
+        discontinuityBefore = true;
+        continue;
+      }
+      if (line.startsWith('#EXT-X-KEY')) { currentKey = hlsRewriteUriAttribute(line, baseUrl); continue; }
+      if (line.startsWith('#EXT-X-MAP')) { currentMap = hlsRewriteUriAttribute(line, baseUrl); continue; }
+      if (line.startsWith('#')) {
+        if (!seenSegment && !line.startsWith('#EXTINF') && !line.startsWith('#EXT-X-BYTERANGE')
+          && !line.startsWith('#EXT-X-PROGRAM-DATE-TIME')) header.push(line);
+        else pending.push(line);
+        continue;
+      }
+      const extinf = pending.find((tag) => tag.startsWith('#EXTINF'));
+      const duration = Math.max(0, Number.parseFloat(String(extinf || '').slice(8)) || 0);
+      const url = hlsAbsolute(line, baseUrl) || line;
+      segments.push({ tags: pending, url, duration, key: currentKey, map: currentMap, group, discontinuityBefore,
+        signature: hlsSegmentSignature(url) });
+      pending = [];
+      discontinuityBefore = false;
+      seenSegment = true;
+    }
+
+    const bySignature = new Map();
+    let totalSeconds = 0;
+    for (const segment of segments) {
+      totalSeconds += segment.duration;
+      bySignature.set(segment.signature, (bySignature.get(segment.signature) || 0) + segment.duration);
+    }
+    const dominant = [...bySignature.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+
+    const groups = new Map();
+    for (const segment of segments) {
+      const entry = groups.get(segment.group) || { seconds: 0, foreign: true };
+      entry.seconds += segment.duration;
+      if (segment.signature === dominant) entry.foreign = false;
+      groups.set(segment.group, entry);
+    }
+    const multipleGroups = groups.size > 1;
+    const adGroups = new Set();
+    let adSeconds = 0;
+    for (const [id, entry] of groups) {
+      if (multipleGroups && entry.foreign && entry.seconds <= 180) {
+        adGroups.add(id);
+        adSeconds += entry.seconds;
+      }
+    }
+    if (!totalSeconds || adSeconds > totalSeconds * 0.25) adGroups.clear();
+
+    const out = [...header];
+    let emittedKey = null;
+    let emittedMap = null;
+    let pendingDiscontinuity = false;
+    let removedSegments = 0;
+    let removedSeconds = 0;
+    let emittedAny = false;
+    let lastKeptSignature = '';
+    let removedSinceKept = false;
+    for (const segment of segments) {
+      if (segment.discontinuityBefore) pendingDiscontinuity = true;
+      if (adGroups.has(segment.group)) {
+        removedSegments += 1;
+        removedSeconds += segment.duration;
+        removedSinceKept = true;
+        continue;
+      }
+      const spliceOnly = removedSinceKept && segment.signature === lastKeptSignature;
+      if (pendingDiscontinuity && emittedAny && !spliceOnly) out.push('#EXT-X-DISCONTINUITY');
+      pendingDiscontinuity = false;
+      removedSinceKept = false;
+      lastKeptSignature = segment.signature;
+      if (segment.key !== emittedKey) {
+        out.push(segment.key || '#EXT-X-KEY:METHOD=NONE');
+        emittedKey = segment.key;
+      }
+      if (segment.map && segment.map !== emittedMap) {
+        out.push(segment.map);
+        emittedMap = segment.map;
+      }
+      out.push(...segment.tags, segment.url);
+      emittedAny = true;
+    }
+    out.push(...trailer);
+    return { playlist: `${out.join('\n')}\n`, removedSegments, removedSeconds, isMaster: false, variants: [] };
+  }
+
   return {
     findEquivalentEpisode,
     episodeOrdinal,
@@ -122,6 +270,7 @@
     clampResumeTime,
     qualityOption,
     doubleTapSeek,
-    autoAdSkipTarget
+    autoAdSkipTarget,
+    stripHlsAds
   };
 });
