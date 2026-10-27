@@ -2053,3 +2053,54 @@
   .feedback-fab { bottom: calc(76px + env(safe-area-inset-bottom)); padding: 0 13px; }
   .feedback-ticket-heading { display: grid; }
 }
+
+/* Related Movies Section in Movie Modal */
+.related-movies-section {
+  margin-top: 28px;
+  padding-top: 22px;
+  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+}
+
+.related-movies-header {
+  margin-bottom: 14px;
+}
+
+.related-movies-header h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  letter-spacing: 0.3px;
+}
+
+.related-movies-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 14px;
+}
+
+.related-movies-grid .movie-card {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.related-movies-grid .movie-card:hover {
+  transform: translateY(-4px) scale(1.02);
+}
+
+@media (max-width: 640px) {
+  .related-movies-section {
+    margin-top: 20px;
+    padding-top: 16px;
+  }
+  .related-movies-header h3 {
+    font-size: 14px;
+  }
+  .related-movies-grid {
+    grid-template-columns: repeat(auto-fill, minmax(105px, 1fr));
+    gap: 10px;
+  }
+}
+

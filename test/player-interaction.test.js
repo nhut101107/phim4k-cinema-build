@@ -6,7 +6,7 @@ function fixture() {
   const classes = new Set();
   const storage = new Map();
   const wrapper = { classList: { contains: c => classes.has(c), add: c => classes.add(c), remove: c => classes.delete(c), toggle: (c, on) => on ? classes.add(c) : classes.delete(c) } };
-  const ctx = { document: { readyState: 'loading', addEventListener() {}, getElementById: () => null }, window: { matchMedia: () => ({ matches: true }), setTimeout: () => 1, requestAnimationFrame: () => 1, cancelAnimationFrame() {} }, performance: { now: () => 0 }, localStorage: { getItem: k => storage.get(k), setItem: (k,v) => storage.set(k,v), removeItem: k => storage.delete(k) }, clearTimeout() {} };
+  const ctx = { API: { trackUsage() {} }, PlayerCore: require('../public/js/player-core'), document: { readyState: 'loading', addEventListener() {}, getElementById: () => null }, window: { matchMedia: () => ({ matches: true }), setTimeout: () => 1, requestAnimationFrame: () => 1, cancelAnimationFrame() {} }, performance: { now: () => 0 }, localStorage: { getItem: k => storage.get(k), setItem: (k,v) => storage.set(k,v), removeItem: k => storage.delete(k) }, clearTimeout() {} };
   vm.runInNewContext(fs.readFileSync('public/js/player.js','utf8') + '\nglobalThis.subject=Player;',ctx);
   const p = ctx.subject; p.wrapper = wrapper; p.modal = { classList: { contains: () => false } }; p.video = { paused: false, pause() { this.paused = true; } };
   return p;
@@ -46,4 +46,42 @@ test('paused playback is still persisted when pause or close explicitly flushes'
   assert.match(source, /this\.saveProgressNow\(\{ flush: true \}\)/);
   assert.match(source, /this\.video\.paused && !flush/);
   assert.doesNotMatch(source, /!this\.video \|\| this\.video\.paused \|\| this\.video\.currentTime <= 3/);
+});
+
+test('skipIntro advances video currentTime and notifies user', () => {
+  const p = fixture();
+  let alertMsg = '';
+  p.showAlert = (msg) => { alertMsg = msg; };
+  p.video.currentTime = 20;
+  p.video.duration = 1800;
+  p.skipIntro();
+  assert.equal(p.video.currentTime, 85);
+  assert.equal(alertMsg, 'Đã bỏ qua đoạn mở đầu (Intro)');
+});
+
+test('dismissNextEpisodePopup sets dismissed state and hides popup', () => {
+  const p = fixture();
+  p.nextEpPopupDismissed = false;
+  p.dismissNextEpisodePopup();
+  assert.equal(p.nextEpPopupDismissed, true);
+});
+
+test('smooth failover preserves resume position across server switch', () => {
+  const p = fixture();
+  p.video.currentTime = 320;
+  p.allServers = [
+    { server_name: 'Server 1', server_data: [{ slug: 'tap-1', name: 'Tập 1' }] },
+    { server_name: 'Server 2', server_data: [{ slug: 'tap-1', name: 'Tập 1' }] }
+  ];
+  p.currentServerIndex = 0;
+  p.currentEpisode = { slug: 'tap-1', name: 'Tập 1' };
+  p.currentEpIndex = 0;
+  p.episodesList = p.allServers[0].server_data;
+  let loadedResumeTime = null;
+  p.loadEpisode = (_ep, opts) => { loadedResumeTime = opts.resumeTime; };
+  p.saveProgressNow = () => {};
+  p.showAlert = () => {};
+  p.switchServer(1, { automatic: true });
+  assert.equal(p.currentServerIndex, 1);
+  assert.equal(loadedResumeTime, 320);
 });

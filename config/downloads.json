@@ -1,0 +1,38 @@
+{
+  "android": {
+    "name": "MNHUT Cinema Android (APK)",
+    "url": "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android?build=43",
+    "version": "3.61",
+    "sha256": "c73734494918ea43d2a8d0d1f06774fd06a83a4618e23931d85bc196630a644c",
+    "sizeBytes": 4082889,
+    "signer": "github-actions[bot]",
+    "note": "Điện thoại Android"
+  },
+  "android_tv": {
+    "name": "MNHUT Cinema Android TV (APK)",
+    "url": "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android-tv?build=43",
+    "version": "3.61",
+    "sha256": "b025ce620d3ad3b28e86f0e86c04b09146bdc574bcdbb97d4044862ef1029c08",
+    "sizeBytes": 4082889,
+    "signer": "github-actions[bot]",
+    "note": "Android TV & TV Box"
+  },
+  "ios": {
+    "name": "MNHUT Cinema iOS (IPA)",
+    "url": "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/ios?build=43",
+    "version": "3.61",
+    "sha256": "54e1d3e7ececb205e62128eafa1858f5519fa38f7c89b8617eadc6ddfbf27a77",
+    "sizeBytes": 4540354,
+    "signer": "github-actions[bot]",
+    "note": "iPhone & iPad"
+  },
+  "windows": {
+    "name": "MNHUT Cinema Windows (EXE)",
+    "url": "https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/windows?build=43",
+    "version": "3.61",
+    "sha256": "87eb00a56084a7963bc9ccf41fe6f93b4ff9fff15dc54e777b8e55fe434dbca8",
+    "sizeBytes": 121069329,
+    "signer": "github-actions[bot]",
+    "note": "Máy tính Windows"
+  }
+}

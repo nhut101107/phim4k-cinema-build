@@ -263,6 +263,30 @@
     return { playlist: `${out.join('\n')}\n`, removedSegments, removedSeconds, isMaster: false, variants: [] };
   }
 
+  function nextEpisodeCountdown(currentTime, duration, threshold = 30) {
+    const cur = Number(currentTime);
+    const dur = Number(duration);
+    if (!Number.isFinite(cur) || !Number.isFinite(dur) || dur <= 60) return null;
+    const remaining = Math.max(0, Math.ceil(dur - cur));
+    if (remaining <= threshold && remaining > 0) {
+      return { active: true, remaining };
+    }
+    return null;
+  }
+
+  function isIntroInterval(currentTime, duration, introSeconds = 85) {
+    const cur = Number(currentTime);
+    const dur = Number(duration);
+    if (!Number.isFinite(cur) || !Number.isFinite(dur) || dur <= 120) return false;
+    return cur >= 0 && cur < introSeconds;
+  }
+
+  function skipIntroTarget(currentTime, duration, introSeconds = 85) {
+    const dur = Number(duration);
+    if (!Number.isFinite(dur) || dur <= 1) return introSeconds;
+    return Math.max(0, Math.min(introSeconds, dur - 1));
+  }
+
   return {
     findEquivalentEpisode,
     episodeOrdinal,
@@ -271,6 +295,9 @@
     qualityOption,
     doubleTapSeek,
     autoAdSkipTarget,
-    stripHlsAds
+    stripHlsAds,
+    nextEpisodeCountdown,
+    isIntroInterval,
+    skipIntroTarget
   };
 });

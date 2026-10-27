@@ -27,7 +27,9 @@ const App = {
   activeMovieDetail: null,
   activeServerIndex: 0,
   searchDebounceTimer: null,
+  tabSearchTimer: null,
   searchRequestId: 0,
+  searchSelectedIndex: -1,
   scrollFrame: 0,
   lastCatalogInteractionAt: 0,
   heroRenderSignature: '',
@@ -131,23 +133,43 @@ const App = {
     searchInput.addEventListener('input', (e) => {
       const val = e.target.value.trim();
       searchClear.classList.toggle('hidden', !val);
-      clearTimeout(this.searchDebounceTimer);
-      if (!val) {
-        this.hideSearchDropdown();
-        return;
-      }
-      this.searchDebounceTimer = setTimeout(() => {
-        this.performInstantSearch(val);
-      }, 300);
+      this.performInstantSearch(val);
     });
 
     searchInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        const val = e.target.value.trim();
-        if (val) {
+      const dropdown = document.getElementById('searchDropdown');
+      const items = dropdown && !dropdown.classList.contains('hidden')
+        ? Array.from(dropdown.querySelectorAll('.search-item'))
+        : [];
+
+      if (e.key === 'ArrowDown') {
+        if (!items.length) return;
+        e.preventDefault();
+        this.searchSelectedIndex = (this.searchSelectedIndex + 1) % items.length;
+        this.updateSearchSelection(items);
+      } else if (e.key === 'ArrowUp') {
+        if (!items.length) return;
+        e.preventDefault();
+        this.searchSelectedIndex = (this.searchSelectedIndex - 1 + items.length) % items.length;
+        this.updateSearchSelection(items);
+      } else if (e.key === 'Enter') {
+        const val = searchInput.value.trim();
+        if (this.searchSelectedIndex >= 0 && items[this.searchSelectedIndex]) {
+          e.preventDefault();
+          const selected = items[this.searchSelectedIndex];
+          const slug = selected.dataset.slug;
+          this.hideSearchDropdown();
+          if (slug) {
+            this.openMovieDetail(slug);
+          } else {
+            selected.click();
+          }
+        } else if (val) {
           this.hideSearchDropdown();
           this.loadFullSearch(val, 1);
         }
+      } else if (e.key === 'Escape') {
+        this.hideSearchDropdown();
       }
     });
 
@@ -528,6 +550,7 @@ const App = {
     return String(value || '')
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[đĐ]/g, 'd')
       .toLocaleLowerCase('vi-VN')
       .trim();
   },
@@ -1358,59 +1381,116 @@ const App = {
   // =================================================
   // 3. INSTANT & FULL SEARCH
   // =================================================
-  async performInstantSearch(query) {
+  performInstantSearch(query) {
+    const trimmed = String(query || '').trim();
     const dropdown = document.getElementById('searchDropdown');
-    const requestId = ++this.searchRequestId;
-    const normalized = this.normalizeFilterValue(query);
-    const localItems = this.homeCatalog.filter((movie) => this.normalizeFilterValue([
-      movie?.name, movie?.origin_name, movie?.year
-    ].filter(Boolean).join(' ')).includes(normalized)).slice(0, 6);
-    if (localItems.length) this.renderInstantSearch(localItems);
-    try {
-      const data = await API.search(query, 1);
-      if (requestId !== this.searchRequestId) return;
-      const items = (data.items || []).slice(0, 6);
-      if (items.length === 0) {
-        dropdown.innerHTML = '<div style="padding: 14px; text-align: center; color: var(--text-dim); font-size: 13px;">Không tìm thấy phim phù hợp</div>';
-        dropdown.classList.remove('hidden');
-        return;
-      }
+    const searchClear = document.getElementById('searchClear');
+    if (searchClear) searchClear.classList.toggle('hidden', !trimmed);
+    this.searchSelectedIndex = -1;
+    clearTimeout(this.searchDebounceTimer);
 
-      this.renderInstantSearch(items);
-    } catch (err) {
-      if (!localItems.length && requestId === this.searchRequestId) dropdown.classList.add('hidden');
+    if (!trimmed) {
+      this.hideSearchDropdown();
+      return;
     }
+
+    const requestId = ++this.searchRequestId;
+    const normalized = this.normalizeFilterValue(trimmed);
+
+    // 0ms instant in-memory query against homeCatalog on keystroke
+    const localItems = (this.homeCatalog || []).filter((movie) => {
+      const target = this.normalizeFilterValue([
+        movie?.name, movie?.origin_name, movie?.year
+      ].filter(Boolean).join(' '));
+      return target.includes(normalized);
+    }).slice(0, 6);
+
+    if (localItems.length) {
+      this.renderInstantSearch(localItems);
+    }
+
+    // 250ms debounced remote API query
+    this.searchDebounceTimer = setTimeout(async () => {
+      try {
+        const data = await API.search(trimmed, 1);
+        if (requestId !== this.searchRequestId) return;
+        const remoteItems = (data?.items || []).slice(0, 6);
+        if (remoteItems.length === 0) {
+          if (localItems.length === 0 && dropdown) {
+            dropdown.innerHTML = '<div style="padding: 14px; text-align: center; color: var(--text-dim); font-size: 13px;">Không tìm thấy phim phù hợp</div>';
+            dropdown.classList.remove('hidden');
+          }
+          return;
+        }
+
+        const seenSlugs = new Set();
+        const merged = [];
+        [...remoteItems, ...localItems].forEach((movie) => {
+          if (movie?.slug && !seenSlugs.has(movie.slug)) {
+            seenSlugs.add(movie.slug);
+            merged.push(movie);
+          }
+        });
+        this.renderInstantSearch(merged.slice(0, 6));
+      } catch (err) {
+        if (!localItems.length && requestId === this.searchRequestId && dropdown) {
+          dropdown.classList.add('hidden');
+        }
+      }
+    }, 250);
   },
 
   renderInstantSearch(items = []) {
-      const dropdown = document.getElementById('searchDropdown');
-      dropdown.innerHTML = '';
-      items.forEach(movie => {
-        const item = document.createElement('div');
-        item.className = 'search-item';
-        item.onclick = () => {
-          this.hideSearchDropdown();
-          this.openMovieDetail(movie.slug);
-        };
+    const dropdown = document.getElementById('searchDropdown');
+    if (!dropdown) return;
+    dropdown.innerHTML = '';
+    this.searchSelectedIndex = -1;
+    items.forEach((movie) => {
+      const item = document.createElement('div');
+      item.className = 'search-item';
+      item.dataset.slug = movie.slug || '';
+      item.setAttribute('role', 'option');
+      item.setAttribute('tabindex', '-1');
+      item.onclick = () => {
+        this.hideSearchDropdown();
+        this.openMovieDetail(movie.slug);
+      };
 
-        const posterUrl = this.resolveImageUrl(movie.poster_url || movie.thumb_url);
-        const alternatePosterUrl = this.resolveImageUrl(movie.thumb_url || movie.poster_url);
-        item.innerHTML = `
-          <img class="search-thumb" src="${this.escapeHtml(posterUrl)}" alt="${this.escapeHtml(movie.name || 'Poster phim')}" loading="lazy" decoding="async" width="56" height="82" />
-          <div class="search-info">
-            <div class="search-title">${this.escapeHtml(movie.name || 'Đang cập nhật')}</div>
-            <div class="search-sub">${this.escapeHtml(movie.origin_name || '')} (${this.escapeHtml(movie.year || '2026')})</div>
-          </div>
-        `;
-        this.attachPosterFallback(item.querySelector('.search-thumb'), [alternatePosterUrl]);
-        dropdown.appendChild(item);
-      });
+      const posterUrl = this.resolveImageUrl(movie.poster_url || movie.thumb_url);
+      const alternatePosterUrl = this.resolveImageUrl(movie.thumb_url || movie.poster_url);
+      const quality = movie.quality ? String(movie.quality).trim() : 'FHD';
+      const year = movie.year || '2026';
+      const origin = movie.origin_name ? String(movie.origin_name).trim() : '';
 
-      dropdown.classList.remove('hidden');
+      item.innerHTML = `
+        <img class="search-thumb" src="${this.escapeHtml(posterUrl)}" alt="${this.escapeHtml(movie.name || 'Poster phim')}" loading="lazy" decoding="async" width="56" height="82" />
+        <div class="search-info">
+          <div class="search-title">${this.escapeHtml(movie.name || 'Đang cập nhật')}</div>
+          <div class="search-sub">${this.escapeHtml(origin ? `${origin} (${year})` : String(year))}</div>
+        </div>
+        <span class="search-badge-quality">${this.escapeHtml(quality)}</span>
+      `;
+      this.attachPosterFallback(item.querySelector('.search-thumb'), [alternatePosterUrl]);
+      dropdown.appendChild(item);
+    });
+
+    dropdown.classList.remove('hidden');
+  },
+
+  updateSearchSelection(items = []) {
+    items.forEach((item, idx) => {
+      const isSelected = idx === this.searchSelectedIndex;
+      item.classList.toggle('selected', isSelected);
+      if (isSelected) {
+        item.scrollIntoView?.({ block: 'nearest' });
+      }
+    });
   },
 
   hideSearchDropdown() {
-    document.getElementById('searchDropdown').classList.add('hidden');
+    const dropdown = document.getElementById('searchDropdown');
+    if (dropdown) dropdown.classList.add('hidden');
+    this.searchSelectedIndex = -1;
   },
 
   async loadFullSearch(query, page = 1) {
@@ -1473,6 +1553,10 @@ const App = {
     document.getElementById('detailMetaGrid').innerHTML = '';
     document.getElementById('serverTabs').innerHTML = '';
     document.getElementById('episodesList').innerHTML = '<div class="spinner"></div>';
+    const relatedGrid = document.getElementById('relatedMoviesGrid');
+    if (relatedGrid) relatedGrid.innerHTML = '';
+    const relatedSection = document.getElementById('relatedMoviesSection');
+    if (relatedSection) relatedSection.classList.add('hidden');
 
     try {
       let data;
@@ -1556,6 +1640,81 @@ const App = {
 
     // Render Server Tabs
     this.renderServerTabs(episodes);
+
+    // Render Related Movies Section
+    this.renderRelatedMovies(movie);
+  },
+
+  scoreRelatedMovie(sourceMovie, candidateMovie) {
+    if (!sourceMovie || !candidateMovie || sourceMovie.slug === candidateMovie.slug) return -1;
+    let score = 0;
+    const extractTags = (list) => {
+      const items = Array.isArray(list) ? list : (list ? [list] : []);
+      return items
+        .filter(Boolean)
+        .map((item) => (typeof item === 'object' ? String(item.slug || item.name || '') : String(item)).toLowerCase().trim())
+        .filter(Boolean);
+    };
+
+    const srcCats = new Set(extractTags(sourceMovie.category));
+    const candCats = new Set(extractTags(candidateMovie.category));
+    candCats.forEach((c) => {
+      if (srcCats.has(c)) score += 3;
+    });
+
+    const srcCountries = new Set(extractTags(sourceMovie.country));
+    const candCountries = new Set(extractTags(candidateMovie.country));
+    candCountries.forEach((c) => {
+      if (srcCountries.has(c)) score += 1;
+    });
+
+    return score;
+  },
+
+  renderRelatedMovies(movie) {
+    const section = document.getElementById('relatedMoviesSection');
+    const grid = document.getElementById('relatedMoviesGrid');
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    if (!movie || !movie.slug) {
+      if (section) section.classList.add('hidden');
+      return;
+    }
+
+    const scored = (this.homeCatalog || [])
+      .filter((candidate) => candidate && candidate.slug && candidate.slug !== movie.slug)
+      .map((candidate) => ({
+        movie: candidate,
+        score: this.scoreRelatedMovie(movie, candidate),
+      }))
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score || (b.movie.year || 0) - (a.movie.year || 0));
+
+    const topRelated = scored.slice(0, 10).map((item) => item.movie);
+
+    if (topRelated.length === 0) {
+      if (section) section.classList.add('hidden');
+      return;
+    }
+
+    if (section) section.classList.remove('hidden');
+
+    const fragment = document.createDocumentFragment();
+    topRelated.forEach((relMovie) => {
+      const card = this.createMovieCard(relMovie);
+      card.classList.add('related-card');
+      const origClick = card.onclick;
+      card.onclick = (e) => {
+        if (typeof origClick === 'function') origClick.call(card, e);
+        const modal = document.getElementById('movieModal');
+        const detailBody = modal?.querySelector('.detail-body');
+        if (detailBody) detailBody.scrollTop = 0;
+      };
+      fragment.appendChild(card);
+    });
+
+    grid.appendChild(fragment);
   },
 
   toggleDetailSynopsis() {
@@ -1656,33 +1815,62 @@ const App = {
   },
 
   onTabSearchInput(e) {
-    const val = e.target.value.trim();
+    const val = (e?.target?.value || '').trim();
     clearTimeout(this.tabSearchTimer);
     const container = document.getElementById('tabSearchResults');
     if (!val) {
       if (container) container.innerHTML = '';
       return;
     }
+    const requestId = ++this.searchRequestId;
+    const normalized = this.normalizeFilterValue(val);
+
+    // 0ms instant local in-memory rendering against homeCatalog
+    const localMatches = (this.homeCatalog || []).filter((movie) => {
+      const target = this.normalizeFilterValue([
+        movie?.name, movie?.origin_name, movie?.year
+      ].filter(Boolean).join(' '));
+      return target.includes(normalized);
+    });
+
+    if (container) {
+      if (localMatches.length > 0) {
+        container.innerHTML = '';
+        const fragment = document.createDocumentFragment();
+        localMatches.slice(0, 18).forEach((m) => fragment.appendChild(this.createMovieCard(m)));
+        container.appendChild(fragment);
+      } else {
+        container.innerHTML = '<div class="loading-spinner-wrapper"><div class="spinner"></div><p>Đang tìm kiếm...</p></div>';
+      }
+    }
+
+    // 250ms debounced remote search
     this.tabSearchTimer = setTimeout(async () => {
       try {
-        if (container) {
-          container.innerHTML = '<div class="loading-spinner-wrapper"><div class="spinner"></div><p>Đang tìm kiếm...</p></div>';
-        }
         const data = await API.search(val, 1);
+        if (requestId !== this.searchRequestId) return;
         if (container) {
-          container.innerHTML = '';
-          const items = data.items || [];
-          if (items.length === 0) {
+          const remoteItems = data?.items || [];
+          const seenSlugs = new Set();
+          const combined = [];
+          [...remoteItems, ...localMatches].forEach((m) => {
+            if (m?.slug && !seenSlugs.has(m.slug)) {
+              seenSlugs.add(m.slug);
+              combined.push(m);
+            }
+          });
+          if (combined.length === 0) {
             container.innerHTML = '<p style="color: #9ca3af; text-align: center; grid-column: 1/-1; padding: 40px;">Không tìm thấy phim phù hợp.</p>';
             return;
           }
+          container.innerHTML = '';
           const fragment = document.createDocumentFragment();
-          items.forEach(m => fragment.appendChild(this.createMovieCard(m)));
+          combined.slice(0, 24).forEach((m) => fragment.appendChild(this.createMovieCard(m)));
           container.appendChild(fragment);
-          API.trackUsage('search', { query: val, results: items.length });
+          API.trackUsage('search', { query: val, results: combined.length });
         }
       } catch (err) {}
-    }, 350);
+    }, 250);
   },
 
   quickSearch(keyword) {

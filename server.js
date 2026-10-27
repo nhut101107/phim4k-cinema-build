@@ -64,10 +64,38 @@ function loadDownloadsConfig() {
     return JSON.parse(raw);
   } catch (err) {
     return {
-      android: { name: 'MNHUT Cinema Android (APK)', url: 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android', version: '3.57', note: 'Điện thoại Android' },
-      android_tv: { name: 'MNHUT Cinema Android TV (APK)', url: 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android-tv', version: '3.57', note: 'Android TV & TV Box' },
-      ios: { name: 'MNHUT Cinema iOS (IPA)', url: 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/ios', version: '3.57', note: 'iPhone & iPad' },
-      windows: { name: 'MNHUT Cinema Windows (EXE)', url: 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/windows', version: '3.57', note: 'Máy tính Windows' }
+      android: {
+        name: 'MNHUT Cinema Android (APK)',
+        url: 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android?build=43',
+        version: '3.61',
+        sha256: 'c73734494918ea43d2a8d0d1f06774fd06a83a4618e23931d85bc196630a644c',
+        sizeBytes: 4082889,
+        note: 'Điện thoại Android'
+      },
+      android_tv: {
+        name: 'MNHUT Cinema Android TV (APK)',
+        url: 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/android-tv?build=43',
+        version: '3.61',
+        sha256: 'b025ce620d3ad3b28e86f0e86c04b09146bdc574bcdbb97d4044862ef1029c08',
+        sizeBytes: 4082889,
+        note: 'Android TV & TV Box'
+      },
+      ios: {
+        name: 'MNHUT Cinema iOS (IPA)',
+        url: 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/ios?build=43',
+        version: '3.61',
+        sha256: '54e1d3e7ececb205e62128eafa1858f5519fa38f7c89b8617eadc6ddfbf27a77',
+        sizeBytes: 4540354,
+        note: 'iPhone & iPad'
+      },
+      windows: {
+        name: 'MNHUT Cinema Windows (EXE)',
+        url: 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/download/windows?build=43',
+        version: '3.61',
+        sha256: '87eb00a56084a7963bc9ccf41fe6f93b4ff9fff15dc54e777b8e55fe434dbca8',
+        sizeBytes: 121069329,
+        note: 'Máy tính Windows'
+      }
     };
   }
 }
@@ -1338,25 +1366,46 @@ app.get('/api/app/downloads', (req, res) => {
 });
 
 app.post('/api/admin/update-downloads', requireAdmin, (req, res) => {
-  const { androidUrl, iosUrl, windowsUrl, androidVersion, iosVersion, windowsVersion } = req.body;
+  const {
+    androidUrl, iosUrl, windowsUrl, android_tvUrl,
+    androidVersion, iosVersion, windowsVersion, android_tvVersion,
+    androidSha256, iosSha256, windowsSha256, android_tvSha256,
+    androidSizeBytes, iosSizeBytes, windowsSizeBytes, android_tvSizeBytes
+  } = req.body;
   const cfg = loadDownloadsConfig();
 
+  if (!cfg.android) cfg.android = { name: 'MNHUT Cinema Android (APK)', note: 'Điện thoại Android' };
   if (androidUrl !== undefined) cfg.android.url = androidUrl.trim();
   if (androidVersion !== undefined) cfg.android.version = androidVersion.trim();
+  if (androidSha256 !== undefined) cfg.android.sha256 = androidSha256.trim();
+  if (androidSizeBytes !== undefined) cfg.android.sizeBytes = Number(androidSizeBytes) || 0;
   cfg.android.updatedAt = new Date().toISOString();
 
+  if (!cfg.android_tv) cfg.android_tv = { name: 'MNHUT Cinema Android TV (APK)', note: 'Android TV & TV Box' };
+  if (android_tvUrl !== undefined) cfg.android_tv.url = android_tvUrl.trim();
+  if (android_tvVersion !== undefined) cfg.android_tv.version = android_tvVersion.trim();
+  if (android_tvSha256 !== undefined) cfg.android_tv.sha256 = android_tvSha256.trim();
+  if (android_tvSizeBytes !== undefined) cfg.android_tv.sizeBytes = Number(android_tvSizeBytes) || 0;
+  cfg.android_tv.updatedAt = new Date().toISOString();
+
+  if (!cfg.ios) cfg.ios = { name: 'MNHUT Cinema iOS (IPA)', note: 'iPhone & iPad' };
   if (iosUrl !== undefined) cfg.ios.url = iosUrl.trim();
   if (iosVersion !== undefined) cfg.ios.version = iosVersion.trim();
+  if (iosSha256 !== undefined) cfg.ios.sha256 = iosSha256.trim();
+  if (iosSizeBytes !== undefined) cfg.ios.sizeBytes = Number(iosSizeBytes) || 0;
   cfg.ios.updatedAt = new Date().toISOString();
 
+  if (!cfg.windows) cfg.windows = { name: 'MNHUT Cinema Windows (EXE)', note: 'Máy tính Windows' };
   if (windowsUrl !== undefined) cfg.windows.url = windowsUrl.trim();
   if (windowsVersion !== undefined) cfg.windows.version = windowsVersion.trim();
+  if (windowsSha256 !== undefined) cfg.windows.sha256 = windowsSha256.trim();
+  if (windowsSizeBytes !== undefined) cfg.windows.sizeBytes = Number(windowsSizeBytes) || 0;
   cfg.windows.updatedAt = new Date().toISOString();
 
   saveDownloadsConfig(cfg);
-  addLog('ADMIN', 'DOWNLOADS_UPDATED', `Cập nhật link tải: Android [${cfg.android.url}], iOS [${cfg.ios.url}], Windows [${cfg.windows.url}]`);
+  addLog('ADMIN', 'DOWNLOADS_UPDATED', `Cập nhật link tải: Android [${cfg.android?.url}], Android TV [${cfg.android_tv?.url}], iOS [${cfg.ios?.url}], Windows [${cfg.windows?.url}]`);
 
-  res.json({ success: true, message: 'Đã cập nhật cấu hình link tải 3 phiên bản thành công!', downloads: cfg });
+  res.json({ success: true, message: 'Đã cập nhật cấu hình link tải các phiên bản thành công!', downloads: cfg });
 });
 
 // Admin toggle / configure Force Update (Block outdated versions)
@@ -1411,55 +1460,55 @@ app.get('/api/app/version', (req, res) => {
   });
 });
 
-app.get('/download/apk', (req, res) => {
+app.get(['/download/apk', '/download/android'], (req, res) => {
   const cfg = loadDownloadsConfig();
   const url = cfg.android?.url || '/download/apk';
   if (url.startsWith('http://') || url.startsWith('https://')) {
     return res.redirect(url);
   }
 
-  const apkPath = path.join(__dirname, 'release-3.55', '4K-Cinema-Android-3.55.apk');
+  const apkPath = path.join(__dirname, 'release-3.61', '4K-Cinema-Android-3.61.apk');
   if (fs.existsSync(apkPath)) {
-    res.download(apkPath, '4K-Cinema-Android-3.55.apk');
+    res.download(apkPath, '4K-Cinema-Android-3.61.apk');
   } else {
     res.status(404).send('Bản cài đặt Android (APK) chưa sẵn sàng.');
   }
 });
 
-app.get('/download/ipa', (req, res) => {
+app.get(['/download/ipa'], (req, res) => {
   const cfg = loadDownloadsConfig();
   const url = cfg.ios?.url || '/download/ipa';
   if (url.startsWith('http://') || url.startsWith('https://')) {
     return res.redirect(url);
   }
 
-  const ipaPath = path.join(__dirname, 'release-3.55', '4K-Cinema-iOS-3.55-unsigned.ipa');
+  const ipaPath = path.join(__dirname, 'release-3.61', '4K-Cinema-iOS-3.61-unsigned.ipa');
   if (fs.existsSync(ipaPath)) {
-    res.download(ipaPath, '4K-Cinema-iOS-3.55-unsigned.ipa');
+    res.download(ipaPath, '4K-Cinema-iOS-3.61-unsigned.ipa');
   } else {
     res.status(404).send('Bản cài đặt iOS (IPA) chưa sẵn sàng.');
   }
 });
 
-app.get('/download/tv', (req, res) => {
+app.get(['/download/tv', '/download/android-tv'], (req, res) => {
   const cfg = loadDownloadsConfig();
   const url = cfg.android_tv?.url || '/download/tv';
   if (url.startsWith('http://') || url.startsWith('https://')) return res.redirect(url);
-  const apkPath = path.join(__dirname, 'release-3.55', '4K-Cinema-Android-TV-3.55.apk');
-  if (fs.existsSync(apkPath)) return res.download(apkPath, '4K-Cinema-Android-TV-3.55.apk');
+  const apkPath = path.join(__dirname, 'release-3.61', '4K-Cinema-Android-TV-3.61.apk');
+  if (fs.existsSync(apkPath)) return res.download(apkPath, '4K-Cinema-Android-TV-3.61.apk');
   return res.status(404).send('Bản cài đặt Android TV (APK) chưa sẵn sàng.');
 });
 
-app.get('/download/exe', (req, res) => {
+app.get(['/download/exe', '/download/windows'], (req, res) => {
   const cfg = loadDownloadsConfig();
   const url = cfg.windows?.url || '/download/exe';
   if (url.startsWith('http://') || url.startsWith('https://')) {
     return res.redirect(url);
   }
 
-  const exePath = path.join(__dirname, 'release-3.55', '4K-Cinema-Windows-3.55-x64.exe');
+  const exePath = path.join(__dirname, 'release-3.61', '4K-Cinema-Windows-3.61-x64.exe');
   if (fs.existsSync(exePath)) {
-    res.download(exePath, '4K-Cinema-Windows-3.55-x64.exe');
+    res.download(exePath, '4K-Cinema-Windows-3.61-x64.exe');
   } else {
     res.status(404).send('Bản cài đặt Windows (EXE) chưa sẵn sàng.');
   }

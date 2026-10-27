@@ -61,6 +61,9 @@ const Player = {
   autoSkipAdsEnabled: true,
   skippedAdMarkers: new Set(),
   suppressBuffering: false,
+  nextEpPopupDismissed: false,
+  nextEpPopupActive: false,
+  embedLoadWatchdogTimer: null,
 
   init() {
     if (this.video) return;
@@ -131,8 +134,16 @@ const Player = {
       // every navigation as user activity pins our chrome forever in WKWebView.
       if (!this.embedReady && this.wrapper?.classList.contains('embed-active') && !this.modal?.classList.contains('hidden')) {
         this.embedReady = true;
+        this.clearEmbedLoadWatchdog();
         this.beginEmbedWatchSession();
         this.resetInactivityTimer();
+      }
+    });
+    embed?.addEventListener('error', () => {
+      if (this.wrapper?.classList.contains('embed-active') && !this.modal?.classList.contains('hidden')) {
+        this.clearEmbedLoadWatchdog();
+        this.showAlert('Server này không phản hồi. Đang thử server khác…');
+        this.fallbackToNextServer();
       }
     });
     window.addEventListener('resize', () => {
@@ -202,6 +213,10 @@ const Player = {
     this.stablePlaybackSince = 0;
     this.lastProgressTime = 0;
     this.clearStallWatchdog();
+    this.nextEpPopupDismissed = false;
+    this.nextEpPopupActive = false;
+    this.hideNextEpisodePopup();
+    this.hideSkipIntroButton();
     this.loadAutoSkipPreference();
     API.trackUsage('episode_open', this.usageContext(movie, episode));
 
@@ -245,6 +260,11 @@ const Player = {
     this.embedReady = false;
     this.closeDropdowns();
     this.clearStallWatchdog();
+    this.clearEmbedLoadWatchdog();
+    this.nextEpPopupDismissed = false;
+    this.nextEpPopupActive = false;
+    this.hideNextEpisodePopup();
+    this.hideSkipIntroButton();
     this.recoveryInFlight = false;
     this.destroyHls();
     this.releaseAudioVideo();
@@ -358,6 +378,7 @@ const Player = {
     document.getElementById('playerControls')?.classList.add('hidden');
     this.wrapper?.classList.add('embed-active');
     this.embedReady = false;
+    this.armEmbedLoadWatchdog();
     const iframe = document.getElementById('playerEmbed');
     if (iframe) {
       iframe.src = safeEmbedUrl;
@@ -513,6 +534,24 @@ const Player = {
   clearStallWatchdog() {
     if (this.stallWatchdogTimer) clearTimeout(this.stallWatchdogTimer);
     this.stallWatchdogTimer = null;
+    this.clearEmbedLoadWatchdog();
+  },
+
+  armEmbedLoadWatchdog() {
+    this.clearEmbedLoadWatchdog();
+    const session = this.streamSession;
+    this.embedLoadWatchdogTimer = window.setTimeout(() => {
+      this.embedLoadWatchdogTimer = null;
+      if (session === this.streamSession && !this.embedReady && this.wrapper?.classList.contains('embed-active') && !this.modal?.classList.contains('hidden')) {
+        this.showAlert('Trình phát phản hồi chậm. Đang chuyển sang server dự phòng…');
+        this.fallbackToNextServer();
+      }
+    }, 10000);
+  },
+
+  clearEmbedLoadWatchdog() {
+    if (this.embedLoadWatchdogTimer) clearTimeout(this.embedLoadWatchdogTimer);
+    this.embedLoadWatchdogTimer = null;
   },
 
   notePlaybackProgress() {
@@ -538,7 +577,7 @@ const Player = {
       const current = Number(this.video?.currentTime) || 0;
       if (current > baseline + 0.75) return;
       void this.recoverPlayback(reason);
-    }, 16000);
+    }, 8000);
   },
 
   async recoverPlayback(reason = 'playback_stall') {
@@ -689,14 +728,18 @@ const Player = {
       this.showAlert('Server này chưa có tập tương ứng.');
       return;
     }
-    const resumeTime = Number(this.video?.currentTime) || 0;
-    const autoplay = Boolean(this.video && !this.video.paused);
+    const resumeTime = Number(this.video?.currentTime) || this.getSavedWatchTime() || Math.round(this.watchedSeconds) || 0;
+    const autoplay = Boolean((this.video && !this.video.paused) || this.wrapper?.classList.contains('embed-active'));
     this.saveProgressNow();
     this.currentServerIndex = newServerIndex;
     this.streamRefreshAttempts = 0;
     this.stablePlaybackSince = 0;
     this.lastProgressTime = 0;
     this.clearStallWatchdog();
+    this.nextEpPopupDismissed = false;
+    this.nextEpPopupActive = false;
+    this.hideNextEpisodePopup();
+    this.hideSkipIntroButton();
     this.currentEpisode = match.episode;
     this.currentEpIndex = match.index;
     this.episodesList = targetEpisodes;
@@ -934,6 +977,8 @@ const Player = {
   onTimeUpdate() {
     if (!this.video || !Number.isFinite(this.video.duration) || this.video.duration <= 0) return;
     this.maybeAutoSkipAd();
+    this.updateSkipIntroButton();
+    this.checkNextEpisodeCountdown();
     const percent = Math.max(0, Math.min(100, (this.video.currentTime / this.video.duration) * 100));
     const current = document.getElementById('progressCurrent');
     const thumb = document.getElementById('progressThumb');
@@ -943,6 +988,83 @@ const Player = {
     const duration = document.getElementById('durationTime');
     if (time) time.textContent = this.formatTime(this.video.currentTime);
     if (duration) duration.textContent = this.formatTime(this.video.duration);
+  },
+
+  updateSkipIntroButton() {
+    const btn = document.getElementById('btnSkipIntro');
+    if (!btn) return;
+    const inIntro = this.video && Number.isFinite(this.video.duration)
+      ? PlayerCore.isIntroInterval(this.video.currentTime, this.video.duration, 85)
+      : false;
+    btn.classList.toggle('hidden', !inIntro);
+  },
+
+  hideSkipIntroButton() {
+    const btn = document.getElementById('btnSkipIntro');
+    if (btn) btn.classList.add('hidden');
+  },
+
+  skipIntro() {
+    const target = PlayerCore.skipIntroTarget(this.video?.currentTime, this.video?.duration, 85);
+    if (this.video) {
+      this.video.currentTime = target;
+    }
+    const iframe = document.getElementById('playerEmbed');
+    if (iframe?.contentWindow && this.wrapper?.classList.contains('embed-active')) {
+      try {
+        iframe.contentWindow.postMessage({ command: 'seek', time: target }, '*');
+      } catch (_e) {}
+    }
+    this.hideSkipIntroButton();
+    this.showAlert('Đã bỏ qua đoạn mở đầu (Intro)');
+  },
+
+  checkNextEpisodeCountdown() {
+    if (this.nextEpPopupDismissed) {
+      this.hideNextEpisodePopup();
+      return;
+    }
+    const hasNext = this.episodesList.length > 1 && this.currentEpIndex < this.episodesList.length - 1;
+    if (!hasNext || !this.video || !Number.isFinite(this.video.duration)) {
+      this.hideNextEpisodePopup();
+      return;
+    }
+    const countdown = PlayerCore.nextEpisodeCountdown(this.video.currentTime, this.video.duration, 30);
+    if (countdown && countdown.active) {
+      this.showNextEpisodePopup(countdown.remaining);
+    } else {
+      if (this.nextEpPopupActive && this.video.duration - this.video.currentTime <= 0.5) {
+        this.hideNextEpisodePopup();
+        this.playNextEpisode();
+        return;
+      }
+      this.hideNextEpisodePopup();
+    }
+  },
+
+  showNextEpisodePopup(remaining) {
+    const popup = document.getElementById('nextEpisodePopup');
+    if (!popup) return;
+    this.nextEpPopupActive = true;
+    const timer = document.getElementById('nextEpTimer');
+    if (timer) timer.textContent = `${remaining}s`;
+    const title = document.getElementById('nextEpTitle');
+    if (title && this.episodesList[this.currentEpIndex + 1]) {
+      const nextEp = this.episodesList[this.currentEpIndex + 1];
+      title.textContent = nextEp.name || nextEp.filename || `Tập ${this.currentEpIndex + 2}`;
+    }
+    popup.classList.remove('hidden');
+  },
+
+  hideNextEpisodePopup() {
+    this.nextEpPopupActive = false;
+    const popup = document.getElementById('nextEpisodePopup');
+    if (popup) popup.classList.add('hidden');
+  },
+
+  dismissNextEpisodePopup() {
+    this.nextEpPopupDismissed = true;
+    this.hideNextEpisodePopup();
   },
 
   onProgress() {
@@ -1050,6 +1172,7 @@ const Player = {
   },
 
   playNextEpisode() {
+    this.hideNextEpisodePopup();
     if (!this.episodesList.length || this.currentEpIndex >= this.episodesList.length - 1) {
       this.showAlert('Bạn đã xem đến tập cuối cùng.');
       return;
@@ -1059,6 +1182,7 @@ const Player = {
   },
 
   onEnded() {
+    this.hideNextEpisodePopup();
     API.trackUsage('playback_complete', {
       ...this.usageContext(),
       duration: Number.isFinite(this.video?.duration) ? this.video.duration : 0
@@ -1352,8 +1476,12 @@ function toggleQualityMenu() {
   document.getElementById('playerServerMenu')?.classList.add('hidden');
 }
 function setQuality(index) { Player.setQuality(index); }
+function skipIntro() { Player.skipIntro(); }
+function dismissNextEpisodePopup() { Player.dismissNextEpisodePopup(); }
 
 window.Player = Player;
+window.skipIntro = skipIntro;
+window.dismissNextEpisodePopup = dismissNextEpisodePopup;
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => Player.init(), { once: true });
 else Player.init();

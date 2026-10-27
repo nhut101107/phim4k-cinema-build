@@ -90,3 +90,34 @@ test('stripHlsAds removes spliced foreign ad segments and splice-only discontinu
   assert.match(res.playlist, /https:\/\/cdn\.example\.test\/20260903\/movie\/seg_0000\.ts/);
   assert.match(res.playlist, /https:\/\/cdn\.example\.test\/20260903\/movie\/seg_0039\.ts/);
 });
+
+test('nextEpisodeCountdown activates during the final 30 seconds of video playback', () => {
+  assert.deepEqual(Core.nextEpisodeCountdown(1770, 1800, 30), { active: true, remaining: 30 });
+  assert.deepEqual(Core.nextEpisodeCountdown(1785.4, 1800, 30), { active: true, remaining: 15 });
+  assert.deepEqual(Core.nextEpisodeCountdown(1799.1, 1800, 30), { active: true, remaining: 1 });
+  assert.equal(Core.nextEpisodeCountdown(1000, 1800, 30), null);
+  assert.equal(Core.nextEpisodeCountdown(1800, 1800, 30), null);
+  assert.equal(Core.nextEpisodeCountdown(50, 60, 30), null);
+  assert.equal(Core.nextEpisodeCountdown(Number.NaN, 1800, 30), null);
+});
+
+test('isIntroInterval detects intro playback window and ignores after 85s or short videos', () => {
+  assert.equal(Core.isIntroInterval(0, 1800, 85), true);
+  assert.equal(Core.isIntroInterval(42.5, 1800, 85), true);
+  assert.equal(Core.isIntroInterval(84.9, 1800, 85), true);
+  assert.equal(Core.isIntroInterval(85, 1800, 85), false);
+  assert.equal(Core.isIntroInterval(85.1, 1800, 85), false);
+  assert.equal(Core.isIntroInterval(500, 1800, 85), false);
+  assert.equal(Core.isIntroInterval(10, 120, 85), false);
+  assert.equal(Core.isIntroInterval(10, 100, 85), false);
+  assert.equal(Core.isIntroInterval(-5, 1800, 85), false);
+  assert.equal(Core.isIntroInterval(Number.NaN, 1800, 85), false);
+});
+
+test('skipIntroTarget computes safe seek destination bounded by duration', () => {
+  assert.equal(Core.skipIntroTarget(10, 1800, 85), 85);
+  assert.equal(Core.skipIntroTarget(10, 100, 85), 85);
+  assert.equal(Core.skipIntroTarget(10, 80, 85), 79);
+  assert.equal(Core.skipIntroTarget(10, 0, 85), 85);
+  assert.equal(Core.skipIntroTarget(10, Number.NaN, 85), 85);
+});

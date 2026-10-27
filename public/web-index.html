@@ -608,6 +608,14 @@
           </div>
           <div id="episodesList" class="episodes-grid"></div>
         </div>
+
+        <!-- Related Movies Section -->
+        <div class="related-movies-section hidden" id="relatedMoviesSection">
+          <div class="related-movies-header">
+            <h3>🎬 Phim Cùng Thể Loại & Tương Tự</h3>
+          </div>
+          <div id="relatedMoviesGrid" class="related-movies-grid movie-grid"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -670,6 +678,21 @@
 
       <!-- Quick Alert Notification inside Player -->
       <div id="playerAlert" class="player-alert hidden"></div>
+
+      <!-- Skip Intro Button -->
+      <button type="button" id="btnSkipIntro" class="btn-skip-intro hidden" onclick="Player.skipIntro()">⏩ Bỏ qua Intro</button>
+
+      <!-- Next Episode Auto-play Countdown Popup -->
+      <div id="nextEpisodePopup" class="next-episode-popup hidden">
+        <div class="next-ep-info">
+          <div class="next-ep-label">Tập tiếp theo sau <span id="nextEpTimer" class="countdown-timer">30s</span></div>
+          <div id="nextEpTitle" class="next-ep-title">Tập 2</div>
+        </div>
+        <div class="next-ep-actions">
+          <button type="button" id="btnNextEpWatchNow" class="btn-watch-now" onclick="Player.playNextEpisode()">Xem ngay</button>
+          <button type="button" id="btnNextEpCancel" class="btn-cancel" onclick="Player.dismissNextEpisodePopup()">Hủy</button>
+        </div>
+      </div>
 
       <!-- Custom Player Controls Bar -->
       <div class="player-controls" id="playerControls">
@@ -1231,7 +1254,7 @@
               </div>
               <div class="ver-col">
                 <label>Phiên bản:</label>
-                <input type="text" id="adminVersionApkInput" placeholder="3.0.0" />
+                <input type="text" id="adminVersionApkInput" placeholder="3.61" />
               </div>
               <div class="integrity-col">
                 <label>SHA-256 (64 ký tự):</label>
@@ -1258,7 +1281,7 @@
               </div>
               <div class="ver-col">
                 <label>Phiên bản:</label>
-                <input type="text" id="adminVersionIpaInput" placeholder="3.0.0" />
+                <input type="text" id="adminVersionIpaInput" placeholder="3.61" />
               </div>
               <div class="integrity-col">
                 <label>SHA-256 (64 ký tự):</label>
@@ -1285,7 +1308,7 @@
               </div>
               <div class="ver-col">
                 <label>Phiên bản:</label>
-                <input type="text" id="adminVersionExeInput" placeholder="3.0.0" />
+                <input type="text" id="adminVersionExeInput" placeholder="3.61" />
               </div>
               <div class="integrity-col">
                 <label>SHA-256 (64 ký tự):</label>
@@ -1299,7 +1322,7 @@
 
             <div class="download-link-row">
               <label>Android TV — link Google Drive<input id="adminDownloadTvInput" type="url" placeholder="https://drive.usercontent.google.com/..." /></label>
-              <label>Phiên bản TV<input id="adminVersionTvInput" type="text" placeholder="3.4.18" /></label>
+              <label>Phiên bản TV<input id="adminVersionTvInput" type="text" placeholder="3.61" /></label>
               <label class="integrity-col">SHA-256 (64 ký tự)<input id="adminSha256TvInput" type="text" maxlength="64" spellcheck="false" autocomplete="off" placeholder="sha256 của APK TV" /></label>
               <label class="size-col">Kích thước byte<input id="adminSizeTvInput" type="number" min="1" step="1" placeholder="Tùy chọn" /></label>
             </div>
@@ -1436,10 +1459,13 @@
           </a>
         </div>
         <div class="download-card">
-          <div class="card-os-icon">📺</div><h3>Android TV / Google TV</h3>
+          <div class="card-os-icon">📺</div>
+          <h3>Android TV / Google TV</h3>
           <p>Android 7 trở lên · Điều khiển bằng remote · Màn hình ngang.</p>
-          <span class="card-meta" id="metaTvVer">Chưa phát hành</span>
-          <a id="btnDownloadTv" class="btn-download-action btn-apk" aria-disabled="true">Chưa phát hành</a>
+          <span class="card-meta" id="metaTvVer">Đang kiểm tra bản phát hành</span>
+          <a id="btnDownloadTv" class="btn-download-action btn-apk" aria-disabled="true">
+            Tải File .APK
+          </a>
         </div>
       </div>
       <div class="download-guide-box">
@@ -1495,8 +1521,11 @@
           </a>
         </div>
         <div class="download-card">
-          <div class="card-os-icon">📺</div><h3>Android TV</h3>
-          <a id="forceBtnTv" class="btn-download-action" aria-disabled="true">Chưa phát hành</a>
+          <div class="card-os-icon">📺</div>
+          <h3>Android TV</h3>
+          <a id="forceBtnTv" href="/download/tv" class="btn-download-action btn-apk" download>
+            Tải Bản Mới (.APK)
+          </a>
         </div>
       </div>
     </div>
