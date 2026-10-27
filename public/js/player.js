@@ -337,6 +337,10 @@ const Player = {
       this.fallbackToNextServer();
       return;
     }
+    this.lastEmbedUrl = safeEmbedUrl;
+    // Auto ad skip: hand ENSMovie a playlist whose spliced-in ad clips were
+    // already removed by the edge Worker, so the movie plays straight through.
+    safeEmbedUrl = this.autoSkipAdsEnabled ? this.adFreeEmbedUrl(safeEmbedUrl) : this.rawEmbedUrl(safeEmbedUrl);
 
     this.activeStreamUrl = '';
     this.suppressBuffering = true;
@@ -778,9 +782,62 @@ const Player = {
     this.showAlert(seconds > 0 ? `+${seconds}s` : `${seconds}s`);
   },
 
-  loadAutoSkipPreference() {
+  // Origin of the edge Worker that serves /hls/clean.m3u8 (ad-free playlists).
+  adFilterOrigin() {
+    const candidates = [
+      window.Phim4KRuntime?.apiBaseUrl,
+      window.PHIM4K_MOBILE_CONFIG?.apiBaseUrl,
+      window.location?.protocol === 'https:' ? window.location.origin : ''
+    ];
+    for (const candidate of candidates) {
+      try {
+        const parsed = new URL(String(candidate || ''));
+        if (parsed.protocol === 'https:') return parsed.origin;
+      } catch (_) {}
+    }
+    return '';
+  },
+
+  adFreeEmbedUrl(embedUrl) {
     try {
-      this.autoSkipAdsEnabled = localStorage.getItem('phim4k-auto-skip-ads-v2') !== 'off';
+      const embed = new URL(embedUrl);
+      if (!/^\/player(?:debug)?(?:\/|$)/.test(embed.pathname)) return embedUrl;
+      let source = new URL(embed.searchParams.get('url') || '');
+      const origin = this.adFilterOrigin();
+      if (source.pathname === '/hls/clean.m3u8' && source.searchParams.get('src')) {
+        source = new URL(source.searchParams.get('src') || '');
+      }
+      if (!origin || !/^https?:$/.test(source.protocol) || !/\.m3u8$/i.test(source.pathname)) return embedUrl;
+      source.protocol = 'https:';
+      embed.pathname = '/playerdebug/';
+      embed.searchParams.set('url', `${origin}/hls/clean.m3u8?src=${encodeURIComponent(source.href)}&_=/%`);
+      return embed.href;
+    } catch (_) {
+      return embedUrl;
+    }
+  },
+
+  rawEmbedUrl(embedUrl) {
+    try {
+      const embed = new URL(embedUrl);
+      if (!/^\/player(?:debug)?(?:\/|$)/.test(embed.pathname)) return embedUrl;
+      const source = new URL(embed.searchParams.get('url') || '');
+      if (source.pathname === '/hls/clean.m3u8' && source.searchParams.get('src')) {
+        embed.pathname = '/player/';
+        embed.searchParams.set('url', source.searchParams.get('src'));
+      }
+      return embed.href;
+    } catch (_) {
+      return embedUrl;
+    }
+  },
+
+  loadAutoSkipPreference() {
+    // Auto ad skip is ON by default. The old v2 preference is ignored on
+    // purpose so devices that once switched it off get the fixed skip again.
+    try {
+      localStorage.removeItem('phim4k-auto-skip-ads-v2');
+      this.autoSkipAdsEnabled = localStorage.getItem('phim4k-auto-skip-ads-v3') !== 'off';
     } catch (_) {
       this.autoSkipAdsEnabled = true;
     }
@@ -790,10 +847,13 @@ const Player = {
   toggleAutoSkipAds() {
     this.autoSkipAdsEnabled = !this.autoSkipAdsEnabled;
     try {
-      localStorage.setItem('phim4k-auto-skip-ads-v2', this.autoSkipAdsEnabled ? 'on' : 'off');
+      localStorage.setItem('phim4k-auto-skip-ads-v3', this.autoSkipAdsEnabled ? 'on' : 'off');
     } catch (_) {}
     this.updateAutoSkipButton();
-    this.showAlert(this.autoSkipAdsEnabled ? 'Đã bật tự bỏ quảng cáo' : 'Đã tắt tự bỏ quảng cáo');
+    this.showAlert(this.autoSkipAdsEnabled ? 'Đã bật tự tua quảng cáo' : 'Đã tắt tự tua quảng cáo');
+    // Reload the current episode so the new mode applies immediately.
+    const embedActive = this.wrapper?.classList.contains('embed-active') && !this.modal?.classList.contains('hidden');
+    if (embedActive && this.lastEmbedUrl) this.playEmbedStream(this.lastEmbedUrl);
   },
 
   updateAutoSkipButton() {
@@ -808,6 +868,14 @@ const Player = {
       button.textContent = label;
       button.classList.toggle('active', enabled);
       button.setAttribute('aria-pressed', String(enabled));
+    });
+    document.querySelectorAll('.player-ad-skip-status').forEach((status) => {
+      status.textContent = enabled ? '⏩ Tua quảng cáo' : '⏸ Tua quảng cáo: Tắt';
+      status.classList.toggle('is-off', !enabled);
+      status.setAttribute('aria-pressed', String(enabled));
+      status.title = enabled
+        ? 'Quảng cáo chèn trong phim được tự động cắt bỏ. Bấm để tắt.'
+        : 'Đang tắt tự tua quảng cáo. Bấm để bật lại.';
     });
   },
 

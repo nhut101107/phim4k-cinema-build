@@ -639,7 +639,7 @@
             <div id="playerServerMenu" class="ctrl-dropdown player-server-menu hidden"></div>
           </div>
 
-          <span class="player-ad-skip-status" title="Nút Bỏ qua quảng cáo sẽ hiện khi trình phát phát hiện đúng đoạn quảng cáo">⏩ Tua quảng cáo</span>
+          <span class="player-ad-skip-status" role="button" tabindex="0" aria-pressed="true" onclick="toggleAutoSkipAds()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleAutoSkipAds();}" title="Quảng cáo chèn trong phim được tự động cắt bỏ. Bấm để tắt.">⏩ Tua quảng cáo</span>
           <span class="player-noads-pill">4K · KHÔNG QUẢNG CÁO</span>
           <button type="button" id="btnAspectCoverTop" class="btn-player-report btn-player-fill" onclick="toggleAspectRatio()" aria-pressed="false" title="Đổi giữa giữ trọn và lấp đầy màn hình">⛶ Lấp đầy</button>
           <button type="button" id="btnNextEpTop" class="btn-player-report" onclick="Player.playNextEpisode()" title="Xem tập tiếp theo">

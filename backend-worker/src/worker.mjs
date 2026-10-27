@@ -4388,11 +4388,220 @@ async function handleMovieStream(request, env) {
   return new Response(upstream.body, { status: upstream.status, headers });
 }
 
+const HLS_CLEAN_PATH = "/hls/clean.m3u8";
+const HLS_MAX_PLAYLIST_BYTES = 4 * 1024 * 1024;
+const HLS_MAX_AD_GROUP_SECONDS = 180;
+const HLS_MAX_AD_SHARE = 0.25;
+
+function hlsAbsolute(uri, base) {
+  try { return new URL(String(uri || "").trim(), base).href; } catch (_error) { return ""; }
+}
+
+function hlsSegmentSignature(absoluteUrl) {
+  try {
+    const parsed = new URL(absoluteUrl);
+    const slash = parsed.pathname.lastIndexOf("/");
+    const directory = parsed.pathname.slice(0, slash + 1);
+    const file = parsed.pathname.slice(slash + 1);
+    const dot = file.lastIndexOf(".");
+    const stem = dot > 0 ? file.slice(0, dot) : file;
+    const ext = dot > 0 ? file.slice(dot).toLowerCase() : "";
+    return `${parsed.host}${directory}|${stem.replace(/[A-Za-z0-9]/g, "x")}${ext}`;
+  } catch (_error) {
+    return "invalid";
+  }
+}
+
+function hlsRewriteUriAttribute(line, base) {
+  return line.replace(/URI="([^"]*)"/, (_match, uri) => `URI="${hlsAbsolute(uri, base) || uri}"`);
+}
+
+export function stripHlsAds(text, baseUrl, { cleanUrlFor = null } = {}) {
+  const lines = String(text || "").replace(/^\uFEFF/, "").split(/\r?\n/);
+  if (!lines[0] || !lines[0].trim().startsWith("#EXTM3U")) throw new Error("NOT_HLS_PLAYLIST");
+
+  if (lines.some((line) => line.startsWith("#EXT-X-STREAM-INF"))) {
+    const out = [];
+    let expectVariant = false;
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line) continue;
+      if (line.startsWith("#")) {
+        expectVariant = line.startsWith("#EXT-X-STREAM-INF");
+        out.push(line.startsWith("#EXT-X-MEDIA") || line.startsWith("#EXT-X-I-FRAME-STREAM-INF")
+          ? hlsRewriteUriAttribute(line, baseUrl)
+          : line);
+        continue;
+      }
+      const absolute = hlsAbsolute(line, baseUrl) || line;
+      out.push(expectVariant && cleanUrlFor ? cleanUrlFor(absolute) : absolute);
+      expectVariant = false;
+    }
+    return { playlist: `${out.join("\n")}\n`, removedSegments: 0, removedSeconds: 0, isMaster: true };
+  }
+
+  const header = [];
+  const segments = [];
+  const trailer = [];
+  let pending = [];
+  let currentKey = null;
+  let currentMap = null;
+  let group = 0;
+  let discontinuityBefore = false;
+  let seenSegment = false;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.startsWith("#EXT-X-ENDLIST")) { trailer.push(line); continue; }
+    if (line.startsWith("#EXT-X-DISCONTINUITY") && !line.startsWith("#EXT-X-DISCONTINUITY-SEQUENCE")) {
+      if (seenSegment) group += 1;
+      discontinuityBefore = true;
+      continue;
+    }
+    if (line.startsWith("#EXT-X-KEY")) { currentKey = hlsRewriteUriAttribute(line, baseUrl); continue; }
+    if (line.startsWith("#EXT-X-MAP")) { currentMap = hlsRewriteUriAttribute(line, baseUrl); continue; }
+    if (line.startsWith("#")) {
+      if (!seenSegment && !line.startsWith("#EXTINF") && !line.startsWith("#EXT-X-BYTERANGE")
+        && !line.startsWith("#EXT-X-PROGRAM-DATE-TIME")) header.push(line);
+      else pending.push(line);
+      continue;
+    }
+    const extinf = pending.find((tag) => tag.startsWith("#EXTINF"));
+    const duration = Math.max(0, Number.parseFloat(String(extinf || "").slice(8)) || 0);
+    const url = hlsAbsolute(line, baseUrl) || line;
+    segments.push({ tags: pending, url, duration, key: currentKey, map: currentMap, group, discontinuityBefore,
+      signature: hlsSegmentSignature(url) });
+    pending = [];
+    discontinuityBefore = false;
+    seenSegment = true;
+  }
+
+  const bySignature = new Map();
+  let totalSeconds = 0;
+  for (const segment of segments) {
+    totalSeconds += segment.duration;
+    bySignature.set(segment.signature, (bySignature.get(segment.signature) || 0) + segment.duration);
+  }
+  const dominant = [...bySignature.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+
+  const groups = new Map();
+  for (const segment of segments) {
+    const entry = groups.get(segment.group) || { seconds: 0, foreign: true };
+    entry.seconds += segment.duration;
+    if (segment.signature === dominant) entry.foreign = false;
+    groups.set(segment.group, entry);
+  }
+  const multipleGroups = groups.size > 1;
+  const adGroups = new Set();
+  let adSeconds = 0;
+  for (const [id, entry] of groups) {
+    if (multipleGroups && entry.foreign && entry.seconds <= HLS_MAX_AD_GROUP_SECONDS) {
+      adGroups.add(id);
+      adSeconds += entry.seconds;
+    }
+  }
+  if (!totalSeconds || adSeconds > totalSeconds * HLS_MAX_AD_SHARE) adGroups.clear();
+
+  const out = [...header];
+  let emittedKey = null;
+  let emittedMap = null;
+  let pendingDiscontinuity = false;
+  let removedSegments = 0;
+  let removedSeconds = 0;
+  let emittedAny = false;
+  let lastKeptSignature = "";
+  let removedSinceKept = false;
+  for (const segment of segments) {
+    if (segment.discontinuityBefore) pendingDiscontinuity = true;
+    if (adGroups.has(segment.group)) {
+      removedSegments += 1;
+      removedSeconds += segment.duration;
+      removedSinceKept = true;
+      continue;
+    }
+    const spliceOnly = removedSinceKept && segment.signature === lastKeptSignature;
+    if (pendingDiscontinuity && emittedAny && !spliceOnly) out.push("#EXT-X-DISCONTINUITY");
+    pendingDiscontinuity = false;
+    removedSinceKept = false;
+    lastKeptSignature = segment.signature;
+    if (segment.key !== emittedKey) {
+      out.push(segment.key || "#EXT-X-KEY:METHOD=NONE");
+      emittedKey = segment.key;
+    }
+    if (segment.map && segment.map !== emittedMap) {
+      out.push(segment.map);
+      emittedMap = segment.map;
+    }
+    out.push(...segment.tags, segment.url);
+    emittedAny = true;
+  }
+  out.push(...trailer);
+  return { playlist: `${out.join("\n")}\n`, removedSegments, removedSeconds, isMaster: false };
+}
+
+async function handleCleanHls(request, url, executionContext) {
+  let source = null;
+  try {
+    source = new URL(url.searchParams.get("src") || "");
+  } catch (_error) {}
+  if (!source || source.protocol !== "https:" || source.username || source.password
+    || !/\.m3u8$/i.test(source.pathname) || source.href.length > 1500) {
+    return new Response("Invalid playlist source", { status: 400, headers: { ...CORS_HEADERS, "cache-control": "no-store" } });
+  }
+  const fallback = () => new Response(null, {
+    status: 302,
+    headers: { ...CORS_HEADERS, location: source.href, "cache-control": "no-store" },
+  });
+  const cache = globalThis.caches?.default;
+  const cacheKey = new Request(`${url.origin}${HLS_CLEAN_PATH}?src=${encodeURIComponent(source.href)}`, { method: "GET" });
+  if (cache) {
+    const cached = await cache.match(cacheKey);
+    if (cached) return cached;
+  }
+  try {
+    const upstream = await fetch(source.href, {
+      headers: {
+        accept: "application/vnd.apple.mpegurl, application/x-mpegurl, */*",
+        referer: "https://player.phimapi.com/",
+        origin: "https://player.phimapi.com",
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(9000),
+    });
+    if (!upstream.ok) return fallback();
+    const declared = Number(upstream.headers.get("content-length") || 0);
+    if (declared > HLS_MAX_PLAYLIST_BYTES) return fallback();
+    const text = await upstream.text();
+    if (text.length > HLS_MAX_PLAYLIST_BYTES) return fallback();
+    const base = upstream.url || source.href;
+    const result = stripHlsAds(text, base, {
+      cleanUrlFor: (variant) => `${url.origin}${HLS_CLEAN_PATH}?src=${encodeURIComponent(variant)}&_=/%`,
+    });
+    const response = new Response(request.method === "HEAD" ? null : result.playlist, {
+      status: 200,
+      headers: {
+        ...CORS_HEADERS,
+        "content-type": "application/vnd.apple.mpegurl; charset=utf-8",
+        "cache-control": "public, max-age=600",
+        "x-ads-removed": String(result.removedSegments),
+        "x-ads-removed-seconds": result.removedSeconds.toFixed(2),
+      },
+    });
+    if (cache && request.method === "GET") executionContext?.waitUntil?.(cache.put(cacheKey, response.clone()));
+    return response;
+  } catch (_error) {
+    return fallback();
+  }
+}
+
 export default {
   async fetch(request, env, executionContext) {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
     const url = new URL(request.url);
     const { pathname } = url;
+    if ((request.method === "GET" || request.method === "HEAD") && pathname === HLS_CLEAN_PATH) {
+      return await handleCleanHls(request, url, executionContext);
+    }
     try {
       const localRetryAfter = rateLimit(request, pathname);
       if (localRetryAfter) {

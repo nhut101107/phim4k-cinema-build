@@ -238,6 +238,7 @@ const App = {
     `;
 
     try {
+      if (silent) API.movieCache?.delete?.('/api/movies/home');
       const data = await API.getHomeFeed();
       if (renderedBundledCatalog) void this.preloadHomeArtwork(data);
       const signature = this.catalogSignature(data);
@@ -400,7 +401,7 @@ const App = {
     return (this.homeCatalog || [])
       .map((movie, index) => ({ movie, index, timestamp: Date.parse(movie?.modified?.time || '') || 0 }))
       .sort((a, b) => (b.timestamp - a.timestamp) || (a.index - b.index))
-      .slice(0, 20)
+      .slice(0, 48)
       .map((entry) => entry.movie);
   },
 
@@ -476,6 +477,7 @@ const App = {
       state.classList.remove('hidden');
     }
     try {
+      API.movieCache?.delete?.('/api/movies/home');
       const data = await API.getHomeFeed();
       this.applyHomeFeed(data);
       this.renderSchedule();
@@ -915,8 +917,20 @@ const App = {
 
   async refreshCatalogInventory() {
     try {
-      const data = await API.getCatalog(1);
-      this.catalogInventoryTotal = Number(data.pagination?.totalItems || data.items?.length || 0);
+      const results = await Promise.allSettled([1, 2, 3, 4].map((page) => API.getCatalog(page)));
+      const harvested = [];
+      for (const result of results) {
+        if (result.status !== 'fulfilled' || !result.value) continue;
+        const data = result.value;
+        this.catalogInventoryTotal = Math.max(
+          this.catalogInventoryTotal,
+          Number(data.pagination?.totalItems || data.items?.length || 0),
+        );
+        if (Array.isArray(data.items)) harvested.push(...data.items);
+      }
+      if (harvested.length) {
+        this.homeCatalog = this.enrichCatalogFilters([...this.homeCatalog, ...harvested]);
+      }
       this.renderCatalogControls();
     } catch (_error) {
       // The curated home feed remains usable while the inventory count retries later.
@@ -935,14 +949,14 @@ const App = {
     const isTv = Phim4KPlatform.detect(navigator.userAgent, window.PHIM4K_PLATFORM) === 'android_tv';
     this.feedRefreshTimer = setInterval(() => {
       const playerOpen = !document.getElementById('playerModal')?.classList.contains('hidden');
-      const catalogIdle = Date.now() - this.lastCatalogInteractionAt > 12000;
+      const catalogIdle = Date.now() - this.lastCatalogInteractionAt > 8000;
       if (!document.hidden && !playerOpen && this.currentCategory === 'home' && catalogIdle) {
         this.loadHomeFeed({ silent: true });
       }
     // The Worker reads the public catalogue directly, so frequent metadata
     // refreshes need no VPS or always-on PC. Pause while hidden or playing to
     // avoid wasting bandwidth and disrupting playback.
-    }, isTv ? 90000 : 60000);
+    }, isTv ? 45000 : 30000);
   },
 
   startAnnouncementRefresh() {

@@ -85,11 +85,11 @@
     return { policy: POLICY, updatedAt, offline, rankingBasis: 'release-year + recent-catalog-update + TMDB/IMDb vote-count proxy',
       hero,
       sections: [
-        { id: 'cinema-new', title: `Chiếu rạp ${recentYear} · Nổi bật`, items: cinema.slice(0, 30) },
-        { id: 'new-releases', title: `Phim mới ${recentYear}`, items: releases.slice(0, 48) },
-        { id: 'recent-interest', title: 'Phim mới được quan tâm', items: hot.slice(0, 36) },
-        { id: 'series-new', title: `Phim bộ ${recentYear}`, items: releases.filter(m => m.type === 'series').slice(0, 36) },
-        { id: 'latest', title: offline ? 'Kho phim đã lưu · Đang chờ kết nối' : 'Vừa cập nhật trong kho · Có cả phim năm cũ', items: [...catalog].sort((a,b) => modified(b,now)-modified(a,now) || a.slug.localeCompare(b.slug)).slice(0, 240) }
+        { id: 'cinema-new', title: `Chiếu rạp ${recentYear} · Nổi bật`, items: cinema.slice(0, 80) },
+        { id: 'new-releases', title: `Phim mới ${recentYear}`, items: releases.slice(0, 120) },
+        { id: 'recent-interest', title: 'Phim mới được quan tâm', items: hot.slice(0, 96) },
+        { id: 'series-new', title: `Phim bộ ${recentYear}`, items: releases.filter(m => m.type === 'series').slice(0, 96) },
+        { id: 'latest', title: offline ? 'Kho phim đã lưu · Đang chờ kết nối' : 'Vừa cập nhật trong kho · Có cả phim năm cũ', items: [...catalog].sort((a,b) => modified(b,now)-modified(a,now) || a.slug.localeCompare(b.slug)).slice(0, 600) }
       ].filter(section => section.items.length) };
   }
   // Upstream route construction is deliberately server-only. This browser

@@ -58,7 +58,7 @@ function rateLimitRule(path) {
 }
 
 function checkRateLimit(ip, path) {
-  if (!path.startsWith('/api/')) return { allowed: true, limit: 0, retryAfter: 0 }; // Static assets / images are served by the CDN.
+  if (!path.startsWith('/api/') || path === '/api/media/image') return { allowed: true, limit: 0, retryAfter: 0 }; // Static assets / images are served by the CDN.
   const now = Date.now();
   const rule = rateLimitRule(path);
   const key = `${ip}:${rule.bucket}`;
@@ -126,6 +126,77 @@ async function proxyTo(request, origin, extraHeaders = {}) {
   });
 }
 
+const ALLOWED_IMAGE_HOSTS = new Set(['phimimg.com', 'img.ophim.live', 'phimapi.com', 'ophim1.com']);
+
+function encodeImageTicket(imageUrl, origin = 'https://phim4vipzz.pages.dev') {
+  const raw = String(imageUrl || '').trim();
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw);
+    if (parsed.pathname === '/api/media/image' && parsed.searchParams.get('t')) return parsed.href;
+    const bytes = new TextEncoder().encode(parsed.href);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+    const token = btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    return `${origin}/api/media/image?t=${token}`;
+  } catch (_error) {
+    return '';
+  }
+}
+
+function decodeImageTicket(token) {
+  const raw = String(token || '').trim();
+  if (!/^[A-Za-z0-9_-]{24,512}$/.test(raw)) return null;
+  try {
+    const base64 = raw.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((raw.length + 3) % 4);
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    const decoded = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    const target = new URL(decoded);
+    if (target.protocol !== 'https:' || target.username || target.password) return null;
+    const host = target.hostname.toLowerCase();
+    const allowed = [...ALLOWED_IMAGE_HOSTS].some((domain) => host === domain || host.endsWith(`.${domain}`));
+    return allowed ? target : null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+async function handleMovieImage(request, url, ctx) {
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { 'access-control-allow-origin': '*' } });
+  const token = url.searchParams.get('t') || '';
+  const target = decodeImageTicket(token);
+  if (!target) return null;
+  const cache = globalThis.caches?.default;
+  const cacheKey = new Request(`${url.origin}/api/media/image?t=${encodeURIComponent(token)}`, { method: 'GET' });
+  if (cache) {
+    const cached = await cache.match(cacheKey);
+    if (cached) return cached;
+  }
+  try {
+    const upstream = await fetch(target.href, {
+      headers: { accept: request.headers.get('accept') || 'image/avif,image/webp,image/*,*/*;q=0.8' },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(8000),
+      cf: { cacheEverything: true, cacheTtl: 86400 },
+    });
+    if (!upstream.ok) return null;
+    const response = new Response(request.method === 'HEAD' ? null : upstream.body, {
+      status: 200,
+      headers: {
+        'content-type': upstream.headers.get('content-type') || 'image/jpeg',
+        'cache-control': 'public, max-age=86400, immutable',
+        'access-control-allow-origin': '*',
+      },
+    });
+    if (cache && request.method === 'GET') ctx?.waitUntil(cache.put(cacheKey, response.clone()));
+    return response;
+  } catch (_error) {
+    return null;
+  }
+}
+
 function absoluteMovieImage(value, base = PHIMIMG_ORIGIN) {
   const raw = String(value || '').trim();
   if (!raw || raw === 'null' || raw === 'undefined') return '';
@@ -143,11 +214,13 @@ function movieItems(payload) {
     : (Array.isArray(payload?.data?.items) ? payload.data.items : []);
 }
 
-function normalizeMovie(item, payload = null) {
+function normalizeMovie(item, payload = null, cleanOrigin = 'https://phim4vipzz.pages.dev') {
   if (!item || typeof item !== 'object' || !String(item.slug || '').trim()) return null;
   const imageBase = payload?.data?.APP_DOMAIN_CDN_IMAGE || payload?.APP_DOMAIN_CDN_IMAGE || PHIMIMG_ORIGIN;
-  const poster = absoluteMovieImage(item.poster_url, imageBase);
-  const thumb = absoluteMovieImage(item.thumb_url, imageBase);
+  const rawPoster = absoluteMovieImage(item.poster_url, imageBase);
+  const rawThumb = absoluteMovieImage(item.thumb_url, imageBase);
+  const poster = encodeImageTicket(rawPoster || rawThumb, cleanOrigin);
+  const thumb = encodeImageTicket(rawThumb || rawPoster, cleanOrigin);
   return {
     ...item,
     poster_url: poster || thumb,
@@ -155,10 +228,43 @@ function normalizeMovie(item, payload = null) {
   };
 }
 
-function normalizedMovieItems(payload) {
+function normalizedMovieItems(payload, cleanOrigin = 'https://phim4vipzz.pages.dev') {
   return movieItems(payload)
-    .map((item) => normalizeMovie(item, payload))
+    .map((item) => normalizeMovie(item, payload, cleanOrigin))
     .filter((movie) => movie && (movie.poster_url || movie.thumb_url));
+}
+
+// Home payload carries ~1,300 titles, so only the fields the cards, filters
+// and ranking actually read are kept (provider ids, alt names, etc. dropped).
+function compactHomeMovie(movie) {
+  const tags = (value) => (Array.isArray(value) ? value : [])
+    .map((tag) => (tag && typeof tag === 'object' ? { name: tag.name, slug: tag.slug } : tag))
+    .filter(Boolean);
+  const out = {
+    name: movie.name,
+    slug: movie.slug,
+    origin_name: movie.origin_name,
+    type: movie.type,
+    poster_url: movie.poster_url,
+    thumb_url: movie.thumb_url,
+    year: movie.year,
+    quality: movie.quality,
+    lang: movie.lang,
+    episode_current: movie.episode_current,
+    time: movie.time,
+    chieurap: movie.chieurap,
+    sub_docquyen: movie.sub_docquyen,
+    modified: movie.modified,
+    category: tags(movie.category),
+    country: tags(movie.country),
+  };
+  for (const key of ['tmdb', 'imdb']) {
+    const ref = movie[key];
+    if (ref && (Number(ref.vote_count) > 0 || ref.id)) {
+      out[key] = { id: ref.id, type: ref.type, season: ref.season, vote_average: ref.vote_average, vote_count: ref.vote_count };
+    }
+  }
+  return out;
 }
 
 function movieIdentity(item) {
@@ -222,7 +328,7 @@ async function fetchMovieJson(path, origin = PHIMAPI_ORIGIN) {
     const response = await fetch(`${origin}${path}`, {
       headers: { accept: 'application/json' },
       signal: AbortSignal.timeout(8000),
-      cf: { cacheEverything: true, cacheTtl: 60 },
+      cf: { cacheEverything: true, cacheTtl: 20 },
     });
     if (!response.ok || !String(response.headers.get('content-type') || '').includes('application/json')) return null;
     return await response.json();
@@ -239,22 +345,58 @@ function catalogPagination(payload, page, itemCount) {
   };
 }
 
+function adFreeEpisodeEmbed(episode, cleanOrigin) {
+  if (!episode || typeof episode !== 'object' || !cleanOrigin) return episode;
+  try {
+    const embedRaw = String(episode.link_embed || '').trim();
+    const m3u8Raw = String(episode.link_m3u8 || '').trim();
+    const embed = embedRaw ? new URL(embedRaw.replace(/^http:\/\//i, 'https://')) : null;
+    if (embed && embed.hostname === 'player.phimapi.com' && /^\/player(?:debug)?(?:\/|$)/.test(embed.pathname)) {
+      let source = new URL(embed.searchParams.get('url') || m3u8Raw || '');
+      if (source.pathname === HLS_CLEAN_PATH && source.searchParams.get('src')) {
+        source = new URL(source.searchParams.get('src') || '');
+      }
+      if (/^https?:$/.test(source.protocol) && /\.m3u8$/i.test(source.pathname)) {
+        source.protocol = 'https:';
+        embed.pathname = '/playerdebug/';
+        embed.searchParams.set('url', `${cleanOrigin}${HLS_CLEAN_PATH}?src=${encodeURIComponent(source.href)}&_=/%`);
+        return { ...episode, link_embed: embed.href };
+      }
+    }
+  } catch (_error) {}
+  return episode;
+}
+
+function adFreeDetailPayload(payload, cleanOrigin) {
+  if (!payload || typeof payload !== 'object' || !Array.isArray(payload.episodes)) return payload;
+  return {
+    ...payload,
+    episodes: payload.episodes.map((server) => (server && Array.isArray(server.server_data)
+      ? { ...server, server_data: server.server_data.map((ep) => adFreeEpisodeEmbed(ep, cleanOrigin)) }
+      : server)),
+  };
+}
+
 // Public web catalogue fallback. It keeps browsing available when the licensed
 // API requires a native session, and normalizes every relative poster path
 // before it reaches the browser.
-async function fetchDirectMovieCatalog(endpoint, searchParams) {
+async function fetchDirectMovieCatalog(endpoint, searchParams, cleanOrigin = 'https://phim4vipzz.pages.dev') {
   const page = searchParams.get('page') || '1';
   try {
     if (endpoint === '/api/movies/home') {
+      // 64 titles per request (provider maximum), newest-updated first, so
+      // every refresh carries ~1,300 distinct titles while staying well under
+      // the Worker subrequest budget (6 + 5 x 3 = 21 upstream calls).
       const latestPageCount = 12;
       const categoryPageCount = 4;
+      const freshSort = 'limit=64&sort_field=modified.time&sort_type=desc';
       const phimApiRequests = [
-        ...Array.from({ length: latestPageCount }, (_, index) => `/danh-sach/phim-moi-cap-nhat?page=${index + 1}`),
+        ...Array.from({ length: latestPageCount }, (_, index) => `/v1/api/danh-sach/phim-moi-cap-nhat?page=${index + 1}&${freshSort}`),
         ...['phim-chieu-rap', 'phim-le', 'phim-bo', 'hoat-hinh', 'tv-shows']
-          .flatMap((category) => Array.from({ length: categoryPageCount }, (_, index) => `/v1/api/danh-sach/${category}?page=${index + 1}&limit=32`)),
+          .flatMap((category) => Array.from({ length: categoryPageCount }, (_, index) => `/v1/api/danh-sach/${category}?page=${index + 1}&${freshSort}`)),
       ];
       const phimApiPayloads = await Promise.all(phimApiRequests.map((path) => fetchMovieJson(path)));
-      const groups = phimApiPayloads.map((payload) => normalizedMovieItems(payload));
+      const groups = phimApiPayloads.map((payload) => normalizedMovieItems(payload, cleanOrigin));
       const latestItems = latestFirst(groups.slice(0, latestPageCount).flat());
       const categoryGroups = ['cinema', 'movies', 'series', 'anime', 'tv'].map((id, index) => ({
         id,
@@ -279,19 +421,20 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
       }));
 
       return Response.json({
-        hero,
+        hero: hero.map(compactHomeMovie),
         updatedAt: new Date().toISOString(),
         sections: [
-          { id: 'latest', title: '🔥 Phim Mới & Hot Cập Nhật Liên Tục', items: latestItems.slice(0, 174) },
-          { id: 'premium-quality', title: '💎 Kho FHD & 4K Chất Lượng Cao', items: premiumItems.slice(0, 120) },
-          { id: 'cinema', title: '🎬 Phim Chiếu Rạp', items: categoryGroups[0].items.slice(0, 54) },
-          { id: 'movies', title: '🍿 Phim Lẻ Mới', items: categoryGroups[1].items.slice(0, 186) },
-          { id: 'series', title: '📺 Phim Bộ Nổi Bật', items: categoryGroups[2].items.slice(0, 162) },
-          { id: 'anime', title: '✨ Hoạt Hình & Anime Hot', items: categoryGroups[3].items.slice(0, 64) },
-          { id: 'tv', title: '🌟 TV Shows', items: categoryGroups[4].items.slice(0, 42) },
-        ].filter((section) => section.items.length),
+          { id: 'latest', title: '🔥 Phim Mới & Hot Cập Nhật Liên Tục', items: latestItems.slice(0, 480) },
+          { id: 'premium-quality', title: '💎 Kho FHD & 4K Chất Lượng Cao', items: premiumItems.slice(0, 320) },
+          { id: 'cinema', title: '🎬 Phim Chiếu Rạp', items: categoryGroups[0].items.slice(0, 180) },
+          { id: 'movies', title: '🍿 Phim Lẻ Mới', items: categoryGroups[1].items.slice(0, 256) },
+          { id: 'series', title: '📺 Phim Bộ Nổi Bật', items: categoryGroups[2].items.slice(0, 256) },
+          { id: 'anime', title: '✨ Hoạt Hình & Anime Hot', items: categoryGroups[3].items.slice(0, 220) },
+          { id: 'tv', title: '🌟 TV Shows', items: categoryGroups[4].items.slice(0, 160) },
+        ].filter((section) => section.items.length)
+          .map((section) => ({ ...section, items: section.items.map(compactHomeMovie) })),
         pagination: { currentPage: 1, totalPages: 1, totalItems: allItems.length },
-      }, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=30, stale-while-revalidate=120' } });
+      }, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=20, stale-while-revalidate=60' } });
     }
 
     if (endpoint.startsWith('/api/movies/detail/')) {
@@ -303,9 +446,9 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
         });
         if (res.ok) {
           const data = await res.json();
-          const normalized = data?.movie ? { ...data, movie: normalizeMovie(data.movie, data) || data.movie } : data;
-          return Response.json(normalized, {
-            headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=300' }
+          const normalized = data?.movie ? { ...data, movie: normalizeMovie(data.movie, data, cleanOrigin) || data.movie } : data;
+          return Response.json(adFreeDetailPayload(normalized, cleanOrigin), {
+            headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=60' }
           });
         }
       }
@@ -313,21 +456,21 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
 
     if (endpoint === '/api/movies/search') {
       const q = searchParams.get('q') || '';
-      const data = await fetchMovieJson(`/v1/api/tim-kiem?keyword=${encodeURIComponent(q)}&page=${page}&limit=48`);
+      const data = await fetchMovieJson(`/v1/api/tim-kiem?keyword=${encodeURIComponent(q)}&page=${page}&limit=64`);
       if (data) {
-        const items = uniqueMovies(normalizedMovieItems(data));
+        const items = uniqueMovies(normalizedMovieItems(data, cleanOrigin));
         return Response.json({
           query: q,
           items,
           pagination: catalogPagination(data, page, items.length),
-        }, { headers: { 'content-type': 'application/json; charset=utf-8' } });
+        }, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=60' } });
       }
     }
 
     if (endpoint === '/api/movies/catalog') {
-      const data = await fetchMovieJson(`/v1/api/danh-sach/phim-moi-cap-nhat?page=${page}&limit=48&sort_field=modified.time&sort_type=desc`);
+      const data = await fetchMovieJson(`/v1/api/danh-sach/phim-moi-cap-nhat?page=${page}&limit=64&sort_field=modified.time&sort_type=desc`);
       if (data) {
-        const items = uniqueMovies(normalizedMovieItems(data));
+        const items = uniqueMovies(normalizedMovieItems(data, cleanOrigin));
         return Response.json({
           title: 'Toàn bộ kho phim',
           items,
@@ -341,14 +484,14 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
       const country = String(searchParams.get('country') || '').trim().toLowerCase();
       if (!genre && !country) return null;
       let target = genre === 'hoat-hinh'
-        ? `/v1/api/danh-sach/hoat-hinh?page=${page}&limit=48`
+        ? `/v1/api/danh-sach/hoat-hinh?page=${page}&limit=64&sort_field=modified.time&sort_type=desc`
         : genre
-          ? `/v1/api/the-loai/${encodeURIComponent(genre)}?page=${page}&limit=48`
-          : `/v1/api/quoc-gia/${encodeURIComponent(country)}?page=${page}&limit=48`;
+          ? `/v1/api/the-loai/${encodeURIComponent(genre)}?page=${page}&limit=64&sort_field=modified.time&sort_type=desc`
+          : `/v1/api/quoc-gia/${encodeURIComponent(country)}?page=${page}&limit=64&sort_field=modified.time&sort_type=desc`;
       if (genre && country) target += `&country=${encodeURIComponent(country)}`;
       const data = await fetchMovieJson(target);
       if (data) {
-        const items = normalizedMovieItems(data);
+        const items = normalizedMovieItems(data, cleanOrigin);
         return Response.json({
           filters: { genre, country },
           items,
@@ -359,14 +502,14 @@ async function fetchDirectMovieCatalog(endpoint, searchParams) {
 
     if (endpoint.startsWith('/api/movies/category/')) {
       const cat = endpoint.split('/api/movies/category/')[1];
-      const data = await fetchMovieJson(`/v1/api/danh-sach/${encodeURIComponent(cat)}?page=${page}&limit=48`);
+      const data = await fetchMovieJson(`/v1/api/danh-sach/${encodeURIComponent(cat)}?page=${page}&limit=64&sort_field=modified.time&sort_type=desc`);
       if (data) {
-        const items = uniqueMovies(normalizedMovieItems(data));
+        const items = uniqueMovies(normalizedMovieItems(data, cleanOrigin));
         return Response.json({
           category: cat,
           items,
           pagination: catalogPagination(data, page, items.length),
-        }, { headers: { 'content-type': 'application/json; charset=utf-8' } });
+        }, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=60' } });
       }
     }
   } catch (err) {
@@ -384,10 +527,255 @@ function publicMovieCacheRequest(url) {
   return new Request(cacheUrl.href, { method: 'GET' });
 }
 
+// ---------------------------------------------------------------------------
+// HLS ad stripping (auto "tua quảng cáo").
+// Provider playlists (kkphim/phimapi CDNs) splice betting-ad clips between
+// #EXT-X-DISCONTINUITY tags. Those clips live in a different directory and use
+// a different file-name shape than the real movie segments. The ENSMovie
+// iframe player (player.phimapi.com) is pointed at this cleaned playlist, so
+// the ads are removed before playback starts and nothing has to be skipped by
+// hand. Only playlists pass through here; video segments stay on the CDN.
+// HLS_AD_FILTER_START
+const HLS_CLEAN_PATH = '/hls/clean.m3u8';
+const HLS_MAX_PLAYLIST_BYTES = 4 * 1024 * 1024;
+const HLS_MAX_AD_GROUP_SECONDS = 180;
+const HLS_MAX_AD_SHARE = 0.25;
+
+function hlsAbsolute(uri, base) {
+  try { return new URL(String(uri || '').trim(), base).href; } catch (_error) { return ''; }
+}
+
+function hlsSegmentSignature(absoluteUrl) {
+  try {
+    const parsed = new URL(absoluteUrl);
+    const slash = parsed.pathname.lastIndexOf('/');
+    const directory = parsed.pathname.slice(0, slash + 1);
+    const file = parsed.pathname.slice(slash + 1);
+    const dot = file.lastIndexOf('.');
+    const stem = dot > 0 ? file.slice(0, dot) : file;
+    const ext = dot > 0 ? file.slice(dot).toLowerCase() : '';
+    return `${parsed.host}${directory}|${stem.replace(/[A-Za-z0-9]/g, 'x')}${ext}`;
+  } catch (_error) {
+    return 'invalid';
+  }
+}
+
+function hlsRewriteUriAttribute(line, base) {
+  return line.replace(/URI="([^"]*)"/, (_match, uri) => `URI="${hlsAbsolute(uri, base) || uri}"`);
+}
+
+// Returns { playlist, removedSegments, removedSeconds, isMaster }.
+function stripHlsAds(text, baseUrl, { cleanUrlFor = null } = {}) {
+  const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/);
+  if (!lines[0] || !lines[0].trim().startsWith('#EXTM3U')) throw new Error('NOT_HLS_PLAYLIST');
+
+  // Master playlist: route every variant through the cleaner as well.
+  if (lines.some((line) => line.startsWith('#EXT-X-STREAM-INF'))) {
+    const out = [];
+    let expectVariant = false;
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line) continue;
+      if (line.startsWith('#')) {
+        expectVariant = line.startsWith('#EXT-X-STREAM-INF');
+        out.push(line.startsWith('#EXT-X-MEDIA') || line.startsWith('#EXT-X-I-FRAME-STREAM-INF')
+          ? hlsRewriteUriAttribute(line, baseUrl)
+          : line);
+        continue;
+      }
+      const absolute = hlsAbsolute(line, baseUrl) || line;
+      out.push(expectVariant && cleanUrlFor ? cleanUrlFor(absolute) : absolute);
+      expectVariant = false;
+    }
+    return { playlist: `${out.join('\n')}\n`, removedSegments: 0, removedSeconds: 0, isMaster: true };
+  }
+
+  // Media playlist: parse into header + segments with their context.
+  const header = [];
+  const segments = [];
+  const trailer = [];
+  let pending = [];
+  let currentKey = null;
+  let currentMap = null;
+  let group = 0;
+  let discontinuityBefore = false;
+  let seenSegment = false;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.startsWith('#EXT-X-ENDLIST')) { trailer.push(line); continue; }
+    if (line.startsWith('#EXT-X-DISCONTINUITY') && !line.startsWith('#EXT-X-DISCONTINUITY-SEQUENCE')) {
+      if (seenSegment) group += 1;
+      discontinuityBefore = true;
+      continue;
+    }
+    if (line.startsWith('#EXT-X-KEY')) { currentKey = hlsRewriteUriAttribute(line, baseUrl); continue; }
+    if (line.startsWith('#EXT-X-MAP')) { currentMap = hlsRewriteUriAttribute(line, baseUrl); continue; }
+    if (line.startsWith('#')) {
+      if (!seenSegment && !line.startsWith('#EXTINF') && !line.startsWith('#EXT-X-BYTERANGE')
+        && !line.startsWith('#EXT-X-PROGRAM-DATE-TIME')) header.push(line);
+      else pending.push(line);
+      continue;
+    }
+    const extinf = pending.find((tag) => tag.startsWith('#EXTINF'));
+    const duration = Math.max(0, Number.parseFloat(String(extinf || '').slice(8)) || 0);
+    const url = hlsAbsolute(line, baseUrl) || line;
+    segments.push({ tags: pending, url, duration, key: currentKey, map: currentMap, group, discontinuityBefore,
+      signature: hlsSegmentSignature(url) });
+    pending = [];
+    discontinuityBefore = false;
+    seenSegment = true;
+  }
+
+  // The movie itself is the signature carrying the most playback time.
+  const bySignature = new Map();
+  let totalSeconds = 0;
+  for (const segment of segments) {
+    totalSeconds += segment.duration;
+    bySignature.set(segment.signature, (bySignature.get(segment.signature) || 0) + segment.duration);
+  }
+  const dominant = [...bySignature.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+
+  const groups = new Map();
+  for (const segment of segments) {
+    const entry = groups.get(segment.group) || { seconds: 0, foreign: true };
+    entry.seconds += segment.duration;
+    if (segment.signature === dominant) entry.foreign = false;
+    groups.set(segment.group, entry);
+  }
+  const multipleGroups = groups.size > 1;
+  const adGroups = new Set();
+  let adSeconds = 0;
+  for (const [id, entry] of groups) {
+    if (multipleGroups && entry.foreign && entry.seconds <= HLS_MAX_AD_GROUP_SECONDS) {
+      adGroups.add(id);
+      adSeconds += entry.seconds;
+    }
+  }
+  // Safety valve: never delete a large share of a title; that is not an ad.
+  if (!totalSeconds || adSeconds > totalSeconds * HLS_MAX_AD_SHARE) adGroups.clear();
+
+  const out = [...header];
+  let emittedKey = null;
+  let emittedMap = null;
+  let pendingDiscontinuity = false;
+  let removedSegments = 0;
+  let removedSeconds = 0;
+  let emittedAny = false;
+  let lastKeptSignature = '';
+  let removedSinceKept = false;
+  for (const segment of segments) {
+    if (segment.discontinuityBefore) pendingDiscontinuity = true;
+    if (adGroups.has(segment.group)) {
+      removedSegments += 1;
+      removedSeconds += segment.duration;
+      removedSinceKept = true;
+      continue;
+    }
+    // The movie's own timestamps run straight through a spliced-in ad, so the
+    // discontinuity that only existed around the removed clip is dropped too.
+    const spliceOnly = removedSinceKept && segment.signature === lastKeptSignature;
+    if (pendingDiscontinuity && emittedAny && !spliceOnly) out.push('#EXT-X-DISCONTINUITY');
+    pendingDiscontinuity = false;
+    removedSinceKept = false;
+    lastKeptSignature = segment.signature;
+    if (segment.key !== emittedKey) {
+      out.push(segment.key || '#EXT-X-KEY:METHOD=NONE');
+      emittedKey = segment.key;
+    }
+    if (segment.map && segment.map !== emittedMap) {
+      out.push(segment.map);
+      emittedMap = segment.map;
+    }
+    out.push(...segment.tags, segment.url);
+    emittedAny = true;
+  }
+  out.push(...trailer);
+  return { playlist: `${out.join('\n')}\n`, removedSegments, removedSeconds, isMaster: false };
+}
+// HLS_AD_FILTER_END
+
+function hlsCorsHeaders(extra = {}) {
+  return {
+    'access-control-allow-origin': '*',
+    'access-control-allow-methods': 'GET, HEAD, OPTIONS',
+    'access-control-allow-headers': 'range, content-type',
+    'access-control-expose-headers': 'x-ads-removed, x-ads-removed-seconds',
+    ...extra,
+  };
+}
+
+async function handleCleanHls(request, url, ctx) {
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: hlsCorsHeaders() });
+  let source = null;
+  try {
+    source = new URL(url.searchParams.get('src') || '');
+  } catch (_error) {}
+  if (!source || source.protocol !== 'https:' || source.username || source.password
+    || !/\.m3u8$/i.test(source.pathname) || source.href.length > 1500) {
+    return new Response('Invalid playlist source', { status: 400, headers: hlsCorsHeaders({ 'cache-control': 'no-store' }) });
+  }
+  const fallback = () => new Response(null, {
+    status: 302,
+    headers: hlsCorsHeaders({ location: source.href, 'cache-control': 'no-store' }),
+  });
+
+  const cache = globalThis.caches?.default;
+  const cacheKey = new Request(`${url.origin}${HLS_CLEAN_PATH}?src=${encodeURIComponent(source.href)}`, { method: 'GET' });
+  if (cache) {
+    const cached = await cache.match(cacheKey);
+    if (cached) return cached;
+  }
+  try {
+    const upstream = await fetch(source.href, {
+      headers: {
+        accept: 'application/vnd.apple.mpegurl, application/x-mpegurl, */*',
+        referer: 'https://player.phimapi.com/',
+        origin: 'https://player.phimapi.com',
+      },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(9000),
+    });
+    if (!upstream.ok) return fallback();
+    const declared = Number(upstream.headers.get('content-length') || 0);
+    if (declared > HLS_MAX_PLAYLIST_BYTES) return fallback();
+    const text = await upstream.text();
+    if (text.length > HLS_MAX_PLAYLIST_BYTES) return fallback();
+    const base = upstream.url || source.href;
+    const result = stripHlsAds(text, base, {
+      cleanUrlFor: (variant) => `${url.origin}${HLS_CLEAN_PATH}?src=${encodeURIComponent(variant)}&_=/%`,
+    });
+    const response = new Response(request.method === 'HEAD' ? null : result.playlist, {
+      status: 200,
+      headers: hlsCorsHeaders({
+        'content-type': 'application/vnd.apple.mpegurl; charset=utf-8',
+        'cache-control': 'public, max-age=600',
+        'x-ads-removed': String(result.removedSegments),
+        'x-ads-removed-seconds': result.removedSeconds.toFixed(2),
+      }),
+    });
+    if (cache && request.method === 'GET') ctx?.waitUntil(cache.put(cacheKey, response.clone()));
+    return response;
+  } catch (_error) {
+    return fallback();
+  }
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const clientIp = request.headers.get('cf-connecting-ip') || 'unknown';
+
+    // Ad-free playlist relay used by the ENSMovie iframe (auto ad skip).
+    if (url.pathname === HLS_CLEAN_PATH) {
+      return handleCleanHls(request, url, ctx);
+    }
+
+    // Poster image relay for opaque /api/media/image?t= tickets.
+    if (url.pathname === '/api/media/image') {
+      const imageResponse = await handleMovieImage(request, url, ctx);
+      if (imageResponse) return imageResponse;
+    }
 
     // 1. Anti-DDoS Rate Limiting Guard
     const invalid = url.pathname.startsWith('/api/') ? invalidRequestReason(request, url) : null;
@@ -935,11 +1323,14 @@ export default {
     if (request.method === 'GET' && url.pathname.startsWith('/api/movies/')) {
       const movieCache = globalThis.caches?.default;
       const movieCacheKey = publicMovieCacheRequest(url);
-      if (movieCache && movieCacheKey) {
+      // ?refresh=1 (used when a title shows no new episodes) must really skip
+      // the edge copy; the fresh answer then replaces it for everyone.
+      const forceFresh = url.searchParams.get('refresh') === '1';
+      if (movieCache && movieCacheKey && !forceFresh) {
         const cached = await movieCache.match(movieCacheKey);
         if (cached) return cached;
       }
-      const direct = await fetchDirectMovieCatalog(url.pathname, url.searchParams);
+      const direct = await fetchDirectMovieCatalog(url.pathname, url.searchParams, url.origin);
       if (direct) {
         if (movieCache && movieCacheKey) ctx?.waitUntil(movieCache.put(movieCacheKey, direct.clone()));
         return direct;
@@ -963,7 +1354,7 @@ export default {
 
       // If license server returns error on movie browsing, fallback to direct catalogs so browsing always works
       if ((response.status === 401 || response.status === 403 || response.status >= 500) && url.pathname.startsWith('/api/movies/')) {
-        const direct = await fetchDirectMovieCatalog(url.pathname, url.searchParams);
+        const direct = await fetchDirectMovieCatalog(url.pathname, url.searchParams, url.origin);
         if (direct) {
           if (movieCache && movieCacheKey) ctx?.waitUntil(movieCache.put(movieCacheKey, direct.clone()));
           return direct;

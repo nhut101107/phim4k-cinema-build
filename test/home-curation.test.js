@@ -53,12 +53,12 @@ test('browser curation does not expose upstream catalogue routes',()=>{
   assert.doesNotMatch(fs.readFileSync('public/js/home-curation.js','utf8'),/\/v1\/api|\/danh-sach\/phim-moi-cap-nhat/);
 });
 test('home keeps a larger useful catalogue for browsing',()=>{
-  const list=Array.from({length:300},(_,index)=>movie(`movie-${index}`,{year:2026,type:index%2?'series':'single',modified:{time:`2026-08-${String(index%28+1).padStart(2,'0')}T00:00:00Z`}}));
+  const list=Array.from({length:700},(_,index)=>movie(`movie-${index}`,{year:2026,type:index%2?'series':'single',modified:{time:`2026-08-${String(index%28+1).padStart(2,'0')}T00:00:00Z`}}));
   const data=home.build(list,{now});
   assert.equal(data.hero.length,10);
-  assert.equal(data.sections.find(section=>section.id==='new-releases').items.length,48);
-  assert.equal(data.sections.find(section=>section.id==='series-new').items.length,36);
-  assert.equal(data.sections.find(section=>section.id==='latest').items.length,240);
+  assert.equal(data.sections.find(section=>section.id==='new-releases').items.length,120);
+  assert.equal(data.sections.find(section=>section.id==='series-new').items.length,96);
+  assert.equal(data.sections.find(section=>section.id==='latest').items.length,600);
 });
 test('personalized rail follows real watch-history affinity and excludes watched titles',()=>{
   const watched=movie('watched',{category:[{name:'Hành Động'}],country:[{name:'Hàn Quốc'}],type:'series'});

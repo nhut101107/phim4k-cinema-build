@@ -418,6 +418,15 @@ video::cue {
   font-weight: 800;
   white-space: nowrap;
 }
+.player-ad-skip-status {
+  cursor: pointer;
+  user-select: none;
+}
+.player-ad-skip-status.is-off {
+  border-color: rgba(248, 113, 113, .42);
+  color: #fecaca;
+  background: rgba(127, 29, 29, .28);
+}
 
 /* Keep the provider stage mathematically centred on every portrait viewport,
    including iOS dynamic toolbars. Width is derived from the real safe area,

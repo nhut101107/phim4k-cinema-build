@@ -23,9 +23,18 @@ test('detail, search and category fallbacks never reintroduce VSMOV playback', (
 });
 
 test('home sections have intentionally different large limits', () => {
-  for (const count of [174, 120, 54, 186, 162, 64, 42]) {
+  for (const count of [480, 320, 180, 256, 256, 220, 160]) {
     assert.match(worker, new RegExp(`slice\\(0, ${count}\\)`));
   }
+});
+
+test('worker strips spliced HLS ads and issues opaque poster tickets', () => {
+  assert.match(worker, /const HLS_CLEAN_PATH = '\/hls\/clean\.m3u8'/);
+  assert.match(worker, /function stripHlsAds\(text, baseUrl/);
+  assert.match(worker, /function adFreeDetailPayload\(payload, cleanOrigin\)/);
+  assert.match(worker, /function encodeImageTicket\(imageUrl/);
+  assert.match(worker, /function decodeImageTicket\(token\)/);
+  assert.match(worker, /url\.pathname === '\/api\/media\/image'/);
 });
 
 test('home exposes a truthful high-quality section without inventing HD labels', () => {

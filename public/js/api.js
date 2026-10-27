@@ -427,7 +427,7 @@ const API = {
   async getDetail(slug, { refresh = false } = {}) {
     const endpoint = `/api/movies/detail/${slug}${refresh ? '?refresh=1' : ''}`;
     try {
-      return await this.cachedMovieRequest(endpoint, 300000);
+      return await this.cachedMovieRequest(endpoint, 60000);
     } catch (_error) {
       const movie = this.getBundledMovie(slug);
       if (movie) return { movie, episodes: [] };
