@@ -123,6 +123,9 @@ const Player = {
       const wakingEmbedChrome = event.target === this.wrapper
         && this.wrapper.classList.contains('embed-active')
         && this.wrapper.classList.contains('inactive');
+      if (wakingEmbedChrome) {
+        this.unmuteAllMedia();
+      }
       if (wakingEmbedChrome || event.target.closest('button, input, .player-controls')) {
         this.resetInactivityTimer();
       }
@@ -169,6 +172,7 @@ const Player = {
         this.video.volume = Number(event.target.value);
         this.video.muted = false;
         this.updateVolumeIcons();
+        this.postIframeAudioCommand('setVolume', this.video.volume);
       });
     }
     window.addEventListener('keydown', (event) => this.onKeyDown(event));
@@ -218,6 +222,17 @@ const Player = {
     this.hideNextEpisodePopup();
     this.hideSkipIntroButton();
     this.loadAutoSkipPreference();
+    if (this.video) {
+      this.video.muted = false;
+      this.video.volume = 1;
+    }
+    const topAudio = document.getElementById('btnPlayerAudioTop');
+    if (topAudio) {
+      topAudio.textContent = '🔊 Âm thanh';
+      topAudio.classList.add('active');
+    }
+    const unmuteOverlay = document.getElementById('btnUnmuteOverlay');
+    if (unmuteOverlay) unmuteOverlay.classList.add('hidden');
     API.trackUsage('episode_open', this.usageContext(movie, episode));
 
     document.getElementById('playerMovieTitle').textContent = movie.name || 'Phim';
@@ -265,6 +280,7 @@ const Player = {
     this.nextEpPopupActive = false;
     this.hideNextEpisodePopup();
     this.hideSkipIntroButton();
+    document.getElementById('btnUnmuteOverlay')?.classList.add('hidden');
     this.recoveryInFlight = false;
     this.destroyHls();
     this.releaseAudioVideo();
@@ -384,6 +400,8 @@ const Player = {
       iframe.src = safeEmbedUrl;
       iframe.classList.remove('hidden');
     }
+    const unmuteOverlay = document.getElementById('btnUnmuteOverlay');
+    if (unmuteOverlay) unmuteOverlay.classList.remove('hidden');
     this.showBuffering(false);
     const resolutionBadge = document.getElementById('realResolutionBadge');
     if (resolutionBadge) {
@@ -403,6 +421,27 @@ const Player = {
     const autoplay = options.autoplay !== false;
     const isHls = options.isHls !== false && (String(streamUrl).includes('.m3u8') || options.isHls === true);
     const nativeDirectHls = options.nativeDirectHls === true;
+
+    // Restore fallback HTML5 video surface and controls from embed mode:
+    if (this.wrapper) {
+      this.wrapper.classList.remove('embed-active');
+    }
+    if (this.video) {
+      this.video.classList.remove('hidden');
+      this.video.crossOrigin = 'anonymous';
+      if (this.video.muted) this.video.muted = false;
+      if (this.video.volume <= 0.05) this.video.volume = 1;
+    }
+    const iframe = document.getElementById('playerEmbed');
+    if (iframe) {
+      iframe.src = 'about:blank';
+      iframe.classList.add('hidden');
+    }
+    document.getElementById('playerControls')?.classList.remove('hidden');
+    document.getElementById('btnCenterPlayPause')?.classList.remove('hidden');
+    document.getElementById('btnUnmuteOverlay')?.classList.add('hidden');
+    this.updateVolumeIcons();
+
     if (!streamUrl) {
       this.showBuffering(false);
       this.showAlert('Không có luồng phát tương thích ở server này. Đang thử server khác…');
@@ -780,7 +819,13 @@ const Player = {
     if (!window.Phim4KAudio?.release(this.video)) return;
     const old = this.video;
     const next = old.cloneNode(false);
-    next.removeAttribute('src'); next.muted = old.muted; next.volume = old.volume; next.playbackRate = old.playbackRate;
+    next.removeAttribute('src');
+    delete next.dataset.reliabilityHotfix350;
+    next.removeAttribute('data-reliability-hotfix350');
+    next.muted = old.muted;
+    next.volume = old.volume > 0 ? old.volume : 1;
+    next.playbackRate = old.playbackRate;
+    next.crossOrigin = 'anonymous';
     old.pause(); old.removeAttribute('src'); old.load(); old.replaceWith(next);
     this.video = next;
     this.videoBindings.forEach(({type,listener,options}) => next.addEventListener(type,listener,options));
@@ -859,15 +904,9 @@ const Player = {
       const first = await fetch(sourceUrl, { credentials: 'omit' });
       if (!first.ok) return;
       const firstText = await first.text();
-      let cleaned = PlayerCore.stripHlsAds(firstText, first.url || sourceUrl);
-      if (cleaned.isMaster && Array.isArray(cleaned.variants) && cleaned.variants.length) {
-        const variantUrl = cleaned.variants[0];
-        const second = await fetch(variantUrl, { credentials: 'omit' });
-        if (second.ok) {
-          const secondText = await second.text();
-          cleaned = PlayerCore.stripHlsAds(secondText, second.url || variantUrl);
-        }
-      }
+      const cleaned = PlayerCore.stripHlsAds(firstText, first.url || sourceUrl, {
+        cleanUrlFor: (variant) => `${origin}/hls/clean.m3u8?src=${encodeURIComponent(variant)}&_=/%`,
+      });
       if (!cleaned?.playlist) return;
       await fetch(`${origin}/hls/clean.m3u8?id=${encodeURIComponent(id)}`, {
         method: 'POST',
@@ -1092,14 +1131,74 @@ const Player = {
   },
 
   toggleMute() {
-    this.video.muted = !this.video.muted;
+    if (!this.video) return;
+    if (this.video.muted || this.video.volume === 0) {
+      this.video.muted = false;
+      if (this.video.volume <= 0.05) this.video.volume = 1;
+      const slider = document.getElementById('volumeSlider');
+      if (slider) slider.value = this.video.volume;
+      this.postIframeAudioCommand('unmute', this.video.volume);
+    } else {
+      this.video.muted = true;
+      this.postIframeAudioCommand('mute', 0);
+    }
     this.updateVolumeIcons();
+    window.Phim4KAudio?.resume?.();
+  },
+
+  unmuteAllMedia() {
+    if (this.video) {
+      this.video.muted = false;
+      if (this.video.volume <= 0.05) this.video.volume = 1;
+      const slider = document.getElementById('volumeSlider');
+      if (slider) slider.value = this.video.volume;
+    }
+    window.Phim4KAudio?.resume?.();
+    this.postIframeAudioCommand('unmute', 1);
+    this.updateVolumeIcons();
+    const btn = document.getElementById('btnPlayerAudioTop');
+    if (btn) {
+      btn.textContent = '🔊 Âm thanh';
+      btn.classList.add('active');
+    }
+    const overlay = document.getElementById('btnUnmuteOverlay');
+    if (overlay) overlay.classList.add('hidden');
+    this.showAlert('Đã bật âm thanh phim 🔊');
+  },
+
+  postIframeAudioCommand(command, value = null) {
+    const iframe = document.getElementById('playerEmbed');
+    if (iframe?.contentWindow) {
+      try {
+        const payload = { command };
+        if (value !== null) payload.value = value;
+        iframe.contentWindow.postMessage(payload, '*');
+        if (command === 'unmute') {
+          iframe.contentWindow.postMessage({ command: 'unmute' }, '*');
+          iframe.contentWindow.postMessage({ command: 'setVolume', volume: typeof value === 'number' ? value : 1 }, '*');
+          iframe.contentWindow.postMessage({ event: 'command', func: 'unMute' }, '*');
+          iframe.contentWindow.postMessage({ action: 'unmute' }, '*');
+        } else if (command === 'mute') {
+          iframe.contentWindow.postMessage({ command: 'mute' }, '*');
+          iframe.contentWindow.postMessage({ event: 'command', func: 'mute' }, '*');
+          iframe.contentWindow.postMessage({ action: 'mute' }, '*');
+        } else if (command === 'setVolume') {
+          iframe.contentWindow.postMessage({ command: 'setVolume', volume: value }, '*');
+          iframe.contentWindow.postMessage({ event: 'command', func: 'setVolume', args: [value] }, '*');
+        }
+      } catch (_) {}
+    }
   },
 
   updateVolumeIcons() {
     const muted = Boolean(this.video?.muted || this.video?.volume === 0);
     document.getElementById('iconVolHigh')?.classList.toggle('hidden', muted);
     document.getElementById('iconVolMute')?.classList.toggle('hidden', !muted);
+    const topAudio = document.getElementById('btnPlayerAudioTop');
+    if (topAudio) {
+      topAudio.textContent = muted ? '🔇 Tắt tiếng' : '🔊 Âm thanh';
+      topAudio.classList.toggle('active', !muted);
+    }
   },
 
   setPlaybackSpeed(speed) {
@@ -1432,10 +1531,12 @@ const Player = {
       case 'ArrowDown': {
         event.preventDefault();
         const delta = event.key === 'ArrowUp' ? 0.1 : -0.1;
-        this.video.volume = Math.max(0, Math.min(1, this.video.volume + delta));
+        this.video.volume = Math.max(0, Math.min(1, Math.round((this.video.volume + delta) * 10) / 10));
         document.getElementById('volumeSlider').value = this.video.volume;
         this.video.muted = false;
         this.updateVolumeIcons();
+        this.postIframeAudioCommand('setVolume', this.video.volume);
+        this.postIframeAudioCommand('unmute', this.video.volume);
         break;
       }
       case 'f': case 'F': void this.toggleCinemaFullscreen(); break;
@@ -1451,6 +1552,7 @@ function togglePlayPause() { Player.togglePlayPause(); }
 function seekRelative(seconds) { Player.seekRelative(seconds); }
 function toggleAutoSkipAds() { Player.toggleAutoSkipAds(); }
 function toggleMute() { Player.toggleMute(); }
+function unmuteAllMedia() { Player.unmuteAllMedia(); }
 function toggleCinemaFullscreen() { void Player.toggleCinemaFullscreen(); }
 function toggleAspectRatio() { Player.toggleAspectRatio(); }
 function setAspectRatio(mode) { Player.setAspectRatio(mode); }
@@ -1480,6 +1582,7 @@ function skipIntro() { Player.skipIntro(); }
 function dismissNextEpisodePopup() { Player.dismissNextEpisodePopup(); }
 
 window.Player = Player;
+window.unmuteAllMedia = unmuteAllMedia;
 window.skipIntro = skipIntro;
 window.dismissNextEpisodePopup = dismissNextEpisodePopup;
 

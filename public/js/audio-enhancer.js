@@ -7,6 +7,11 @@
       return url.protocol === local.protocol && url.host === local.host && url.pathname.startsWith('/media/');
     } catch (_) { return false; }
   }
+  function resume() {
+    if (graph?.context && graph.context.state === 'suspended') {
+      void graph.context.resume().catch(() => {});
+    }
+  }
   async function toggle(video) {
     if (graph?.video === video) {
       graph.enabled = !graph.enabled;
@@ -16,6 +21,9 @@
       return graph.enabled;
     }
     const src = video.currentSrc || video.src;
+    if (typeof navigator !== 'undefined' && /iPhone|iPad|iPod/.test(navigator.userAgent) && typeof src === 'string' && src.startsWith('blob:')) {
+      throw new Error('Nguồn này giữ âm gốc để tránh mất tiếng do giới hạn xử lý âm thanh.');
+    }
     if (!safeSource(src, root.location.href)) throw new Error('Nguồn này giữ âm gốc để tránh mất tiếng do giới hạn xử lý âm thanh.');
     const Context = root.AudioContext || root.webkitAudioContext;
     if (!Context) throw new Error('Thiết bị này chưa hỗ trợ chế độ Rõ thoại.');
@@ -26,10 +34,18 @@
       const eq = context.createBiquadFilter(); eq.type = 'peaking'; eq.frequency.value = 2200; eq.Q.value = 0.7; eq.gain.value = 2;
       const compressor = context.createDynamicsCompressor();
       compressor.threshold.value = -20; compressor.knee.value = 24; compressor.ratio.value = 3; compressor.attack.value = 0.005; compressor.release.value = 0.18;
-      const gain = context.createGain(); gain.gain.value = 0.75;
+      const gain = context.createGain(); gain.gain.value = 1.0;
       eq.connect(compressor); compressor.connect(gain); gain.connect(context.destination);
       const source = context.createMediaElementSource(video);
       source.connect(eq);
+      if (typeof video?.addEventListener === 'function' && !video._enhancerPlayBound) {
+        video._enhancerPlayBound = true;
+        video.addEventListener('play', () => {
+          if (graph?.context?.state === 'suspended') {
+            void graph.context.resume().catch(() => {});
+          }
+        }, { passive: true });
+      }
       graph = {video,context,source,eq,enabled:true};
       return true;
     } catch (error) { void context.close().catch(() => {}); throw error; }
@@ -39,6 +55,6 @@
     graph.source.disconnect(); void graph.context.close().catch(() => {}); graph = null;
     return true; // Caller replaces the captured element before loading any new source.
   }
-  root.Phim4KAudio = { toggle, release };
+  root.Phim4KAudio = { toggle, release, resume };
   if (typeof module === 'object' && module.exports) module.exports = { safeSource };
 })(typeof window === 'object' ? window : globalThis);

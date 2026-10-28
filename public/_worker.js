@@ -573,34 +573,43 @@ function hlsSegmentSignature(absoluteUrl) {
   }
 }
 
-function hlsRewriteUriAttribute(line, base) {
-  return line.replace(/URI="([^"]*)"/, (_match, uri) => `URI="${hlsAbsolute(uri, base) || uri}"`);
+function hlsRewriteUriAttribute(line, base, cleanUrlFor = null) {
+  return line.replace(/URI\s*=\s*["']([^"']*)["']/i, (_match, uri) => {
+    const abs = hlsAbsolute(uri, base) || uri;
+    return `URI="${cleanUrlFor ? cleanUrlFor(abs) : abs}"`;
+  });
 }
 
-// Returns { playlist, removedSegments, removedSeconds, isMaster }.
+// Returns { playlist, removedSegments, removedSeconds, isMaster, variants }.
 function stripHlsAds(text, baseUrl, { cleanUrlFor = null } = {}) {
   const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/);
   if (!lines[0] || !lines[0].trim().startsWith('#EXTM3U')) throw new Error('NOT_HLS_PLAYLIST');
 
-  // Master playlist: route every variant through the cleaner as well.
+  // Master playlist: route every variant and media rendition through the cleaner as well.
   if (lines.some((line) => line.startsWith('#EXT-X-STREAM-INF'))) {
     const out = [];
+    const variants = [];
     let expectVariant = false;
     for (const raw of lines) {
       const line = raw.trim();
       if (!line) continue;
       if (line.startsWith('#')) {
-        expectVariant = line.startsWith('#EXT-X-STREAM-INF');
-        out.push(line.startsWith('#EXT-X-MEDIA') || line.startsWith('#EXT-X-I-FRAME-STREAM-INF')
-          ? hlsRewriteUriAttribute(line, baseUrl)
-          : line);
+        if (line.startsWith('#EXT-X-STREAM-INF')) {
+          expectVariant = true;
+          out.push(line);
+        } else if (line.startsWith('#EXT-X-MEDIA') || line.startsWith('#EXT-X-I-FRAME-STREAM-INF')) {
+          out.push(hlsRewriteUriAttribute(line, baseUrl, cleanUrlFor));
+        } else {
+          out.push(line);
+        }
         continue;
       }
       const absolute = hlsAbsolute(line, baseUrl) || line;
+      if (expectVariant) variants.push(absolute);
       out.push(expectVariant && cleanUrlFor ? cleanUrlFor(absolute) : absolute);
       expectVariant = false;
     }
-    return { playlist: `${out.join('\n')}\n`, removedSegments: 0, removedSeconds: 0, isMaster: true };
+    return { playlist: `${out.join('\n')}\n`, removedSegments: 0, removedSeconds: 0, isMaster: true, variants };
   }
 
   // Media playlist: parse into header + segments with their context.

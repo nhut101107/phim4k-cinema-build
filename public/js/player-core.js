@@ -134,8 +134,11 @@
     }
   }
 
-  function hlsRewriteUriAttribute(line, base) {
-    return line.replace(/URI="([^"]*)"/, (_match, uri) => `URI="${hlsAbsolute(uri, base) || uri}"`);
+  function hlsRewriteUriAttribute(line, base, cleanUrlFor = null) {
+    return line.replace(/URI\s*=\s*["']([^"']*)["']/i, (_match, uri) => {
+      const abs = hlsAbsolute(uri, base) || uri;
+      return `URI="${cleanUrlFor ? cleanUrlFor(abs) : abs}"`;
+    });
   }
 
   function stripHlsAds(text, baseUrl, { cleanUrlFor = null } = {}) {
@@ -150,10 +153,14 @@
         const line = raw.trim();
         if (!line) continue;
         if (line.startsWith('#')) {
-          expectVariant = line.startsWith('#EXT-X-STREAM-INF');
-          out.push(line.startsWith('#EXT-X-MEDIA') || line.startsWith('#EXT-X-I-FRAME-STREAM-INF')
-            ? hlsRewriteUriAttribute(line, baseUrl)
-            : line);
+          if (line.startsWith('#EXT-X-STREAM-INF')) {
+            expectVariant = true;
+            out.push(line);
+          } else if (line.startsWith('#EXT-X-MEDIA') || line.startsWith('#EXT-X-I-FRAME-STREAM-INF')) {
+            out.push(hlsRewriteUriAttribute(line, baseUrl, cleanUrlFor));
+          } else {
+            out.push(line);
+          }
           continue;
         }
         const absolute = hlsAbsolute(line, baseUrl) || line;
