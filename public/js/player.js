@@ -140,6 +140,16 @@ const Player = {
         this.clearEmbedLoadWatchdog();
         this.beginEmbedWatchSession();
         this.resetInactivityTimer();
+        this.postIframeAudioCommand('unmute', 1);
+        this.postIframeAudioCommand('setVolume', 1);
+        [300, 800, 1500, 2500].forEach(delay => {
+          window.setTimeout(() => {
+            if (this.wrapper?.classList.contains('embed-active') && !this.modal?.classList.contains('hidden')) {
+              this.postIframeAudioCommand('unmute', 1);
+              this.postIframeAudioCommand('setVolume', 1);
+            }
+          }, delay);
+        });
       }
     });
     embed?.addEventListener('error', () => {
@@ -226,13 +236,7 @@ const Player = {
       this.video.muted = false;
       this.video.volume = 1;
     }
-    const topAudio = document.getElementById('btnPlayerAudioTop');
-    if (topAudio) {
-      topAudio.textContent = '🔊 Âm thanh';
-      topAudio.classList.add('active');
-    }
-    const unmuteOverlay = document.getElementById('btnUnmuteOverlay');
-    if (unmuteOverlay) unmuteOverlay.classList.add('hidden');
+    window.Phim4KAudio?.resume?.();
     API.trackUsage('episode_open', this.usageContext(movie, episode));
 
     document.getElementById('playerMovieTitle').textContent = movie.name || 'Phim';
@@ -280,7 +284,6 @@ const Player = {
     this.nextEpPopupActive = false;
     this.hideNextEpisodePopup();
     this.hideSkipIntroButton();
-    document.getElementById('btnUnmuteOverlay')?.classList.add('hidden');
     this.recoveryInFlight = false;
     this.destroyHls();
     this.releaseAudioVideo();
@@ -400,8 +403,9 @@ const Player = {
       iframe.src = safeEmbedUrl;
       iframe.classList.remove('hidden');
     }
-    const unmuteOverlay = document.getElementById('btnUnmuteOverlay');
-    if (unmuteOverlay) unmuteOverlay.classList.remove('hidden');
+    this.postIframeAudioCommand('unmute', 1);
+    this.postIframeAudioCommand('setVolume', 1);
+    window.Phim4KAudio?.resume?.();
     this.showBuffering(false);
     const resolutionBadge = document.getElementById('realResolutionBadge');
     if (resolutionBadge) {
@@ -429,9 +433,10 @@ const Player = {
     if (this.video) {
       this.video.classList.remove('hidden');
       this.video.crossOrigin = 'anonymous';
-      if (this.video.muted) this.video.muted = false;
-      if (this.video.volume <= 0.05) this.video.volume = 1;
+      this.video.muted = false;
+      this.video.volume = 1;
     }
+    window.Phim4KAudio?.resume?.();
     const iframe = document.getElementById('playerEmbed');
     if (iframe) {
       iframe.src = 'about:blank';
@@ -439,7 +444,6 @@ const Player = {
     }
     document.getElementById('playerControls')?.classList.remove('hidden');
     document.getElementById('btnCenterPlayPause')?.classList.remove('hidden');
-    document.getElementById('btnUnmuteOverlay')?.classList.add('hidden');
     this.updateVolumeIcons();
 
     if (!streamUrl) {
@@ -822,8 +826,9 @@ const Player = {
     next.removeAttribute('src');
     delete next.dataset.reliabilityHotfix350;
     next.removeAttribute('data-reliability-hotfix350');
-    next.muted = old.muted;
-    next.volume = old.volume > 0 ? old.volume : 1;
+    next.muted = false;
+    next.volume = 1;
+    window.Phim4KAudio?.resume?.();
     next.playbackRate = old.playbackRate;
     next.crossOrigin = 'anonymous';
     old.pause(); old.removeAttribute('src'); old.load(); old.replaceWith(next);
@@ -1155,15 +1160,8 @@ const Player = {
     }
     window.Phim4KAudio?.resume?.();
     this.postIframeAudioCommand('unmute', 1);
+    this.postIframeAudioCommand('setVolume', 1);
     this.updateVolumeIcons();
-    const btn = document.getElementById('btnPlayerAudioTop');
-    if (btn) {
-      btn.textContent = '🔊 Âm thanh';
-      btn.classList.add('active');
-    }
-    const overlay = document.getElementById('btnUnmuteOverlay');
-    if (overlay) overlay.classList.add('hidden');
-    this.showAlert('Đã bật âm thanh phim 🔊');
   },
 
   postIframeAudioCommand(command, value = null) {
@@ -1194,11 +1192,6 @@ const Player = {
     const muted = Boolean(this.video?.muted || this.video?.volume === 0);
     document.getElementById('iconVolHigh')?.classList.toggle('hidden', muted);
     document.getElementById('iconVolMute')?.classList.toggle('hidden', !muted);
-    const topAudio = document.getElementById('btnPlayerAudioTop');
-    if (topAudio) {
-      topAudio.textContent = muted ? '🔇 Tắt tiếng' : '🔊 Âm thanh';
-      topAudio.classList.toggle('active', !muted);
-    }
   },
 
   setPlaybackSpeed(speed) {

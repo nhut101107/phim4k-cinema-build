@@ -8,11 +8,11 @@ enum RuntimeIntegrityManifest {
         "public/cordova.js": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         "public/css/mnhut-projection.css": "8afb981a51738120f1c7a83c2d88ec26deca75c62aa1611da7d124e8f879953b",
         "public/css/modal.css": "e89abc5f32ae8e48ad067719209785f50a5db4e087633d9c1130c2ec4d8112d0",
-        "public/css/player.css": "3fbd2228c84a372e81ad59554d43e684833a52efb6ccf33d4f76c4d1faaf75c2",
+        "public/css/player.css": "e1f38f701fbbab5e31fd7d5b5ed0202d6bbb50152abfa1c800b64d9e196418cb",
         "public/css/style.css": "7ef75092a822b9662f0cf097a5cf2c28429206f92eca0d0ae403ab2a61b39b4d",
         "public/css/tv.css": "51d91b56a6192b326f07b7f8cb0c111a2df020e5ad5d6d1d90bb82b6ae63f3e6",
         "public/css/web-premium.css": "967e2e452f376c7a9f182b8cb53d6415959176102deb8fd79d274a6eb17c850b",
-        "public/index.html": "1fe142286289fee6ca5e45f08bd1dde5196735ab8cd999a5ff8b8a3d22b642a0",
+        "public/index.html": "625e0b569cacd0bdb6dc3393fdf495c67d00b8a11f35023522465349cec9c1c3",
         "public/js/admin.js": "15cc287accd650ac9b46ff01e012784365fc765d946de2470687a7b88273d81b",
         "public/js/api.js": "9ead4eff77105aedcacbf5e817d47cdb01b1ef00691e15e62041f5ab46eef583",
         "public/js/app.js": "e09e384e48f0ca809bfd85c60d516f44852a345f8e9a8993c438d451c17e488e",
@@ -27,7 +27,7 @@ enum RuntimeIntegrityManifest {
         "public/js/native-downloads.js": "961f0e9c23b4271d373db2e55015ebd272228cc699cfe771de0adcef6f658814",
         "public/js/platform.js": "6dfb516cd395d03f2199d4d881b219f4f626237084856f3335d9447c03842fcb",
         "public/js/player-core.js": "ae47ded2ca68e878b9a090183d82ef736dd34068041e60aa980b13e60f57c3d4",
-        "public/js/player.js": "ea17b6be22a96ac48b4555099f7dae84419be7665e535f7bb1e029f5c1f8ff06",
+        "public/js/player.js": "7367c791eec073b11ec09f579500ab4b10ac5cf050a8a64959d43cb7dfd915a1",
         "public/js/release-copy.js": "d72075a12d7661c14b5929aebabe52d99923fdc161552b773db1f4988b73d1d6",
         "public/js/runtime-config.js": "6a0da8d49068408b85419a264b850f6e6b526715327a7f412d20f30495a68327",
         "public/js/session-vault.js": "44f7df4d6436153995c75cf54fe4c6eccb4c3a51815b0e6d24ebe35efae90707",
@@ -41,7 +41,7 @@ enum RuntimeIntegrityManifest {
         "public/media/superman_4k.jpg": "9339c63a766caa26647be0b64cacf0c95e3db29859ce4445b5e9db15a05ab7fe",
         "public/media/the_boys_4k.jpg": "572cb16dfb429292bb9fc690a0c5bfa28a8d688ed23588595e396b454067971a",
         "public/vendor/hls.min.js": "afcde07437ec84b072fe8782e772ceb5046eac751b2719f73ae0d83d763bc3f5",
-        "public/web-index.html": "555aca70f78cc5fd0e2fcc2b4e221b5d5cba71c879ca32e958bf2209b1b80876",
+        "public/web-index.html": "40e62b0a31afecd7601438e95b4b7ac8f8607814dfcff00d3220ddcad7f11fdd",
     ]
 
     static func verify(in bundle: Bundle = .main) -> Bool {

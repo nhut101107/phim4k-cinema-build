@@ -100,13 +100,6 @@ function createPlayerContext() {
   volumeSlider.value = '1';
   elements.set('volumeSlider', volumeSlider);
 
-  const btnPlayerAudioTop = createDOMElement('button', 'btnPlayerAudioTop');
-  elements.set('btnPlayerAudioTop', btnPlayerAudioTop);
-
-  const btnUnmuteOverlay = createDOMElement('button', 'btnUnmuteOverlay');
-  btnUnmuteOverlay.classList.add('hidden');
-  elements.set('btnUnmuteOverlay', btnUnmuteOverlay);
-
   const playerControls = createDOMElement('div', 'playerControls');
   elements.set('playerControls', playerControls);
 
@@ -179,16 +172,20 @@ test('M7.2: HTML markup includes wildcard iframe permissions and fallback video 
   assert.match(indexHtml, /<video id="videoPlayer" class="video-element hidden" crossorigin="anonymous" playsinline webkit-playsinline preload="metadata"><\/video>/);
 });
 
-test('M7.3: HTML markup exposes #btnPlayerAudioTop and #btnUnmuteOverlay with Player.unmuteAllMedia()', () => {
-  assert.match(indexHtml, /id="btnPlayerAudioTop"[^>]*class="[^"]*btn-player-audio[^"]*"[^>]*onclick="Player\.unmuteAllMedia\(\)"/);
-  assert.match(indexHtml, /id="btnUnmuteOverlay"[^>]*class="[^"]*btn-unmute-overlay hidden[^"]*"[^>]*onclick="Player\.unmuteAllMedia\(\)"/);
+test('M7.3: HTML markup has completely removed #btnPlayerAudioTop and #btnUnmuteOverlay', () => {
+  assert.doesNotMatch(indexHtml, /id="btnPlayerAudioTop"/, 'btnPlayerAudioTop must be completely removed');
+  assert.doesNotMatch(indexHtml, /id="btnUnmuteOverlay"/, 'btnUnmuteOverlay must be completely removed');
+  assert.doesNotMatch(indexHtml, /class="[^"]*btn-player-audio[^"]*"/, 'btn-player-audio class must be completely removed');
+  assert.doesNotMatch(indexHtml, /class="[^"]*btn-unmute-overlay[^"]*"/, 'btn-unmute-overlay class must be completely removed');
   assert.doesNotMatch(indexHtml, /id="btnAudioMode"/, 'btnAudioMode must not be reintroduced');
+  assert.doesNotMatch(webIndexHtml, /id="btnPlayerAudioTop"/, 'btnPlayerAudioTop must be absent from webIndexHtml');
+  assert.doesNotMatch(webIndexHtml, /id="btnUnmuteOverlay"/, 'btnUnmuteOverlay must be absent from webIndexHtml');
 });
 
-test('M7.4: CSS rules exist for .btn-player-audio.active and .btn-unmute-overlay', () => {
-  assert.match(playerCss, /\.btn-player-audio\.active\s*\{/);
-  assert.match(playerCss, /\.btn-unmute-overlay\s*\{/);
-  assert.match(playerCss, /z-index:\s*60/);
+test('M7.4: CSS rules for .btn-player-audio and .btn-unmute-overlay are completely removed while preserving inactivity wake-up layer', () => {
+  assert.doesNotMatch(playerCss, /\.btn-player-audio/, 'btn-player-audio styles must be removed');
+  assert.doesNotMatch(playerCss, /\.btn-unmute-overlay/, 'btn-unmute-overlay styles must be removed');
+  assert.match(playerCss, /\.cinema-player-wrapper\.inactive\.embed-active::after/, 'inactivity wake-up layer must be preserved');
 });
 
 test('M7.5: Player.loadStream restores fallback HTML5 video surface, unhides controls, and cleans up embed', () => {
@@ -204,7 +201,6 @@ test('M7.5: Player.loadStream restores fallback HTML5 video surface, unhides con
   env.iframe.src = 'https://player.phimapi.com/player/?url=test';
   env.elements.get('playerControls').classList.add('hidden');
   env.elements.get('btnCenterPlayPause').classList.add('hidden');
-  env.elements.get('btnUnmuteOverlay').classList.remove('hidden');
 
   // Trigger fallback loadStream
   p.loadStream('https://cdn.example.com/fallback/stream.m3u8', { autoplay: true });
@@ -218,7 +214,6 @@ test('M7.5: Player.loadStream restores fallback HTML5 video surface, unhides con
   assert.equal(env.iframe.src, 'about:blank', 'playerEmbed src must be set to about:blank');
   assert.equal(env.elements.get('playerControls').classList.contains('hidden'), false, 'playerControls must be visible');
   assert.equal(env.elements.get('btnCenterPlayPause').classList.contains('hidden'), false, 'btnCenterPlayPause must be visible');
-  assert.equal(env.elements.get('btnUnmuteOverlay').classList.contains('hidden'), true, 'btnUnmuteOverlay must be hidden');
 });
 
 test('M7.6: Player.toggleMute recovers from zero-volume trap and dispatches iframe audio commands', () => {
@@ -247,23 +242,19 @@ test('M7.6: Player.toggleMute recovers from zero-volume trap and dispatches ifra
   assert.ok(muteMsg, 'postIframeAudioCommand must send mute');
 });
 
-test('M7.7: Player.unmuteAllMedia unpauses audio, sets volume to 1, posts cross-origin commands, and updates UI', () => {
+test('M7.7: Player.unmuteAllMedia unpauses audio, sets volume to 1, and posts cross-origin commands', () => {
   const env = createPlayerContext();
   const p = env.player;
 
   env.video.muted = true;
   env.video.volume = 0;
-  env.elements.get('btnUnmuteOverlay').classList.remove('hidden');
 
   p.unmuteAllMedia();
 
   assert.equal(env.video.muted, false, 'video must be unmuted');
   assert.equal(env.video.volume, 1, 'volume must be restored to 1');
   assert.equal(env.elements.get('volumeSlider').value, 1, 'slider must be set to 1');
-  assert.equal(env.elements.get('btnPlayerAudioTop').textContent, '🔊 Âm thanh');
-  assert.equal(env.elements.get('btnPlayerAudioTop').classList.contains('active'), true);
-  assert.equal(env.elements.get('btnUnmuteOverlay').classList.contains('hidden'), true, 'overlay must be hidden');
-  assert.ok(env.alerts.some(a => a.includes('Đã bật âm thanh')), 'alert must be shown');
+  assert.equal(env.resumedContexts.length, 1, 'Phim4KAudio.resume should be called');
 
   // Check all expected cross-origin iframe postMessage formats
   const commands = env.postMessages.map(m => m.msg.command || m.msg.func || m.msg.action);
@@ -450,15 +441,13 @@ test('M7.13: Keyboard ArrowUp and ArrowDown adjust volume and synchronize iframe
   assert.ok(env.postMessages.some(m => m.msg.command === 'setVolume' && m.msg.volume === 0.5));
 });
 
-test('M7.14: Player.open initializes unmuted audio and resets audio UI state', () => {
+test('M7.14: Player.open initializes unmuted audio (muted=false, volume=1.0) and resumes audio context', () => {
   const env = createPlayerContext();
   const p = env.player;
 
   // Pre-condition: player was previously muted
   env.video.muted = true;
   env.video.volume = 0.2;
-  env.elements.get('btnPlayerAudioTop').classList.remove('active');
-  env.elements.get('btnUnmuteOverlay').classList.remove('hidden');
 
   p.loadEpisode = () => {};
   p.getSavedWatchTime = () => 0;
@@ -468,7 +457,5 @@ test('M7.14: Player.open initializes unmuted audio and resets audio UI state', (
 
   assert.equal(env.video.muted, false, 'Player.open must reset muted to false');
   assert.equal(env.video.volume, 1, 'Player.open must reset volume to 1');
-  assert.equal(env.elements.get('btnPlayerAudioTop').textContent, '🔊 Âm thanh');
-  assert.equal(env.elements.get('btnPlayerAudioTop').classList.contains('active'), true);
-  assert.equal(env.elements.get('btnUnmuteOverlay').classList.contains('hidden'), true);
+  assert.equal(env.resumedContexts.length, 1, 'Phim4KAudio.resume should be called on open');
 });

@@ -323,12 +323,6 @@ video::cue {
   background: #facc15 !important;
 }
 
-.btn-player-audio.active {
-  border-color: rgba(74, 222, 128, 0.72) !important;
-  color: #86efac !important;
-  background: rgba(22, 163, 74, 0.28) !important;
-}
-
 .badge-real-res,
 .player-noads-pill {
   display: inline-flex;
@@ -757,39 +751,6 @@ video::cue {
 
 .cinema-player-wrapper.embed-active .player-top-bar {
   transition: opacity 0.25s ease;
-}
-
-.btn-unmute-overlay {
-  position: absolute;
-  top: 72px;
-  right: 24px;
-  z-index: 60;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  border-radius: 999px;
-  border: 1px solid rgba(250, 204, 21, 0.85);
-  background: rgba(17, 24, 39, 0.92);
-  color: #facc15;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  transition: transform 0.18s ease, opacity 0.18s ease;
-  user-select: none;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
-
-.btn-unmute-overlay:hover,
-.btn-unmute-overlay:focus-visible {
-  transform: scale(1.05);
-  background: rgba(250, 204, 21, 0.2);
-  color: #ffffff;
 }
 
 /* --- Skip Intro & Next Episode Popup --- */
