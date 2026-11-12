@@ -1,7 +1,7 @@
 // Cloudflare Pages Worker for phim4vipzz
 // Integrates EnsMovie player/sources, Repo License Worker, Movie API sources, Anti-DDoS & Admin Authority.
 
-const LICENSE_ORIGIN = 'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev';
+const LICENSE_ORIGIN = 'https://phim4k-license-api.mnhut-getkey.workers.dev';
 const ENS_ORIGIN = 'https://enshihi.vercel.app';
 const PHIMAPI_ORIGIN = 'https://phimapi.com';
 const OPHIM_ORIGIN = 'https://ophim1.com';

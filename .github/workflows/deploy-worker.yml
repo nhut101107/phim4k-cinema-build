@@ -58,5 +58,5 @@ jobs:
         run: |
           set -euo pipefail
           curl --fail --silent --show-error --retry 3 --retry-delay 2 --max-time 20 \
-            'https://phim4k-license-api.phim4k-pwdbhdz.workers.dev/api/health' \
+            'https://phim4k-license-api.mnhut-getkey.workers.dev/api/health' \
             | node -e 'let body="";process.stdin.on("data",chunk=>body+=chunk);process.stdin.on("end",()=>{const result=JSON.parse(body);if(result.service!=="phim4k-license-api"||result.ready!==true){console.error("Worker health check did not report ready");process.exitCode=1;}})'
